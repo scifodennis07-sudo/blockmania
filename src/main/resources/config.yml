@@ -9,16 +9,18 @@ messages:
   prefix: "&8[&6BlockMania&8] "
   given: "&aHai ricevuto &e%item%&a."
   given-other: "&aHai dato &e%item% &aa &e%player%&a."
-  ammo-given: "&aHai ricevuto &e%amount% &apalle (&e%type%&a). Totale: &e%total%"
-  ammo-given-other: "&aHai dato &e%amount% &apalle (&e%type%&a) a &e%player%&a. Totale: &e%total%"
+  stat: "&e%stat% &7di &f%player%&7: &e%value%"
   unknown-item: "&cOggetto sconosciuto: &e%item%"
+  unknown-ammo: "&cTipo di palla sconosciuto: &e%type%"
+  block-not-found: "&cBlocco non valido. Usa un numero da &e1-1 &ca &e%max%-1&c."
   player-not-found: "&cGiocatore non trovato."
   invalid-number: "&cNumero non valido."
   no-permission: "&cNon hai il permesso."
-  usage: "&eUso: &f/blockmania get <lanciapalle|1-1|standardball> [numero] [giocatore]"
+  help: "&eComandi: &f/bm get <oggetto> &7| &f/bm getblock <N-1> &7| &f/bm ball <get|remove|see|reset> <tipo|all> [numero] [player] &7| &f/bm blockcoin|blockshell <get|remove|see|reset> [numero] [player]"
   reloaded: "&aConfig ricaricato. Oggetti caricati: &e%count%"
   cooldown: "&cAspetta ancora &e%time%s"
   no-ammo: "&cNon hai palle!"
+  shell-full: "&cHai troppe blockshell! Non puoi distruggere altri blocchi."
   cannot-break: "&cNon puoi rompere questo blocco."
 
 # Ogni voce sotto "items" e' un oggetto che puoi ottenere con
@@ -36,23 +38,34 @@ items:
     ammo: standardball         # che tipo di palle consuma (vedi "ammo" qui sotto)
 
 # Tipi di palle. Sono "virtuali": non sono oggetti, sono un numero per giocatore.
-#   /blockmania get standardball 20     -> ti da 20 palle
+#   /blockmania ball get standardball 20
 ammo:
   standardball:
     damage: 50                 # quanta vita toglie a un blocco quando lo colpisce
 
-# La barra in alto che mostra quante palle hai
+# Blockshell: +1 per ogni blocco distrutto. Arrivati al massimo non si possono
+# distruggere altri blocchi: si possono solo indebolire, l'ultimo colpo non fa danno.
+blockshell:
+  max: 10
+
+# Cosa si riceve per ogni blocco distrutto
+rewards:
+  blockshell: 1
+  blockcoin: 1                 # i blockcoin non hanno limite
+
+# La barra in alto. Resta sempre piena, conta solo il testo.
+# Segnaposto: %ammo% %shell% %shell_max% %coin%
 bossbar:
   enabled: true
   always-visible: true         # true = sempre visibile, false = solo con il lanciapalle in mano
-  ammo-type: standardball      # quale tipo di palle mostra
-  title: "&bPalle: &f%ammo%"
+  ammo-type: standardball      # di quale tipo di palla mostra il numero
+  text: "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%coin%"
   color: BLUE                  # PINK BLUE RED GREEN YELLOW PURPLE WHITE
-  max: 100                     # con quante palle la barra risulta piena
 
 # I blocchi custom (note block)
 blocks:
-  list: [1, 2, 3]              # i blocchi che si possono ottenere: /blockmania get 1-1, 2-1, 3-1
+  max: 114                     # fino a che numero si puo' ottenere con /bm getblock N-1
+                               # (con i soli note block il massimo possibile e' 114)
   item-name: "&eBlocco %number%"
   drop-on-destroy: false       # true = quando la vita arriva a 0 il blocco lascia l'oggetto
   health:

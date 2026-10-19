@@ -10,6 +10,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.IOException;
@@ -145,22 +146,36 @@ public final class BlockManager {
         }
     }
 
-    /** Fa danno al blocco: cambia variante, e se la vita arriva a 0 lo distrugge. */
-    public void damage(Block block, int amount) {
+    /**
+     * Fa danno al blocco: cambia variante, e se la vita arriva a 0 lo distrugge.
+     * Chi lo distrugge guadagna 1 blockshell e 1 blockcoin. Se ha gia' il massimo di
+     * blockshell, il colpo che avrebbe distrutto il blocco non fa danno.
+     */
+    public void damage(Block block, int amount, Player shooter) {
         Tracked t = get(block);
         if (t == null || amount <= 0) {
             return;
         }
         int max = maxHealth(t.number);
-        t.hp -= amount;
-        dirty = true;
+        int newHp = t.hp - amount;
 
         World world = block.getWorld();
         Location center = block.getLocation().add(0.5, 0.5, 0.5);
         BlockData before = block.getBlockData();
 
-        if (t.hp <= 0) {
+        if (newHp <= 0) {
+            if (shooter != null) {
+                AmmoManager stats = plugin.getAmmo();
+                if (stats.getShell(shooter) >= stats.getShellMax()) {
+                    shooter.sendActionBar(plugin.message("shell-full"));
+                    return; // l'ultimo colpo non fa danno
+                }
+                FileConfiguration c = plugin.getConfig();
+                stats.setShell(shooter, stats.getShell(shooter) + Math.max(0, c.getInt("rewards.blockshell", 1)));
+                stats.setCoin(shooter, stats.getCoin(shooter) + Math.max(0, c.getInt("rewards.blockcoin", 1)));
+            }
             blocks.remove(key(block));
+            dirty = true;
             block.setType(Material.AIR, false);
             world.spawnParticle(Particle.BLOCK, center, 40, 0.3, 0.3, 0.3, before);
             world.playSound(center, Sound.BLOCK_STONE_BREAK, 1.0f, 1.0f);
@@ -170,6 +185,8 @@ public final class BlockManager {
             return;
         }
 
+        t.hp = newHp;
+        dirty = true;
         block.setBlockData(dataFor(t.number, stageFor(t.hp, max)), false);
         world.spawnParticle(Particle.BLOCK, center, 8, 0.25, 0.25, 0.25, before);
     }

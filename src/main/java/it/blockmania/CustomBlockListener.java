@@ -83,7 +83,8 @@ public final class CustomBlockListener implements Listener {
         if (type == null) {
             return;
         }
-        blocks().damage(hit, plugin.getAmmo().getDamage(type));
+        Player shooter = event.getEntity().getShooter() instanceof Player p ? p : null;
+        blocks().damage(hit, plugin.getAmmo().getDamage(type), shooter);
     }
 
     /** Impedisce al note block di cambiare strumento/stato quando i vicini cambiano. */

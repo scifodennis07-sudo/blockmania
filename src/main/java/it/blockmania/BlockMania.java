@@ -132,15 +132,10 @@ public final class BlockMania extends JavaPlugin {
         return blocks;
     }
 
-    /** Numeri dei blocchi attivi (blocks.list nel config). */
-    public List<Integer> getEnabledBlocks() {
-        List<Integer> result = new ArrayList<>();
-        for (int n : getConfig().getIntegerList("blocks.list")) {
-            if (n >= 1 && n <= BlockManager.MAX_BLOCKS && !result.contains(n)) {
-                result.add(n);
-            }
-        }
-        return result;
+    /** Numero massimo di blocco ottenibile (blocks.max nel config, mai oltre il limite del pack). */
+    public int getMaxBlock() {
+        int configured = getConfig().getInt("blocks.max", BlockManager.MAX_BLOCKS);
+        return Math.max(1, Math.min(BlockManager.MAX_BLOCKS, configured));
     }
 
     /** Crea l'oggetto lanciapalle. */

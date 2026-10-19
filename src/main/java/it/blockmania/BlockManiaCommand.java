@@ -1,5 +1,6 @@
 package it.blockmania;
 
+import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -11,8 +12,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiConsumer;
+import java.util.function.ToIntFunction;
 
 public final class BlockManiaCommand implements TabExecutor {
+
+    private static final List<String> ACTIONS = List.of("get", "remove", "see", "reset");
+
+    /** Un numero del giocatore che si puo' leggere e modificare (palle, blockshell, blockcoin). */
+    private record Stat(String name, ToIntFunction<Player> getter, BiConsumer<Player, Integer> setter, int max) {
+    }
 
     private final BlockMania plugin;
 
@@ -27,8 +36,8 @@ public final class BlockManiaCommand implements TabExecutor {
         return sender instanceof Player player ? player : null;
     }
 
-    /** Legge "3-1" e ritorna 3. Ritorna null se non e' una prima variante valida. */
-    private Integer parseBlockName(String text) {
+    /** Legge "3-1" e ritorna 3. Ritorna null se non e' scritto cosi'. */
+    private Integer parseBlockNumber(String text) {
         if (!text.endsWith("-1")) {
             return null;
         }
@@ -36,6 +45,14 @@ public final class BlockManiaCommand implements TabExecutor {
             return Integer.parseInt(text.substring(0, text.length() - 2));
         } catch (NumberFormatException ex) {
             return null;
+        }
+    }
+
+    private int parseAmount(String text) {
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException ex) {
+            return -1;
         }
     }
 
@@ -49,102 +66,194 @@ public final class BlockManiaCommand implements TabExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage(plugin.message("usage"));
+            sender.sendMessage(plugin.message("help"));
             return true;
         }
 
-        String sub = args[0].toLowerCase(Locale.ROOT);
-
-        if (sub.equals("reload")) {
-            if (!sender.hasPermission("blockmania.reload")) {
-                sender.sendMessage(plugin.message("no-permission"));
-                return true;
-            }
-            plugin.reloadConfig();
-            plugin.loadItems();
-            sender.sendMessage(plugin.message("reloaded", "%count%", String.valueOf(plugin.getItems().size())));
-            return true;
-        }
-
-        if (!sub.equals("get")) {
-            sender.sendMessage(plugin.message("usage"));
-            return true;
-        }
-
-        if (!sender.hasPermission("blockmania.get")) {
-            sender.sendMessage(plugin.message("no-permission"));
-            return true;
-        }
-        if (args.length < 2) {
-            sender.sendMessage(plugin.message("usage"));
-            return true;
-        }
-
-        String what = args[1].toLowerCase(Locale.ROOT);
-        AmmoManager ammo = plugin.getAmmo();
-
-        // /blockmania get standardball <numero> [giocatore]
-        if (ammo.exists(what)) {
-            if (args.length < 3) {
-                sender.sendMessage(plugin.message("usage"));
-                return true;
-            }
-            int amount;
-            try {
-                amount = Integer.parseInt(args[2]);
-            } catch (NumberFormatException ex) {
-                amount = -1;
-            }
-            if (amount <= 0) {
-                sender.sendMessage(plugin.message("invalid-number"));
-                return true;
-            }
-            Player target = resolveTarget(sender, args.length >= 4 ? args[3] : null);
-            if (target == null) {
-                sender.sendMessage(plugin.message("player-not-found"));
-                return true;
-            }
-            ammo.addAmmo(target, what, amount);
-            String total = String.valueOf(ammo.getAmmo(target, what));
-            target.sendMessage(plugin.message("ammo-given",
-                    "%amount%", String.valueOf(amount), "%type%", what, "%total%", total));
-            if (!target.equals(sender)) {
-                sender.sendMessage(plugin.message("ammo-given-other",
-                        "%amount%", String.valueOf(amount), "%type%", what,
-                        "%player%", target.getName(), "%total%", total));
-            }
-            return true;
-        }
-
-        // /blockmania get <oggetto|N-1> [giocatore]
-        ItemStack stack = null;
-        LauncherItem li = plugin.getItem(what);
-        if (li != null) {
-            stack = plugin.createItem(li);
-        } else {
-            Integer number = parseBlockName(what);
-            if (number != null && plugin.getEnabledBlocks().contains(number)) {
-                stack = plugin.createBlockItem(number);
-            }
-        }
-        if (stack == null) {
-            sender.sendMessage(plugin.message("unknown-item", "%item%", args[1]));
-            return true;
-        }
-
-        Player target = resolveTarget(sender, args.length >= 3 ? args[2] : null);
-        if (target == null) {
-            sender.sendMessage(plugin.message("player-not-found"));
-            return true;
-        }
-
-        give(target, stack);
-        target.sendMessage(plugin.message("given", "%item%", what));
-        if (!target.equals(sender)) {
-            sender.sendMessage(plugin.message("given-other", "%item%", what, "%player%", target.getName()));
+        switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "reload" -> reload(sender);
+            case "get" -> getItem(sender, args);
+            case "getblock" -> getBlock(sender, args);
+            case "ball" -> ball(sender, args);
+            case "blockcoin" -> counter(sender, args, "blockcoin");
+            case "blockshell" -> counter(sender, args, "blockshell");
+            default -> sender.sendMessage(plugin.message("help"));
         }
         return true;
     }
+
+    // ---------- /blockmania reload ----------
+
+    private void reload(CommandSender sender) {
+        if (!sender.hasPermission("blockmania.reload")) {
+            sender.sendMessage(plugin.message("no-permission"));
+            return;
+        }
+        plugin.reloadConfig();
+        plugin.loadItems();
+        sender.sendMessage(plugin.message("reloaded", "%count%", String.valueOf(plugin.getItems().size())));
+    }
+
+    // ---------- /blockmania get <oggetto> [giocatore] ----------
+
+    private void getItem(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.get")) {
+            sender.sendMessage(plugin.message("no-permission"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(plugin.message("help"));
+            return;
+        }
+        LauncherItem li = plugin.getItem(args[1]);
+        if (li == null) {
+            sender.sendMessage(plugin.message("unknown-item", "%item%", args[1]));
+            return;
+        }
+        Player target = resolveTarget(sender, args.length >= 3 ? args[2] : null);
+        if (target == null) {
+            sender.sendMessage(plugin.message("player-not-found"));
+            return;
+        }
+        deliver(sender, target, plugin.createItem(li), li.id());
+    }
+
+    // ---------- /blockmania getblock <N-1> [giocatore] ----------
+
+    private void getBlock(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.get")) {
+            sender.sendMessage(plugin.message("no-permission"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(plugin.message("help"));
+            return;
+        }
+        Integer number = parseBlockNumber(args[1].toLowerCase(Locale.ROOT));
+        int max = plugin.getMaxBlock();
+        if (number == null || number < 1 || number > max) {
+            sender.sendMessage(plugin.message("block-not-found", "%max%", String.valueOf(max)));
+            return;
+        }
+        Player target = resolveTarget(sender, args.length >= 3 ? args[2] : null);
+        if (target == null) {
+            sender.sendMessage(plugin.message("player-not-found"));
+            return;
+        }
+        deliver(sender, target, plugin.createBlockItem(number), number + "-1");
+    }
+
+    private void deliver(CommandSender sender, Player target, ItemStack stack, String name) {
+        give(target, stack);
+        target.sendMessage(plugin.message("given", "%item%", name));
+        if (!target.equals(sender)) {
+            sender.sendMessage(plugin.message("given-other", "%item%", name, "%player%", target.getName()));
+        }
+    }
+
+    // ---------- /blockmania ball <get|remove|see|reset> <tipo|all> [numero] [giocatore] ----------
+
+    private void ball(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.stats")) {
+            sender.sendMessage(plugin.message("no-permission"));
+            return;
+        }
+        if (args.length < 3 || !ACTIONS.contains(args[1].toLowerCase(Locale.ROOT))) {
+            sender.sendMessage(plugin.message("help"));
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        String type = args[2].toLowerCase(Locale.ROOT);
+        AmmoManager ammo = plugin.getAmmo();
+
+        List<String> chosen = new ArrayList<>();
+        if (type.equals("all")) {
+            chosen.addAll(ammo.types());
+        } else if (ammo.exists(type)) {
+            chosen.add(type);
+        } else {
+            sender.sendMessage(plugin.message("unknown-ammo", "%type%", args[2]));
+            return;
+        }
+
+        List<Stat> stats = new ArrayList<>();
+        for (String t : chosen) {
+            stats.add(new Stat(t, p -> ammo.getAmmo(p, t), (p, v) -> ammo.setAmmo(p, t, v), Integer.MAX_VALUE));
+        }
+        runStats(sender, action, stats, args, 3);
+    }
+
+    // ---------- /blockmania blockcoin|blockshell <get|remove|see|reset> [numero] [giocatore] ----------
+
+    private void counter(CommandSender sender, String[] args, String which) {
+        if (!sender.hasPermission("blockmania.stats")) {
+            sender.sendMessage(plugin.message("no-permission"));
+            return;
+        }
+        if (args.length < 2 || !ACTIONS.contains(args[1].toLowerCase(Locale.ROOT))) {
+            sender.sendMessage(plugin.message("help"));
+            return;
+        }
+        AmmoManager ammo = plugin.getAmmo();
+        Stat stat;
+        if (which.equals("blockshell")) {
+            stat = new Stat("blockshell", ammo::getShell, ammo::setShell, ammo.getShellMax());
+        } else {
+            stat = new Stat("blockcoin", ammo::getCoin, ammo::setCoin, Integer.MAX_VALUE);
+        }
+        runStats(sender, args[1].toLowerCase(Locale.ROOT), List.of(stat), args, 2);
+    }
+
+    /**
+     * Esegue get / remove / see / reset. amountIndex e' la posizione nel comando dove
+     * si trova il numero (per see e reset il numero non c'e' e li' c'e' direttamente il giocatore).
+     */
+    private void runStats(CommandSender sender, String action, List<Stat> stats, String[] args, int amountIndex) {
+        boolean needsAmount = action.equals("get") || action.equals("remove");
+        int amount = 0;
+        int playerIndex = amountIndex;
+        if (needsAmount) {
+            if (args.length <= amountIndex) {
+                sender.sendMessage(plugin.message("help"));
+                return;
+            }
+            amount = parseAmount(args[amountIndex]);
+            if (amount <= 0) {
+                sender.sendMessage(plugin.message("invalid-number"));
+                return;
+            }
+            playerIndex = amountIndex + 1;
+        }
+
+        Player target = resolveTarget(sender, args.length > playerIndex ? args[playerIndex] : null);
+        if (target == null) {
+            sender.sendMessage(plugin.message("player-not-found"));
+            return;
+        }
+
+        for (Stat stat : stats) {
+            int current = stat.getter().applyAsInt(target);
+            int next;
+            switch (action) {
+                case "get" -> next = (int) Math.min((long) stat.max(), (long) current + amount);
+                case "remove" -> next = Math.max(0, current - amount);
+                case "reset" -> next = 0;
+                default -> next = current;
+            }
+            if (next != current) {
+                stat.setter().accept(target, next);
+            }
+            String value = stat.max() == Integer.MAX_VALUE ? String.valueOf(next) : next + "/" + stat.max();
+            Component msg = plugin.message("stat",
+                    "%stat%", stat.name(), "%player%", target.getName(), "%value%", value);
+            sender.sendMessage(msg);
+            if (!action.equals("see") && !target.equals(sender)) {
+                target.sendMessage(msg);
+            }
+        }
+    }
+
+    // ---------- completamento con TAB (senza liste di numeri) ----------
 
     private void addPlayers(List<String> result) {
         for (Player p : Bukkit.getOnlinePlayers()) {
@@ -156,30 +265,54 @@ public final class BlockManiaCommand implements TabExecutor {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> result = new ArrayList<>();
         boolean canGet = sender.hasPermission("blockmania.get");
+        boolean canStats = sender.hasPermission("blockmania.stats");
 
         if (args.length == 1) {
             if (canGet) {
                 result.add("get");
+                result.add("getblock");
+            }
+            if (canStats) {
+                result.add("ball");
+                result.add("blockcoin");
+                result.add("blockshell");
             }
             if (sender.hasPermission("blockmania.reload")) {
                 result.add("reload");
             }
-        } else if (args[0].equalsIgnoreCase("get") && canGet) {
-            AmmoManager ammo = plugin.getAmmo();
-            if (args.length == 2) {
-                result.addAll(ammo.types());
-                result.addAll(plugin.getItems().keySet());
-                for (int n : plugin.getEnabledBlocks()) {
-                    result.add(n + "-1");
-                }
-            } else if (args.length == 3) {
-                if (ammo.exists(args[1].toLowerCase(Locale.ROOT))) {
-                    result.addAll(List.of("10", "50", "100"));
-                } else {
+        } else {
+            String sub = args[0].toLowerCase(Locale.ROOT);
+            if (sub.equals("get") && canGet) {
+                if (args.length == 2) {
+                    result.addAll(plugin.getItems().keySet());
+                } else if (args.length == 3) {
                     addPlayers(result);
                 }
-            } else if (args.length == 4 && ammo.exists(args[1].toLowerCase(Locale.ROOT))) {
-                addPlayers(result);
+            } else if (sub.equals("getblock") && canGet) {
+                if (args.length == 3) {
+                    addPlayers(result);
+                }
+            } else if (sub.equals("ball") && canStats) {
+                if (args.length == 2) {
+                    result.addAll(ACTIONS);
+                } else if (args.length == 3) {
+                    result.addAll(plugin.getAmmo().types());
+                    result.add("all");
+                } else {
+                    boolean amount = args[1].equalsIgnoreCase("get") || args[1].equalsIgnoreCase("remove");
+                    if (args.length == (amount ? 5 : 4)) {
+                        addPlayers(result);
+                    }
+                }
+            } else if ((sub.equals("blockcoin") || sub.equals("blockshell")) && canStats) {
+                if (args.length == 2) {
+                    result.addAll(ACTIONS);
+                } else {
+                    boolean amount = args[1].equalsIgnoreCase("get") || args[1].equalsIgnoreCase("remove");
+                    if (args.length == (amount ? 4 : 3)) {
+                        addPlayers(result);
+                    }
+                }
             }
         }
 

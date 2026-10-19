@@ -7,7 +7,6 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -17,8 +16,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Gestisce le palle "virtuali" di ogni giocatore e la bossbar che le mostra. */
+/**
+ * Gestisce i numeri "virtuali" di ogni giocatore (palle, blockshell, blockcoin)
+ * e la bossbar che li mostra.
+ */
 public final class AmmoManager {
+
+    private static final String SHELL = "blockshell";
+    private static final String COIN = "blockcoin";
 
     private final BlockMania plugin;
     private final Map<UUID, BossBar> bars = new HashMap<>();
@@ -28,18 +33,30 @@ public final class AmmoManager {
         this.plugin = plugin;
     }
 
-    private NamespacedKey key(String type) {
-        return new NamespacedKey(plugin, "ammo_" + type.toLowerCase(Locale.ROOT));
+    // ---------- valori salvati sul giocatore ----------
+
+    private NamespacedKey key(String name) {
+        return new NamespacedKey(plugin, name.toLowerCase(Locale.ROOT));
     }
 
-    public int getAmmo(Player player, String type) {
+    private int getValue(Player player, String name) {
         return player.getPersistentDataContainer()
-                .getOrDefault(key(type), PersistentDataType.INTEGER, 0);
+                .getOrDefault(key(name), PersistentDataType.INTEGER, 0);
+    }
+
+    private void setValue(Player player, String name, int value) {
+        player.getPersistentDataContainer()
+                .set(key(name), PersistentDataType.INTEGER, Math.max(0, value));
+    }
+
+    // ---------- palle ----------
+
+    public int getAmmo(Player player, String type) {
+        return getValue(player, "ammo_" + type);
     }
 
     public void setAmmo(Player player, String type, int amount) {
-        player.getPersistentDataContainer()
-                .set(key(type), PersistentDataType.INTEGER, Math.max(0, amount));
+        setValue(player, "ammo_" + type, amount);
     }
 
     public void addAmmo(Player player, String type, int amount) {
@@ -61,6 +78,30 @@ public final class AmmoManager {
         return plugin.getConfig().getInt("ammo." + type.toLowerCase(Locale.ROOT) + ".damage", 50);
     }
 
+    // ---------- blockshell (con massimo) e blockcoin (senza limite) ----------
+
+    public int getShellMax() {
+        return Math.max(1, plugin.getConfig().getInt("blockshell.max", 10));
+    }
+
+    public int getShell(Player player) {
+        return getValue(player, SHELL);
+    }
+
+    public void setShell(Player player, int value) {
+        setValue(player, SHELL, Math.min(value, getShellMax()));
+    }
+
+    public int getCoin(Player player) {
+        return getValue(player, COIN);
+    }
+
+    public void setCoin(Player player, int value) {
+        setValue(player, COIN, value);
+    }
+
+    // ---------- bossbar ----------
+
     public void start() {
         task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 20L, 10L);
     }
@@ -79,7 +120,7 @@ public final class AmmoManager {
     }
 
     private boolean isHoldingLauncher(Player player) {
-        ItemStack inHand = player.getInventory().getItemInMainHand();
+        var inHand = player.getInventory().getItemInMainHand();
         if (inHand == null || !inHand.hasItemMeta()) {
             return false;
         }
@@ -100,9 +141,10 @@ public final class AmmoManager {
         boolean enabled = c.getBoolean("bossbar.enabled", true);
         boolean always = c.getBoolean("bossbar.always-visible", true);
         String type = c.getString("bossbar.ammo-type", "standardball").toLowerCase(Locale.ROOT);
-        String titleTemplate = c.getString("bossbar.title", "&bPalle: &f%ammo%");
-        int max = Math.max(1, c.getInt("bossbar.max", 100));
+        String template = c.getString("bossbar.text",
+                "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%coin%");
         BossBar.Color color = parseColor(c.getString("bossbar.color", "BLUE"));
+        int shellMax = getShellMax();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             UUID id = player.getUniqueId();
@@ -117,17 +159,21 @@ public final class AmmoManager {
                 continue;
             }
 
-            int ammo = getAmmo(player, type);
-            Component title = plugin.color(titleTemplate.replace("%ammo%", String.valueOf(ammo)));
-            float progress = (float) Math.max(0.0, Math.min(1.0, ammo / (double) max));
+            String text = template
+                    .replace("%ammo%", String.valueOf(getAmmo(player, type)))
+                    .replace("%shell%", String.valueOf(getShell(player)))
+                    .replace("%shell_max%", String.valueOf(shellMax))
+                    .replace("%coin%", String.valueOf(getCoin(player)));
+            Component title = plugin.color(text);
 
+            // la barra resta sempre piena: conta solo il testo
             if (bar == null) {
-                bar = BossBar.bossBar(title, progress, color, BossBar.Overlay.PROGRESS);
+                bar = BossBar.bossBar(title, 1.0f, color, BossBar.Overlay.PROGRESS);
                 bars.put(id, bar);
                 player.showBossBar(bar);
             } else {
                 bar.name(title);
-                bar.progress(progress);
+                bar.progress(1.0f);
                 bar.color(color);
             }
         }
