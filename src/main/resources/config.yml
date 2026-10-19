@@ -1,0 +1,30 @@
+# ============================================================
+#  BlockMania - configurazione
+#  Dopo aver cambiato qualcosa usa  /blockmania reload
+#  (gli oggetti che hai gia' in inventario vanno richiesti di nuovo
+#   se cambi nome o custom-model-data)
+# ============================================================
+
+messages:
+  prefix: "&8[&6BlockMania&8] "
+  given: "&aHai ricevuto &e%item%&a."
+  given-other: "&aHai dato &e%item% &aa &e%player%&a."
+  unknown-item: "&cOggetto sconosciuto: &e%item%"
+  player-not-found: "&cGiocatore non trovato."
+  no-permission: "&cNon hai il permesso."
+  usage: "&eUso: &f/blockmania get <oggetto> [giocatore]"
+  reloaded: "&aConfig ricaricato. Oggetti caricati: &e%count%"
+  cooldown: "&cAspetta ancora &e%time%s"
+
+# Ogni voce sotto "items" e' un oggetto che puoi ottenere con
+#   /blockmania get <nome-della-voce>
+items:
+  lanciapalle:
+    material: STICK            # tipo di oggetto (STICK, BLAZE_ROD, FEATHER, ...)
+    name: "&b&lLanciapalle"    # nome mostrato (usa i codici colore con &)
+    lore:                      # descrizione (puoi toglierla o aggiungere righe)
+      - "&7Tasto destro per lanciare"
+      - "&7una palla di neve"
+    custom-model-data: 100     # il numero del modello nel resource pack
+    speed: 1.5                 # velocita' della palla di neve (quella normale e' 1.5)
+    cooldown: 0.5              # secondi tra un lancio e l'altro

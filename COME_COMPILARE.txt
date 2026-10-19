@@ -1,0 +1,22 @@
+COME OTTENERE IL FILE .jar
+==========================
+
+OPZIONE A - su GitHub, senza installare niente (consigliata)
+  1. Crea un account su github.com e un nuovo repository (anche privato).
+  2. Carica TUTTI i file di questa cartella, compresa la cartella nascosta ".github".
+     (Se non la vedi, su Windows attiva "Elementi nascosti" in Esplora file.)
+  3. Vai nella scheda "Actions": parte da sola la compilazione (1-2 minuti).
+  4. Apri l'esecuzione finita e scarica "BlockMania" in fondo, sotto "Artifacts".
+     Dentro lo zip scaricato c'e' BlockMania.jar.
+
+OPZIONE B - sul tuo PC
+  1. Installa Java 21 e Maven.
+  2. Apri un terminale in questa cartella e scrivi:  mvn package
+  3. Il file si trova in  target/BlockMania.jar
+
+INSTALLAZIONE SUL SERVER (Falix)
+  1. Il server deve essere Paper 1.21.8.
+  2. Metti BlockMania.jar nella cartella "plugins" e riavvia.
+  3. Il config si crea da solo in plugins/BlockMania/config.yml
+  4. In gioco:  /blockmania get lanciapalle
+     Dopo aver cambiato il config:  /blockmania reload
