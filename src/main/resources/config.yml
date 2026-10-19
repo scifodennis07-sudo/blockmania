@@ -9,12 +9,17 @@ messages:
   prefix: "&8[&6BlockMania&8] "
   given: "&aHai ricevuto &e%item%&a."
   given-other: "&aHai dato &e%item% &aa &e%player%&a."
+  ammo-given: "&aHai ricevuto &e%amount% &apalle (&e%type%&a). Totale: &e%total%"
+  ammo-given-other: "&aHai dato &e%amount% &apalle (&e%type%&a) a &e%player%&a. Totale: &e%total%"
   unknown-item: "&cOggetto sconosciuto: &e%item%"
   player-not-found: "&cGiocatore non trovato."
+  invalid-number: "&cNumero non valido."
   no-permission: "&cNon hai il permesso."
-  usage: "&eUso: &f/blockmania get <oggetto> [giocatore]"
+  usage: "&eUso: &f/blockmania get <lanciapalle|1-1|standardball> [numero] [giocatore]"
   reloaded: "&aConfig ricaricato. Oggetti caricati: &e%count%"
   cooldown: "&cAspetta ancora &e%time%s"
+  no-ammo: "&cNon hai palle!"
+  cannot-break: "&cNon puoi rompere questo blocco."
 
 # Ogni voce sotto "items" e' un oggetto che puoi ottenere con
 #   /blockmania get <nome-della-voce>
@@ -28,3 +33,31 @@ items:
     custom-model-data: 100     # il numero del modello nel resource pack
     speed: 1.5                 # velocita' della palla di neve (quella normale e' 1.5)
     cooldown: 0.5              # secondi tra un lancio e l'altro
+    ammo: standardball         # che tipo di palle consuma (vedi "ammo" qui sotto)
+
+# Tipi di palle. Sono "virtuali": non sono oggetti, sono un numero per giocatore.
+#   /blockmania get standardball 20     -> ti da 20 palle
+ammo:
+  standardball:
+    damage: 50                 # quanta vita toglie a un blocco quando lo colpisce
+
+# La barra in alto che mostra quante palle hai
+bossbar:
+  enabled: true
+  always-visible: true         # true = sempre visibile, false = solo con il lanciapalle in mano
+  ammo-type: standardball      # quale tipo di palle mostra
+  title: "&bPalle: &f%ammo%"
+  color: BLUE                  # PINK BLUE RED GREEN YELLOW PURPLE WHITE
+  max: 100                     # con quante palle la barra risulta piena
+
+# I blocchi custom (note block)
+blocks:
+  list: [1, 2, 3]              # i blocchi che si possono ottenere: /blockmania get 1-1, 2-1, 3-1
+  item-name: "&eBlocco %number%"
+  drop-on-destroy: false       # true = quando la vita arriva a 0 il blocco lascia l'oggetto
+  health:
+    base: 1000                 # vita del blocco 1
+    increase-percent: 50       # ogni blocco ha il 50% di vita in piu' (1000, 1500, 2000...)
+    mode: linear               # linear = +50% della base (1000, 1500, 2000)
+                               # compound = +50% del precedente (1000, 1500, 2250)
+    overrides: {}              # per forzare un blocco, ad esempio  3: 5000

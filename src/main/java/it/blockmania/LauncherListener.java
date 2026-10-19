@@ -68,10 +68,19 @@ public final class LauncherListener implements Listener {
             player.sendActionBar(plugin.message("cooldown", "%time%", String.format("%.1f", remaining)));
             return;
         }
+
+        AmmoManager ammo = plugin.getAmmo();
+        if (ammo.getAmmo(player, li.ammoType()) <= 0) {
+            player.sendActionBar(plugin.message("no-ammo"));
+            return;
+        }
+        ammo.addAmmo(player, li.ammoType(), -1);
         uses.put(li.id(), now);
 
         Location eye = player.getEyeLocation();
-        player.launchProjectile(Snowball.class, eye.getDirection().multiply(li.speed()));
+        Snowball ball = player.launchProjectile(Snowball.class, eye.getDirection().multiply(li.speed()));
+        // segniamo la palla con il suo tipo, cosi' sappiamo quanto danno fa ai blocchi
+        ball.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, li.ammoType());
         player.getWorld().playSound(eye, Sound.ENTITY_SNOWBALL_THROW, 0.5f, 0.4f);
     }
 

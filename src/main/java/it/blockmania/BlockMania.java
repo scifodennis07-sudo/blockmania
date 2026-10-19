@@ -21,13 +21,28 @@ import java.util.Map;
 public final class BlockMania extends JavaPlugin {
 
     private NamespacedKey itemKey;
+    private NamespacedKey blockKey;
+    private NamespacedKey ammoKey;
     private final Map<String, LauncherItem> items = new LinkedHashMap<>();
+    private AmmoManager ammo;
+    private BlockManager blocks;
 
     @Override
     public void onEnable() {
         itemKey = new NamespacedKey(this, "launcher");
+        blockKey = new NamespacedKey(this, "block");
+        ammoKey = new NamespacedKey(this, "ammo_type");
+
         saveDefaultConfig();
+        // aggiunge al config eventuali voci nuove senza toccare quelle che hai cambiato
+        getConfig().options().copyDefaults(true);
+        saveConfig();
         loadItems();
+
+        ammo = new AmmoManager(this);
+        blocks = new BlockManager(this);
+        blocks.load();
+        ammo.start();
 
         PluginCommand command = getCommand("blockmania");
         if (command != null) {
@@ -36,10 +51,24 @@ public final class BlockMania extends JavaPlugin {
             command.setTabCompleter(handler);
         }
         getServer().getPluginManager().registerEvents(new LauncherListener(this), this);
-        getLogger().info("BlockMania attivo. Oggetti caricati: " + items.size());
+        getServer().getPluginManager().registerEvents(new CustomBlockListener(this), this);
+        getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
+
+        getLogger().info("BlockMania attivo. Oggetti: " + items.size()
+                + ", blocchi in gioco: " + blocks.count());
     }
 
-    /** Rilegge il config.yml e ricrea la lista degli oggetti. */
+    @Override
+    public void onDisable() {
+        if (ammo != null) {
+            ammo.stop();
+        }
+        if (blocks != null) {
+            blocks.save();
+        }
+    }
+
+    /** Rilegge gli oggetti dal config.yml. */
     public void loadItems() {
         items.clear();
         ConfigurationSection section = getConfig().getConfigurationSection("items");
@@ -70,7 +99,8 @@ public final class BlockMania extends JavaPlugin {
                     s.getStringList("lore"),
                     cmd,
                     s.getDouble("speed", 1.5),
-                    Math.max(0, s.getDouble("cooldown", 0.5))));
+                    Math.max(0, s.getDouble("cooldown", 0.5)),
+                    s.getString("ammo", "standardball").toLowerCase(Locale.ROOT)));
         }
     }
 
@@ -86,7 +116,34 @@ public final class BlockMania extends JavaPlugin {
         return itemKey;
     }
 
-    /** Crea l'oggetto da dare al giocatore. */
+    public NamespacedKey getBlockKey() {
+        return blockKey;
+    }
+
+    public NamespacedKey getAmmoKey() {
+        return ammoKey;
+    }
+
+    public AmmoManager getAmmo() {
+        return ammo;
+    }
+
+    public BlockManager getBlocks() {
+        return blocks;
+    }
+
+    /** Numeri dei blocchi attivi (blocks.list nel config). */
+    public List<Integer> getEnabledBlocks() {
+        List<Integer> result = new ArrayList<>();
+        for (int n : getConfig().getIntegerList("blocks.list")) {
+            if (n >= 1 && n <= BlockManager.MAX_BLOCKS && !result.contains(n)) {
+                result.add(n);
+            }
+        }
+        return result;
+    }
+
+    /** Crea l'oggetto lanciapalle. */
     public ItemStack createItem(LauncherItem li) {
         ItemStack stack = new ItemStack(li.material());
         ItemMeta meta = stack.getItemMeta();
@@ -102,6 +159,18 @@ public final class BlockMania extends JavaPlugin {
             meta.setCustomModelData(li.customModelData());
         }
         meta.getPersistentDataContainer().set(itemKey, PersistentDataType.STRING, li.id());
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /** Crea l'oggetto da piazzare per il blocco numero N (la sua prima variante, N-1). */
+    public ItemStack createBlockItem(int number) {
+        ItemStack stack = new ItemStack(Material.NOTE_BLOCK);
+        ItemMeta meta = stack.getItemMeta();
+        String name = getConfig().getString("blocks.item-name", "&eBlocco %number%")
+                .replace("%number%", String.valueOf(number));
+        meta.displayName(color(name));
+        meta.getPersistentDataContainer().set(blockKey, PersistentDataType.INTEGER, number);
         stack.setItemMeta(meta);
         return stack;
     }
