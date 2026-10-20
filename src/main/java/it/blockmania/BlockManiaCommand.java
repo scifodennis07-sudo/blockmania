@@ -20,7 +20,8 @@ public final class BlockManiaCommand implements TabExecutor {
     private static final List<String> ACTIONS = List.of("get", "remove", "see", "reset");
 
     /** Un numero del giocatore che si puo' leggere e modificare (palle, blockshell, blockcoin, coin). */
-    private record Stat(String name, ToIntFunction<Player> getter, BiConsumer<Player, Integer> setter, int max) {
+    private record Stat(String name, ToIntFunction<Player> getter, BiConsumer<Player, Integer> setter,
+                        ToIntFunction<Player> max) {
     }
 
     private final BlockMania plugin;
@@ -105,6 +106,7 @@ public final class BlockManiaCommand implements TabExecutor {
             case "blockcoin" -> counter(sender, args, "blockcoin");
             case "blockshell" -> counter(sender, args, "blockshell");
             case "coin" -> counter(sender, args, "coin");
+            case "shop" -> shop(sender, args);
             default -> plugin.send(sender, "unknown-subcommand", "%value%", args[0]);
         }
         return true;
@@ -212,6 +214,30 @@ public final class BlockManiaCommand implements TabExecutor {
         }
     }
 
+    // ---------- /blockmania shop <ammo|sell> ----------
+
+    private void shop(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.shop.edit")) {
+            plugin.send(sender, "no-permission");
+            return;
+        }
+        if (!(sender instanceof Player player)) {
+            plugin.send(sender, "player-only");
+            return;
+        }
+        if (args.length < 2) {
+            plugin.send(sender, "missing-shop", "%usage%", usage("shop"));
+            return;
+        }
+        String type = args[1].toLowerCase(Locale.ROOT);
+        if (!type.equals("ammo") && !type.equals("sell")) {
+            plugin.send(sender, "invalid-shop", "%value%", args[1]);
+            return;
+        }
+        plugin.getShops().spawn(player.getLocation(), type);
+        plugin.send(sender, "shop-spawned", "%shop%", type);
+    }
+
     // ---------- /blockmania ball <get|remove|see|reset> <tipo|all> [numero] [giocatore] ----------
 
     private void ball(CommandSender sender, String[] args) {
@@ -249,7 +275,8 @@ public final class BlockManiaCommand implements TabExecutor {
 
         List<Stat> stats = new ArrayList<>();
         for (String t : chosen) {
-            stats.add(new Stat(t, p -> ammo.getAmmo(p, t), (p, v) -> ammo.setAmmo(p, t, v), Integer.MAX_VALUE));
+            stats.add(new Stat(t, p -> ammo.getAmmo(p, t), (p, v) -> ammo.setAmmo(p, t, v),
+                    p -> ammo.getAmmoMax(p, t)));
         }
         runStats(sender, action, stats, args, 3, "ball");
     }
@@ -273,9 +300,9 @@ public final class BlockManiaCommand implements TabExecutor {
 
         AmmoManager ammo = plugin.getAmmo();
         Stat stat = switch (which) {
-            case "blockshell" -> new Stat("blockshell", ammo::getShell, ammo::setShell, ammo.getShellMax());
-            case "blockcoin" -> new Stat("blockcoin", ammo::getBlockCoin, ammo::setBlockCoin, Integer.MAX_VALUE);
-            default -> new Stat("coin", ammo::getCoin, ammo::setCoin, Integer.MAX_VALUE);
+            case "blockshell" -> new Stat("blockshell", ammo::getShell, ammo::setShell, p -> ammo.getShellMax());
+            case "blockcoin" -> new Stat("blockcoin", ammo::getBlockCoin, ammo::setBlockCoin, p -> Integer.MAX_VALUE);
+            default -> new Stat("coin", ammo::getCoin, ammo::setCoin, p -> Integer.MAX_VALUE);
         };
         runStats(sender, action, List.of(stat), args, 2, which);
     }
@@ -315,13 +342,13 @@ public final class BlockManiaCommand implements TabExecutor {
                 plugin.send(sender, "see",
                         "%stat%", plugin.tiny(stat.name()),
                         "%player%", target.getName(),
-                        "%value%", format(stat, current));
+                        "%value%", format(stat, target, current));
                 continue;
             }
 
             int next;
             switch (action) {
-                case "get" -> next = (int) Math.min((long) stat.max(), (long) current + amount);
+                case "get" -> next = (int) Math.min((long) stat.max().applyAsInt(target), (long) current + amount);
                 case "remove" -> next = Math.max(0, current - amount);
                 default -> next = 0; // reset
             }
@@ -332,7 +359,7 @@ public final class BlockManiaCommand implements TabExecutor {
             String[] replacements = {
                     "%stat%", plugin.tiny(stat.name()),
                     "%player%", target.getName(),
-                    "%value%", format(stat, next)
+                    "%value%", format(stat, target, next)
             };
             plugin.send(sender, "stat-updated", replacements);
             if (!target.equals(sender)) {
@@ -342,8 +369,9 @@ public final class BlockManiaCommand implements TabExecutor {
     }
 
     /** "12" oppure, per le cose con un massimo, "3/10". */
-    private String format(Stat stat, int value) {
-        return stat.max() == Integer.MAX_VALUE ? String.valueOf(value) : value + "/" + stat.max();
+    private String format(Stat stat, Player target, int value) {
+        int max = stat.max().applyAsInt(target);
+        return max == Integer.MAX_VALUE ? String.valueOf(value) : value + "/" + max;
     }
 
     // ------------------------------------------------------------------
@@ -378,6 +406,9 @@ public final class BlockManiaCommand implements TabExecutor {
                 result.add("blockshell");
                 result.add("coin");
             }
+            if (sender.hasPermission("blockmania.shop.edit")) {
+                result.add("shop");
+            }
             if (sender.hasPermission("blockmania.reload")) {
                 result.add("reload");
             }
@@ -388,6 +419,11 @@ public final class BlockManiaCommand implements TabExecutor {
                     result.addAll(plugin.getItems().keySet());
                 } else if (args.length == 3) {
                     addPlayers(result);
+                }
+            } else if (sub.equals("shop") && sender.hasPermission("blockmania.shop.edit")) {
+                if (args.length == 2) {
+                    result.add("ammo");
+                    result.add("sell");
                 }
             } else if (sub.equals("getblock") && canGet) {
                 if (args.length == 3) {

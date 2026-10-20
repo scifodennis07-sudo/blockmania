@@ -143,6 +143,50 @@ messages:
     type: error
     channel: actionbar
     text: "non puoi rompere questo blocco"
+  ammo-full:
+    type: warning
+    channel: actionbar
+    text: "hai gia le palle al massimo (%ammo%)"
+  ammo-bought:
+    type: success
+    channel: actionbar
+    text: "hai comprato %amount% palle per %price% %currency%"
+  shop-no-funds:
+    type: error
+    channel: actionbar
+    text: "non hai abbastanza %currency%: ti servono %price%, ne hai %balance%"
+  sell-no-shells:
+    type: error
+    channel: actionbar
+    text: "non hai nessuna blockshell da vendere"
+  sell-busy:
+    type: warning
+    channel: actionbar
+    text: "stai gia vendendo le tue blockshell"
+  sell-done:
+    type: success
+    channel: actionbar
+    text: "hai venduto %shells% blockshell e ricevuto %coins% coin"
+  sell-cancelled:
+    type: warning
+    channel: actionbar
+    text: "vendita interrotta: %shells% blockshell vendute per %coins% coin"
+  shop-spawned:
+    type: success
+    channel: actionbar
+    text: "negozio %shop% creato dove ti trovi"
+  missing-shop:
+    type: error
+    channel: actionbar
+    text: "manca il tipo di negozio (ammo oppure sell), uso: %usage%"
+  invalid-shop:
+    type: error
+    channel: actionbar
+    text: "negozio non valido: %value%, scegli tra: ammo, sell"
+  player-only:
+    type: error
+    channel: actionbar
+    text: "questo comando si usa solo in gioco"
   upgrade-bought:
     type: success
     channel: actionbar
@@ -199,6 +243,11 @@ help:
       usage: "/bm coin <get|remove|see|reset> [numero] [player]"
       description: "gestisce i coin (nessun limite), la valuta dei potenziamenti. get ne aggiunge, remove ne toglie, see li mostra, reset li azzera"
       example: "/bm coin get 100"
+    shop:
+      permission: blockmania.shop.edit
+      usage: "/bm shop <ammo|sell>"
+      description: "crea un negozio dove ti trovi: ammo per comprare le palle, sell per vendere le blockshell"
+      example: "/bm shop ammo"
     reload:
       permission: blockmania.reload
       usage: "/bm reload"
@@ -220,7 +269,10 @@ help:
 items:
   lanciapalle:
     material: STICK            # tipo di oggetto (STICK, BLAZE_ROD, FEATHER, ...)
-    custom-model-data: 100     # il numero del modello nel resource pack
+    custom-model-data: 1       # modello normale nel resource pack
+    aim-custom-model-data: 2   # modello mentre tieni premuto shift (sembra che miri)
+    projectile-custom-model-data: 1   # modello della palla lanciata (togli la riga = palla normale)
+    projectile-material: SNOWBALL     # item usato per il modello della palla lanciata
     name: "&b&lLanciapalle"
     lore:
       - ""
@@ -249,12 +301,14 @@ items:
 ammo:
   standardball:
     damage: 50                 # vita base che toglie a un blocco quando lo colpisce
+    max: 20                    # massimo di palle che si possono avere (0/20). Il potenziamento
+                               # "capacity" lo aumenta. Metti un numero molto alto per togliere il limite
 
 # ----------------------------------------------------------------------
 #  BLOCKSHELL: +1 per ogni blocco distrutto. Al massimo non si possono
 #  distruggere altri blocchi: si possono solo indebolire (l'ultimo colpo non fa danno).
 #  BLOCKCOIN: +1 per ogni blocco distrutto, senza limite.
-#  COIN: per ora si guadagnano solo con il comando (in futuro vendendo le shell).
+#  COIN: si guadagnano vendendo le blockshell al negozio (o con il comando).
 # ----------------------------------------------------------------------
 blockshell:
   max: 10
@@ -264,14 +318,86 @@ rewards:
   blockcoin: 1
 
 # ----------------------------------------------------------------------
+#  VALORE DELLE SHELL IN COIN (in base al livello del blocco rotto: 1-1 = lv1, 2-1 = lv2 ...)
+#    first      quanto vale una shell di lv1
+#    step       dal lv2 in poi vale (livello-1) * step  ->  lv2=5, lv3=10, lv4=15...
+#    overrides  per forzare un livello, ad esempio  7: 100
+#    command-level  livello delle shell create con /bm blockshell get
+# ----------------------------------------------------------------------
+shells:
+  command-level: 1
+  values:
+    first: 1
+    step: 5
+    overrides: {}
+
+# ----------------------------------------------------------------------
+#  NEGOZI (armor stand invisibili con una piuma in testa)
+#  Si creano con  /bm shop ammo  e  /bm shop sell  (oppure a mano: armor stand
+#  con la piuma e il custom-model-data indicato qui sotto).
+#  Segnaposto ologramma: %price% %currency% %balance% %ammo% %ammo_max% %shells% %coins%
+# ----------------------------------------------------------------------
+shops:
+  ammo:
+    material: FEATHER
+    custom-model-data: 1
+    ammo-type: standardball    # che palle riempie
+    currency: coin             # cosa si paga: coin, blockcoin oppure blockshell
+    price: 10                  # prezzo del rifornimento completo
+    hologram:
+      - "&e&lnegozio palle"
+      - "&7clicca per acquistare per &e%price% %currency%"
+      - "&8palle &f%ammo%&8/&f%ammo_max%"
+    sounds:
+      buy:
+        sound: "entity.experience_orb.pickup"
+        volume: 0.8
+        pitch: 1.2
+      error:
+        sound: "entity.villager.no"
+        volume: 0.8
+        pitch: 1.0
+  sell:
+    material: FEATHER
+    custom-model-data: 6
+    seconds-per-shell: 0.2     # tempo per vendere ogni shell
+    max-distance: 6            # se ti allontani di piu la vendita si ferma
+    hologram:
+      - "&6&lvendita blockshell"
+      - "&7tasto destro per vendere le tue blockshell"
+      - "&8hai &f%shells% &8shell, valgono &e%coins% coin"
+    bossbar:
+      # segnaposto: %groups% %total% (coin totali) %earned% (guadagnati finora) %done% %shells%
+      text: "&7vendita: %groups% &8| &atotale: &f%total% coin"
+      group-format: "&fx%count% &7lv%level% &e%coins% coin"   # una voce per livello
+      separator: " &8| "
+      color: GREEN
+      style: PROGRESS
+    sounds:
+      tick:
+        sound: "block.note_block.hat"
+        volume: 0.5
+        pitch: 1.6
+      done:
+        sound: "entity.player.levelup"
+        volume: 0.8
+        pitch: 1.5
+
+# Ologramma sopra lo stand (compare solo a chi lo guarda)
+hologram:
+  range: 5                     # da quanti blocchi si vede
+  height: 2.4                  # altezza sopra lo stand
+  update-ticks: 5              # ogni quanti tick si aggiorna (20 tick = 1 secondo)
+
+# ----------------------------------------------------------------------
 #  BOSSBAR (la barra in alto, sempre piena)
-#  Segnaposto: %ammo% %shell% %shell_max% %blockcoin% %coin%
+#  Segnaposto: %ammo% %ammo_max% %shell% %shell_max% %blockcoin% %coin%
 # ----------------------------------------------------------------------
 bossbar:
   enabled: true
   always-visible: true         # false = visibile solo con il lanciapalle in mano
   ammo-type: standardball      # di quale tipo di palla mostra il numero
-  text: "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"
+  text: "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"
   color: BLUE                  # PINK BLUE RED GREEN YELLOW PURPLE WHITE
   style: PROGRESS              # PROGRESS NOTCHED_6 NOTCHED_10 NOTCHED_12 NOTCHED_20
 
@@ -403,6 +529,35 @@ upgrades:
       - ""
       - "&8• &7livello &f%level%&8/&f%max%"
       - "&8• &7velocita attuale &b%current%"
+      - ""
+      - "&alivello massimo raggiunto"
+
+  capacity:
+    slot: 31
+    material: BUNDLE
+    name: "&a&lcapienza"
+    label: "capienza"
+    max-level: 5
+    per-level: 10              # +10 palle al massimo a livello
+    cost-base: 10
+    cost-increase: 10
+    lore:
+      - ""
+      - "&7aumenta quante palle puoi portare"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7massimo attuale &a%current%"
+      - "&8• &7prossimo livello &a%next%"
+      - ""
+      - "&8• &7costo &e%cost% &7%currency%"
+      - ""
+      - "&eclicca per potenziare"
+    lore-max:
+      - ""
+      - "&7aumenta quante palle puoi portare"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7massimo attuale &a%current%"
       - ""
       - "&alivello massimo raggiunto"
 

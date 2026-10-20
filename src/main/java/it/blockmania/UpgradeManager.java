@@ -26,7 +26,7 @@ import java.util.Locale;
  */
 public final class UpgradeManager implements Listener {
 
-    public static final List<String> IDS = List.of("damage", "cooldown", "speed");
+    public static final List<String> IDS = List.of("damage", "cooldown", "speed", "capacity");
     private static final int SIZE = 54;
 
     /** Serve a riconoscere la nostra GUI tra tutti gli inventari. */
@@ -95,6 +95,20 @@ public final class UpgradeManager implements Listener {
         return base + level * perLevel("speed");
     }
 
+    /** Palle in piu' che questo giocatore puo' tenere grazie al potenziamento capienza. */
+    public int capacityBonus(Player player) {
+        return (int) Math.round(getLevel(player, "capacity") * perLevel("capacity"));
+    }
+
+    private int defaultSlot(String id) {
+        return switch (id) {
+            case "damage" -> 20;
+            case "cooldown" -> 22;
+            case "speed" -> 24;
+            default -> 31;
+        };
+    }
+
     /** Danno reale delle palle di questo giocatore. */
     public int damage(Player player, String ammoType) {
         return damageAt(getLevel(player, "damage"), ammoType);
@@ -114,6 +128,8 @@ public final class UpgradeManager implements Listener {
         return switch (id) {
             case "damage" -> String.valueOf(damageAt(level, li.ammoType()));
             case "cooldown" -> BlockMania.fmt(Math.round(cooldownAt(level, li.cooldownSeconds()) * 100) / 100.0);
+            case "capacity" -> String.valueOf(plugin.getAmmo().getAmmoBaseMax(li.ammoType())
+                    + (int) Math.round(level * perLevel("capacity")));
             default -> BlockMania.fmt(Math.round(speedAt(level, li.speed()) * 100) / 100.0);
         };
     }
@@ -185,7 +201,7 @@ public final class UpgradeManager implements Listener {
                 plugin.getConfig().getStringList("upgrades.gui.close.lore"), general));
 
         for (String id : IDS) {
-            inv.setItem(slot("upgrades." + id, 20), upgradeItem(player, id, li));
+            inv.setItem(slot("upgrades." + id, defaultSlot(id)), upgradeItem(player, id, li));
         }
     }
 
@@ -227,7 +243,7 @@ public final class UpgradeManager implements Listener {
             return;
         }
         for (String id : IDS) {
-            if (slot == slot("upgrades." + id, 20)) {
+            if (slot == slot("upgrades." + id, defaultSlot(id))) {
                 buy(player, id, li, holder.inventory);
                 return;
             }
@@ -289,6 +305,9 @@ public final class UpgradeManager implements Listener {
             }
             ItemStack fresh = plugin.createItem(li, player);
             fresh.setAmount(item.getAmount());
+            if (player.isSneaking() && i == inv.getHeldItemSlot()) {
+                plugin.applyModel(fresh, li, true);
+            }
             inv.setItem(i, fresh);
         }
     }

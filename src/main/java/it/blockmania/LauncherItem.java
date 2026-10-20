@@ -11,6 +11,7 @@ public record LauncherItem(
         String name,
         List<String> lore,
         Integer customModelData,
+        Integer aimModelData,
         double speed,
         double cooldownSeconds,
         String ammoType) {

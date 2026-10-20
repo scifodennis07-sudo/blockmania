@@ -34,6 +34,7 @@ public final class BlockMania extends JavaPlugin {
     private NamespacedKey ammoKey;
     private NamespacedKey damageKey;
     private UpgradeManager upgrades;
+    private ShopManager shops;
     private final Map<String, LauncherItem> items = new LinkedHashMap<>();
     private AmmoManager ammo;
     private BlockManager blocks;
@@ -56,6 +57,7 @@ public final class BlockMania extends JavaPlugin {
         blocks.load();
         ammo.start();
         upgrades = new UpgradeManager(this);
+        shops = new ShopManager(this);
 
         PluginCommand command = getCommand("blockmania");
         if (command != null) {
@@ -66,6 +68,8 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new LauncherListener(this), this);
         getServer().getPluginManager().registerEvents(new CustomBlockListener(this), this);
         getServer().getPluginManager().registerEvents(upgrades, this);
+        getServer().getPluginManager().registerEvents(shops, this);
+        shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
 
         getLogger().info("BlockMania attivo. Oggetti: " + items.size()
@@ -74,6 +78,9 @@ public final class BlockMania extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (shops != null) {
+            shops.stop();
+        }
         if (ammo != null) {
             ammo.stop();
         }
@@ -105,6 +112,7 @@ public final class BlockMania extends JavaPlugin {
             }
 
             Integer cmd = s.contains("custom-model-data") ? s.getInt("custom-model-data") : null;
+            Integer aim = s.contains("aim-custom-model-data") ? s.getInt("aim-custom-model-data") : null;
 
             items.put(id, new LauncherItem(
                     id,
@@ -112,6 +120,7 @@ public final class BlockMania extends JavaPlugin {
                     s.getString("name", key),
                     s.getStringList("lore"),
                     cmd,
+                    aim,
                     s.getDouble("speed", 1.5),
                     Math.max(0, s.getDouble("cooldown", 0.5)),
                     s.getString("ammo", "standardball").toLowerCase(Locale.ROOT)));
@@ -142,6 +151,10 @@ public final class BlockMania extends JavaPlugin {
         return damageKey;
     }
 
+    public ShopManager getShops() {
+        return shops;
+    }
+
     public UpgradeManager getUpgrades() {
         return upgrades;
     }
@@ -152,6 +165,31 @@ public final class BlockMania extends JavaPlugin {
 
     public BlockManager getBlocks() {
         return blocks;
+    }
+
+    /** Se l'oggetto e' un nostro lanciapalle ritorna la sua definizione, altrimenti null. */
+    public LauncherItem getLauncher(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return null;
+        }
+        String id = item.getItemMeta().getPersistentDataContainer().get(itemKey, PersistentDataType.STRING);
+        return getItem(id);
+    }
+
+    /** Mette il modello normale o quello "di mira" al lanciapalle. Cambia solo se serve. */
+    public ItemStack applyModel(ItemStack item, LauncherItem li, boolean aim) {
+        Integer cmd = aim && li.aimModelData() != null ? li.aimModelData() : li.customModelData();
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return item;
+        }
+        Integer current = meta.hasCustomModelData() ? meta.getCustomModelData() : null;
+        if (java.util.Objects.equals(current, cmd)) {
+            return item;
+        }
+        meta.setCustomModelData(cmd);
+        item.setItemMeta(meta);
+        return item;
     }
 
     /** Numero massimo di blocco ottenibile (blocks.max nel config, mai oltre il limite del pack). */
