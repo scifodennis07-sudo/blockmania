@@ -9,6 +9,8 @@
 #    se cambi nome, lore o custom-model-data.
 # ======================================================================
 
+config-version: 2   # non toccare: serve al plugin per aggiornare il config
+
 # true = tutte le scritte in tiny text. false = scritte normali.
 tiny-text: true
 
@@ -144,7 +146,7 @@ messages:
     channel: actionbar
     text: "non puoi rompere questo blocco"
   ammo-full:
-    type: warning
+    type: error
     channel: actionbar
     text: "hai gia le palle al massimo (%ammo%)"
   ammo-bought:
@@ -160,7 +162,7 @@ messages:
     channel: actionbar
     text: "non hai nessuna blockshell da vendere"
   sell-busy:
-    type: warning
+    type: error
     channel: actionbar
     text: "stai gia vendendo le tue blockshell"
   sell-done:
@@ -168,13 +170,13 @@ messages:
     channel: actionbar
     text: "hai venduto %shells% blockshell e ricevuto %coins% coin"
   sell-cancelled:
-    type: warning
+    type: error
     channel: actionbar
     text: "vendita interrotta: %shells% blockshell vendute per %coins% coin"
   shop-spawned:
     type: success
     channel: actionbar
-    text: "negozio %shop% creato dove ti trovi"
+    text: "hai ricevuto la piuma del negozio %shop%, piazzala dove vuoi"
   missing-shop:
     type: error
     channel: actionbar
@@ -245,8 +247,8 @@ help:
       example: "/bm coin get 100"
     shop:
       permission: blockmania.shop.edit
-      usage: "/bm shop <ammo|sell>"
-      description: "crea un negozio dove ti trovi: ammo per comprare le palle, sell per vendere le blockshell"
+      usage: "/bm shop <ammo|sell> [player]"
+      description: "ti da la piuma per piazzare un negozio: ammo per comprare le palle, sell per vendere le blockshell"
       example: "/bm shop ammo"
     reload:
       permission: blockmania.reload
@@ -333,14 +335,20 @@ shells:
 
 # ----------------------------------------------------------------------
 #  NEGOZI (armor stand invisibili con una piuma in testa)
-#  Si creano con  /bm shop ammo  e  /bm shop sell  (oppure a mano: armor stand
-#  con la piuma e il custom-model-data indicato qui sotto).
+#  /bm shop ammo  e  /bm shop sell ti danno una piuma: piazzala per creare il negozio.
+#  Per toglierlo: shift + tasto sinistro a mano vuota (e' permesso solo a chi ha blockmania.shop.edit).
 #  Segnaposto ologramma: %price% %currency% %balance% %ammo% %ammo_max% %shells% %coins%
 # ----------------------------------------------------------------------
 shops:
   ammo:
     material: FEATHER
     custom-model-data: 1
+    item:                      # la piuma che si ottiene con /bm shop ammo
+      name: "&e&lnegozio palle"
+      lore:
+        - ""
+        - "&7piazzala per creare il negozio delle palle"
+        - "&8shift + sinistro a mano vuota per toglierlo"
     ammo-type: standardball    # che palle riempie
     currency: coin             # cosa si paga: coin, blockcoin oppure blockshell
     price: 10                  # prezzo del rifornimento completo
@@ -360,6 +368,12 @@ shops:
   sell:
     material: FEATHER
     custom-model-data: 6
+    item:                      # la piuma che si ottiene con /bm shop sell
+      name: "&6&lvendita blockshell"
+      lore:
+        - ""
+        - "&7piazzala per creare il negozio di vendita"
+        - "&8shift + sinistro a mano vuota per toglierlo"
     seconds-per-shell: 0.2     # tempo per vendere ogni shell
     max-distance: 6            # se ti allontani di piu la vendita si ferma
     hologram:

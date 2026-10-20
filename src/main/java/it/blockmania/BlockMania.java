@@ -46,6 +46,7 @@ public final class BlockMania extends JavaPlugin {
         ammoKey = new NamespacedKey(this, "ammo_type");
         damageKey = new NamespacedKey(this, "ammo_damage");
 
+        migrateConfig();
         saveDefaultConfig();
         // aggiunge al config eventuali voci nuove senza toccare quelle che hai cambiato
         getConfig().options().copyDefaults(true);
@@ -74,6 +75,26 @@ public final class BlockMania extends JavaPlugin {
 
         getLogger().info("BlockMania attivo. Oggetti: " + items.size()
                 + ", blocchi in gioco: " + blocks.count());
+    }
+
+    /** Aumenta questo numero (anche nel config.yml) quando cambiano le voci del config. */
+    private static final int CONFIG_VERSION = 2;
+
+    /** Se il config e' vecchio lo salva come copia di backup e ne crea uno nuovo. */
+    private void migrateConfig() {
+        java.io.File file = new java.io.File(getDataFolder(), "config.yml");
+        if (!file.exists()) {
+            return;
+        }
+        int version = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file)
+                .getInt("config-version", 0);
+        if (version >= CONFIG_VERSION) {
+            return;
+        }
+        java.io.File backup = new java.io.File(getDataFolder(), "config_vecchio_" + System.currentTimeMillis() + ".yml");
+        if (file.renameTo(backup)) {
+            getLogger().warning("Config vecchio: salvato come " + backup.getName() + ", ne ho creato uno nuovo.");
+        }
     }
 
     @Override
@@ -228,8 +249,8 @@ public final class BlockMania extends JavaPlugin {
      */
     public void send(CommandSender to, String key, String... replacements) {
         ConfigurationSection m = getConfig().getConfigurationSection("messages." + key);
-        String type = "info";
-        String channel = "chat";
+        String type = "error";
+        String channel = "actionbar";
         List<String> lines;
         if (m != null) {
             type = m.getString("type", "info");

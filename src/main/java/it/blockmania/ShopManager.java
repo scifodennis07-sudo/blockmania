@@ -4,6 +4,9 @@ import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
 import org.bukkit.FluidCollisionMode;
+import org.bukkit.GameMode;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -103,6 +106,10 @@ public final class ShopManager implements Listener {
         return plugin.getConfig();
     }
 
+    private static int defaultModel(String type) {
+        return type.equals("sell") ? 6 : 1;
+    }
+
     private boolean matches(ItemStack helmet, String type) {
         if (helmet == null) {
             return false;
@@ -111,7 +118,7 @@ public final class ShopManager implements Listener {
         if (material == null || helmet.getType() != material) {
             return false;
         }
-        int cmd = cfg().getInt("shops." + type + ".custom-model-data", 1);
+        int cmd = cfg().getInt("shops." + type + ".custom-model-data", defaultModel(type));
         ItemMeta meta = helmet.getItemMeta();
         return meta != null && meta.hasCustomModelData() && meta.getCustomModelData() == cmd;
     }
@@ -130,6 +137,36 @@ public final class ShopManager implements Listener {
         return null;
     }
 
+    /** La piuma che il giocatore piazza per creare il negozio. */
+    public ItemStack createShopItem(String type) {
+        ItemStack item = helmetFor(type);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(plugin.text(cfg().getString("shops." + type + ".item.name", type)));
+            List<Component> lore = new ArrayList<>();
+            for (String line : cfg().getStringList("shops." + type + ".item.lore")) {
+                lore.add(plugin.text(line));
+            }
+            meta.lore(lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack helmetFor(String type) {
+        Material material = Material.matchMaterial(cfg().getString("shops." + type + ".material", "FEATHER"));
+        if (material == null || !material.isItem()) {
+            material = Material.FEATHER;
+        }
+        ItemStack stack = new ItemStack(material);
+        ItemMeta meta = stack.getItemMeta();
+        if (meta != null) {
+            meta.setCustomModelData(cfg().getInt("shops." + type + ".custom-model-data", defaultModel(type)));
+            stack.setItemMeta(meta);
+        }
+        return stack;
+    }
+
     /** Crea uno stand invisibile con la piuma giusta in testa. */
     public ArmorStand spawn(Location location, String type) {
         Material material = Material.matchMaterial(cfg().getString("shops." + type + ".material", "FEATHER"));
@@ -139,7 +176,7 @@ public final class ShopManager implements Listener {
         ItemStack helmet = new ItemStack(material);
         ItemMeta meta = helmet.getItemMeta();
         if (meta != null) {
-            meta.setCustomModelData(cfg().getInt("shops." + type + ".custom-model-data", 1));
+            meta.setCustomModelData(cfg().getInt("shops." + type + ".custom-model-data", defaultModel(type)));
             helmet.setItemMeta(meta);
         }
         final ItemStack finalHelmet = helmet;
@@ -158,17 +195,63 @@ public final class ShopManager implements Listener {
     //  Protezione degli stand
     // ------------------------------------------------------------------
 
+    /** Si toglie con shift + tasto sinistro a mano vuota (solo con blockmania.shop.edit). */
     @EventHandler(ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
-        if (shopType(event.getEntity()) == null) {
+        String type = shopType(event.getEntity());
+        if (type == null) {
             return;
         }
+        event.setCancelled(true);
         if (event instanceof EntityDamageByEntityEvent byEntity
                 && byEntity.getDamager() instanceof Player p
-                && p.hasPermission("blockmania.shop.edit")) {
-            return; // chi puo' modificare i negozi li puo' rompere
+                && p.hasPermission("blockmania.shop.edit")
+                && p.isSneaking()
+                && p.getInventory().getItemInMainHand().getType().isAir()) {
+            event.getEntity().remove();
+            Holo h = holos.remove(p.getUniqueId());
+            if (h != null) {
+                h.display().remove();
+            }
+            Map<Integer, ItemStack> left = p.getInventory().addItem(createShopItem(type));
+            for (ItemStack extra : left.values()) {
+                p.getWorld().dropItem(p.getLocation(), extra);
+            }
         }
+    }
+
+    /** Piazzare la piuma del negozio crea lo stand. */
+    @EventHandler
+    public void onPlace(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND || event.getAction() != Action.RIGHT_CLICK_BLOCK
+                || event.getClickedBlock() == null) {
+            return;
+        }
+        ItemStack item = event.getItem();
+        if (item == null) {
+            return;
+        }
+        String type = null;
+        for (String t : TYPES) {
+            if (matches(item, t)) {
+                type = t;
+            }
+        }
+        if (type == null) {
+            return;
+        }
+        Player player = event.getPlayer();
         event.setCancelled(true);
+        if (!player.hasPermission("blockmania.shop.edit")) {
+            return;
+        }
+        Location at = event.getClickedBlock().getRelative(event.getBlockFace()).getLocation().add(0.5, 0, 0.5);
+        float yaw = Math.round((player.getLocation().getYaw() + 180f) / 45f) * 45f;
+        at.setYaw(yaw);
+        spawn(at, type);
+        if (player.getGameMode() != GameMode.CREATIVE) {
+            item.setAmount(item.getAmount() - 1);
+        }
     }
 
     @EventHandler

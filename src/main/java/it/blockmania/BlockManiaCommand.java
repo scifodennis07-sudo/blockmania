@@ -221,21 +221,21 @@ public final class BlockManiaCommand implements TabExecutor {
             plugin.send(sender, "no-permission");
             return;
         }
-        if (!(sender instanceof Player player)) {
-            plugin.send(sender, "player-only");
-            return;
-        }
         if (args.length < 2) {
             plugin.send(sender, "missing-shop", "%usage%", usage("shop"));
             return;
         }
         String type = args[1].toLowerCase(Locale.ROOT);
-        if (!type.equals("ammo") && !type.equals("sell")) {
+        if (!ShopManager.TYPES.contains(type)) {
             plugin.send(sender, "invalid-shop", "%value%", args[1]);
             return;
         }
-        plugin.getShops().spawn(player.getLocation(), type);
-        plugin.send(sender, "shop-spawned", "%shop%", type);
+        Player target = resolveTarget(sender, args, 2, "shop");
+        if (target == null) {
+            return;
+        }
+        give(target, plugin.getShops().createShopItem(type));
+        plugin.send(target, "shop-spawned", "%shop%", type);
     }
 
     // ---------- /blockmania ball <get|remove|see|reset> <tipo|all> [numero] [giocatore] ----------
@@ -414,16 +414,18 @@ public final class BlockManiaCommand implements TabExecutor {
             }
         } else {
             String sub = args[0].toLowerCase(Locale.ROOT);
-            if (sub.equals("get") && canGet) {
+            if (sub.equals("shop") && sender.hasPermission("blockmania.shop.edit")) {
+                if (args.length == 2) {
+                    result.add("ammo");
+                    result.add("sell");
+                } else if (args.length == 3) {
+                    addPlayers(result);
+                }
+            } else if (sub.equals("get") && canGet) {
                 if (args.length == 2) {
                     result.addAll(plugin.getItems().keySet());
                 } else if (args.length == 3) {
                     addPlayers(result);
-                }
-            } else if (sub.equals("shop") && sender.hasPermission("blockmania.shop.edit")) {
-                if (args.length == 2) {
-                    result.add("ammo");
-                    result.add("sell");
                 }
             } else if (sub.equals("getblock") && canGet) {
                 if (args.length == 3) {
