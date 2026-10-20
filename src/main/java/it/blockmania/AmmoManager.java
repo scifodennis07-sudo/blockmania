@@ -136,6 +136,14 @@ public final class AmmoManager {
         }
     }
 
+    private BossBar.Overlay parseOverlay(String name) {
+        try {
+            return BossBar.Overlay.valueOf(name.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return BossBar.Overlay.PROGRESS;
+        }
+    }
+
     private void tick() {
         FileConfiguration c = plugin.getConfig();
         boolean enabled = c.getBoolean("bossbar.enabled", true);
@@ -144,6 +152,7 @@ public final class AmmoManager {
         String template = c.getString("bossbar.text",
                 "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%coin%");
         BossBar.Color color = parseColor(c.getString("bossbar.color", "BLUE"));
+        BossBar.Overlay overlay = parseOverlay(c.getString("bossbar.style", "PROGRESS"));
         int shellMax = getShellMax();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
@@ -159,22 +168,22 @@ public final class AmmoManager {
                 continue;
             }
 
-            String text = template
-                    .replace("%ammo%", String.valueOf(getAmmo(player, type)))
-                    .replace("%shell%", String.valueOf(getShell(player)))
-                    .replace("%shell_max%", String.valueOf(shellMax))
-                    .replace("%coin%", String.valueOf(getCoin(player)));
-            Component title = plugin.color(text);
+            Component title = plugin.text(template,
+                    "%ammo%", String.valueOf(getAmmo(player, type)),
+                    "%shell%", String.valueOf(getShell(player)),
+                    "%shell_max%", String.valueOf(shellMax),
+                    "%coin%", String.valueOf(getCoin(player)));
 
             // la barra resta sempre piena: conta solo il testo
             if (bar == null) {
-                bar = BossBar.bossBar(title, 1.0f, color, BossBar.Overlay.PROGRESS);
+                bar = BossBar.bossBar(title, 1.0f, color, overlay);
                 bars.put(id, bar);
                 player.showBossBar(bar);
             } else {
                 bar.name(title);
                 bar.progress(1.0f);
                 bar.color(color);
+                bar.overlay(overlay);
             }
         }
         bars.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);

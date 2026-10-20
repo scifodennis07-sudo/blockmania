@@ -1,7 +1,6 @@
 package it.blockmania;
 
 import org.bukkit.Location;
-import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Snowball;
 import org.bukkit.event.EventHandler;
@@ -65,13 +64,13 @@ public final class LauncherListener implements Listener {
         Long last = uses.get(li.id());
         if (last != null && now - last < cooldownMs) {
             double remaining = (cooldownMs - (now - last)) / 1000.0;
-            player.sendActionBar(plugin.message("cooldown", "%time%", String.format("%.1f", remaining)));
+            plugin.send(player, "cooldown", "%time%", String.format("%.1f", remaining));
             return;
         }
 
         AmmoManager ammo = plugin.getAmmo();
         if (ammo.getAmmo(player, li.ammoType()) <= 0) {
-            player.sendActionBar(plugin.message("no-ammo"));
+            plugin.send(player, "no-ammo");
             return;
         }
         ammo.addAmmo(player, li.ammoType(), -1);
@@ -81,7 +80,7 @@ public final class LauncherListener implements Listener {
         Snowball ball = player.launchProjectile(Snowball.class, eye.getDirection().multiply(li.speed()));
         // segniamo la palla con il suo tipo, cosi' sappiamo quanto danno fa ai blocchi
         ball.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, li.ammoType());
-        player.getWorld().playSound(eye, Sound.ENTITY_SNOWBALL_THROW, 0.5f, 0.4f);
+        plugin.playConfiguredSound(eye, "items." + li.id());
     }
 
     @EventHandler

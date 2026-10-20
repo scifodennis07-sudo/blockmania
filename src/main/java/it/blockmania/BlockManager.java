@@ -4,7 +4,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
-import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
@@ -167,7 +166,7 @@ public final class BlockManager {
             if (shooter != null) {
                 AmmoManager stats = plugin.getAmmo();
                 if (stats.getShell(shooter) >= stats.getShellMax()) {
-                    shooter.sendActionBar(plugin.message("shell-full"));
+                    plugin.send(shooter, "shell-full");
                     return; // l'ultimo colpo non fa danno
                 }
                 FileConfiguration c = plugin.getConfig();
@@ -177,8 +176,11 @@ public final class BlockManager {
             blocks.remove(key(block));
             dirty = true;
             block.setType(Material.AIR, false);
-            world.spawnParticle(Particle.BLOCK, center, 40, 0.3, 0.3, 0.3, before);
-            world.playSound(center, Sound.BLOCK_STONE_BREAK, 1.0f, 1.0f);
+            int breakParticles = plugin.getConfig().getInt("effects.destroy.particles", 40);
+            if (breakParticles > 0) {
+                world.spawnParticle(Particle.BLOCK, center, breakParticles, 0.3, 0.3, 0.3, before);
+            }
+            plugin.playConfiguredSound(center, "effects.destroy");
             if (plugin.getConfig().getBoolean("blocks.drop-on-destroy", false)) {
                 world.dropItemNaturally(center, plugin.createBlockItem(t.number));
             }
@@ -188,7 +190,11 @@ public final class BlockManager {
         t.hp = newHp;
         dirty = true;
         block.setBlockData(dataFor(t.number, stageFor(t.hp, max)), false);
-        world.spawnParticle(Particle.BLOCK, center, 8, 0.25, 0.25, 0.25, before);
+        int hitParticles = plugin.getConfig().getInt("effects.hit.particles", 8);
+        if (hitParticles > 0) {
+            world.spawnParticle(Particle.BLOCK, center, hitParticles, 0.25, 0.25, 0.25, before);
+        }
+        plugin.playConfiguredSound(center, "effects.hit");
     }
 
     public void load() {

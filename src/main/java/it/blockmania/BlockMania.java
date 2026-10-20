@@ -3,15 +3,19 @@ package it.blockmania;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +23,11 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class BlockMania extends JavaPlugin {
+
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.builder()
+            .character('&')
+            .hexColors()
+            .build();
 
     private NamespacedKey itemKey;
     private NamespacedKey blockKey;
@@ -138,15 +147,106 @@ public final class BlockMania extends JavaPlugin {
         return Math.max(1, Math.min(BlockManager.MAX_BLOCKS, configured));
     }
 
-    /** Crea l'oggetto lanciapalle. */
+    // ------------------------------------------------------------------
+    //  Testi: tiny text, colori, messaggi standard
+    // ------------------------------------------------------------------
+
+    /** Applica il tiny text (se attivo nel config) a un testo. I numeri restano normali. */
+    public String tiny(String text) {
+        return getConfig().getBoolean("tiny-text", true) ? Tiny.convert(text) : text;
+    }
+
+    /** Trasforma "&aTesto" (e "&#rrggbb") in un testo colorato, senza corsivo. */
+    public Component color(String legacy) {
+        return LEGACY.deserialize(legacy).decoration(TextDecoration.ITALIC, false);
+    }
+
+    /** Nomi, lore e bossbar: tiny text, segnaposto sostituiti (coppie chiave, valore) e colori. */
+    public Component text(String template, String... replacements) {
+        String t = tiny(template);
+        for (int i = 0; i + 1 < replacements.length; i += 2) {
+            t = t.replace(replacements[i], replacements[i + 1]);
+        }
+        return color(t);
+    }
+
+    /**
+     * Invia un messaggio standard preso da "messages.<chiave>" nel config.
+     * Il tipo (error, success, info, warning) decide lo stile, il canale (chat o actionbar)
+     * decide dove appare.
+     */
+    public void send(CommandSender to, String key, String... replacements) {
+        ConfigurationSection m = getConfig().getConfigurationSection("messages." + key);
+        String type = "info";
+        String channel = "chat";
+        List<String> lines;
+        if (m != null) {
+            type = m.getString("type", "info");
+            channel = m.getString("channel", "chat");
+            lines = m.isList("text") ? m.getStringList("text") : List.of(m.getString("text", key));
+        } else {
+            lines = List.of(getConfig().getString("messages." + key, key));
+        }
+
+        String base = "styles." + type;
+        String baseColor = getConfig().getString(base + ".color", "&7");
+        String highlight = getConfig().getString(base + ".highlight", "&f");
+        String prefix = getConfig().getString(base + ".prefix", "");
+        String suffix = getConfig().getString(base + ".suffix", "");
+        boolean actionBar = channel.equalsIgnoreCase("actionbar") && to instanceof Player;
+
+        for (String line : lines) {
+            String t = tiny(prefix + line + suffix);
+            for (int i = 0; i + 1 < replacements.length; i += 2) {
+                t = t.replace(replacements[i], highlight + replacements[i + 1] + baseColor);
+            }
+            Component component = color(baseColor + t);
+            if (actionBar) {
+                ((Player) to).sendActionBar(component);
+                return;
+            }
+            to.sendMessage(component);
+        }
+    }
+
+    /** Suono preso dal config: <percorso>.sound / .volume / .pitch. Se il nome e' vuoto non suona. */
+    public void playConfiguredSound(Location location, String path) {
+        String name = getConfig().getString(path + ".sound", "");
+        if (name == null || name.isBlank() || location.getWorld() == null) {
+            return;
+        }
+        float volume = (float) getConfig().getDouble(path + ".volume", 1.0);
+        float pitch = (float) getConfig().getDouble(path + ".pitch", 1.0);
+        location.getWorld().playSound(location, name, volume, pitch);
+    }
+
+    /** 1.5 -> "1.5", 2.0 -> "2". */
+    public static String fmt(double value) {
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
+
+    // ------------------------------------------------------------------
+    //  Oggetti
+    // ------------------------------------------------------------------
+
+    /** Crea l'oggetto lanciapalle con nome e lore dal config. */
     public ItemStack createItem(LauncherItem li) {
+        String typeLabel = getConfig().getString("items." + li.id() + ".type", "Arma");
+        String[] r = {
+                "%damage%", String.valueOf(ammo.getDamage(li.ammoType())),
+                "%speed%", fmt(li.speed()),
+                "%cooldown%", fmt(li.cooldownSeconds()),
+                "%ammo%", tiny(li.ammoType()),
+                "%type%", tiny(typeLabel)
+        };
+
         ItemStack stack = new ItemStack(li.material());
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(color(li.name()));
+        meta.displayName(text(li.name(), r));
         if (!li.lore().isEmpty()) {
             List<Component> lore = new ArrayList<>();
             for (String line : li.lore()) {
-                lore.add(color(line));
+                lore.add(text(line, r));
             }
             meta.lore(lore);
         }
@@ -160,30 +260,29 @@ public final class BlockMania extends JavaPlugin {
 
     /** Crea l'oggetto da piazzare per il blocco numero N (la sua prima variante, N-1). */
     public ItemStack createBlockItem(int number) {
+        String typeLabel = getConfig().getString("blocks.types." + number,
+                getConfig().getString("blocks.default-type", "Standard"));
+        String[] r = {
+                "%number%", String.valueOf(number),
+                "%variant%", number + "-1",
+                "%health%", String.valueOf(blocks.maxHealth(number)),
+                "%stages%", String.valueOf(BlockManager.VARIANTS),
+                "%type%", tiny(typeLabel)
+        };
+
         ItemStack stack = new ItemStack(Material.NOTE_BLOCK);
         ItemMeta meta = stack.getItemMeta();
-        String name = getConfig().getString("blocks.item-name", "&eBlocco %number%")
-                .replace("%number%", String.valueOf(number));
-        meta.displayName(color(name));
+        meta.displayName(text(getConfig().getString("blocks.item-name", "&e&lBlocco %number%"), r));
+        List<String> loreLines = getConfig().getStringList("blocks.lore");
+        if (!loreLines.isEmpty()) {
+            List<Component> lore = new ArrayList<>();
+            for (String line : loreLines) {
+                lore.add(text(line, r));
+            }
+            meta.lore(lore);
+        }
         meta.getPersistentDataContainer().set(blockKey, PersistentDataType.INTEGER, number);
         stack.setItemMeta(meta);
         return stack;
-    }
-
-    /** Trasforma "&aTesto" in un testo colorato (senza corsivo). */
-    public Component color(String text) {
-        return LegacyComponentSerializer.legacyAmpersand()
-                .deserialize(text)
-                .decoration(TextDecoration.ITALIC, false);
-    }
-
-    /** Legge un messaggio dal config e sostituisce i segnaposto (coppie chiave, valore). */
-    public Component message(String key, String... replacements) {
-        String text = getConfig().getString("messages." + key, key);
-        for (int i = 0; i + 1 < replacements.length; i += 2) {
-            text = text.replace(replacements[i], replacements[i + 1]);
-        }
-        String prefix = getConfig().getString("messages.prefix", "");
-        return color(prefix + text);
     }
 }

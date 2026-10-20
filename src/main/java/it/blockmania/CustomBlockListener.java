@@ -60,7 +60,7 @@ public final class CustomBlockListener implements Listener {
         Player player = event.getPlayer();
         if (!player.hasPermission("blockmania.break")) {
             event.setCancelled(true);
-            player.sendActionBar(plugin.message("cannot-break"));
+            plugin.send(player, "cannot-break");
             return;
         }
         event.setDropItems(false);
@@ -109,7 +109,11 @@ public final class CustomBlockListener implements Listener {
         }
     }
 
-    /** Il tasto destro non deve cambiare la nota (ma si possono ancora piazzare blocchi accanto). */
+    /**
+     * Il tasto destro non deve cambiare la nota. Si nega l'uso del blocco cliccato ma si
+     * permette l'uso dell'oggetto in mano: cosi' puoi piazzare altri blocchi (anche altri
+     * note block) accanto o sopra senza toccare quello cliccato.
+     */
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
@@ -120,6 +124,7 @@ public final class CustomBlockListener implements Listener {
             return;
         }
         event.setUseInteractedBlock(Event.Result.DENY);
+        event.setUseItemInHand(Event.Result.ALLOW);
     }
 
     @EventHandler
