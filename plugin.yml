@@ -1,0 +1,29 @@
+name: BlockMania
+version: '1.6.0'
+main: it.blockmania.BlockMania
+api-version: '1.21'
+description: Oggetti speciali con modello custom
+commands:
+  blockmania:
+    description: Comandi di BlockMania
+    usage: /<command> get <oggetto> [giocatore]
+    aliases: [bm]
+permissions:
+  blockmania.get:
+    description: Permette di ottenere gli oggetti
+    default: op
+  blockmania.reload:
+    description: Permette di ricaricare il config
+    default: op
+  blockmania.stats:
+    description: Permette di gestire palle, blockshell e blockcoin
+    default: op
+  blockmania.shop.edit:
+    description: Permette di creare e rompere i negozi
+    default: op
+  blockmania.break:
+    description: Permette di rompere a mano i blocchi custom
+    default: op
+  blockmania.use:
+    description: Permette di usare gli oggetti
+    default: true
