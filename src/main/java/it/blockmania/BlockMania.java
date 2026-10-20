@@ -32,6 +32,8 @@ public final class BlockMania extends JavaPlugin {
     private NamespacedKey itemKey;
     private NamespacedKey blockKey;
     private NamespacedKey ammoKey;
+    private NamespacedKey damageKey;
+    private UpgradeManager upgrades;
     private final Map<String, LauncherItem> items = new LinkedHashMap<>();
     private AmmoManager ammo;
     private BlockManager blocks;
@@ -41,6 +43,7 @@ public final class BlockMania extends JavaPlugin {
         itemKey = new NamespacedKey(this, "launcher");
         blockKey = new NamespacedKey(this, "block");
         ammoKey = new NamespacedKey(this, "ammo_type");
+        damageKey = new NamespacedKey(this, "ammo_damage");
 
         saveDefaultConfig();
         // aggiunge al config eventuali voci nuove senza toccare quelle che hai cambiato
@@ -52,6 +55,7 @@ public final class BlockMania extends JavaPlugin {
         blocks = new BlockManager(this);
         blocks.load();
         ammo.start();
+        upgrades = new UpgradeManager(this);
 
         PluginCommand command = getCommand("blockmania");
         if (command != null) {
@@ -61,6 +65,7 @@ public final class BlockMania extends JavaPlugin {
         }
         getServer().getPluginManager().registerEvents(new LauncherListener(this), this);
         getServer().getPluginManager().registerEvents(new CustomBlockListener(this), this);
+        getServer().getPluginManager().registerEvents(upgrades, this);
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
 
         getLogger().info("BlockMania attivo. Oggetti: " + items.size()
@@ -131,6 +136,14 @@ public final class BlockMania extends JavaPlugin {
 
     public NamespacedKey getAmmoKey() {
         return ammoKey;
+    }
+
+    public NamespacedKey getDamageKey() {
+        return damageKey;
+    }
+
+    public UpgradeManager getUpgrades() {
+        return upgrades;
     }
 
     public AmmoManager getAmmo() {
@@ -229,15 +242,23 @@ public final class BlockMania extends JavaPlugin {
     //  Oggetti
     // ------------------------------------------------------------------
 
-    /** Crea l'oggetto lanciapalle con nome e lore dal config. */
     public ItemStack createItem(LauncherItem li) {
-        String typeLabel = getConfig().getString("items." + li.id() + ".type", "Arma");
+        return createItem(li, null);
+    }
+
+    /**
+     * Crea il lanciapalle con nome e lore dal config. Se si indica il giocatore, i valori
+     * mostrati nella lore (danno, velocita', ricarica) tengono conto dei suoi potenziamenti.
+     */
+    public ItemStack createItem(LauncherItem li, Player owner) {
+        int damage = owner == null ? ammo.getDamage(li.ammoType()) : upgrades.damage(owner, li.ammoType());
+        double speed = owner == null ? li.speed() : upgrades.speed(owner, li.speed());
+        double cooldown = owner == null ? li.cooldownSeconds() : upgrades.cooldown(owner, li.cooldownSeconds());
         String[] r = {
-                "%damage%", String.valueOf(ammo.getDamage(li.ammoType())),
-                "%speed%", fmt(li.speed()),
-                "%cooldown%", fmt(li.cooldownSeconds()),
-                "%ammo%", tiny(li.ammoType()),
-                "%type%", tiny(typeLabel)
+                "%damage%", String.valueOf(damage),
+                "%speed%", fmt(Math.round(speed * 100) / 100.0),
+                "%cooldown%", fmt(Math.round(cooldown * 100) / 100.0),
+                "%ammo%", tiny(li.ammoType())
         };
 
         ItemStack stack = new ItemStack(li.material());
@@ -260,14 +281,10 @@ public final class BlockMania extends JavaPlugin {
 
     /** Crea l'oggetto da piazzare per il blocco numero N (la sua prima variante, N-1). */
     public ItemStack createBlockItem(int number) {
-        String typeLabel = getConfig().getString("blocks.types." + number,
-                getConfig().getString("blocks.default-type", "Standard"));
         String[] r = {
                 "%number%", String.valueOf(number),
                 "%variant%", number + "-1",
-                "%health%", String.valueOf(blocks.maxHealth(number)),
-                "%stages%", String.valueOf(BlockManager.VARIANTS),
-                "%type%", tiny(typeLabel)
+                "%health%", String.valueOf(blocks.maxHealth(number))
         };
 
         ItemStack stack = new ItemStack(Material.NOTE_BLOCK);

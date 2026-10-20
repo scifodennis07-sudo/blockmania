@@ -12,6 +12,10 @@
 # true = tutte le scritte in tiny text. false = scritte normali.
 tiny-text: true
 
+# Cosa compare quando si preme TAB al posto di un numero
+tab:
+  number: "<numero>"
+
 # ----------------------------------------------------------------------
 #  STILI DEI MESSAGGI
 #  Ogni messaggio ha un "type" che sceglie lo stile qui sotto.
@@ -47,32 +51,86 @@ styles:
 #    type     error / success / info / warning (oppure uno stile tuo qui sopra)
 #    channel  chat = in chat, actionbar = sopra l'hotbar
 #    text     il testo (una riga, oppure una lista di righe)
+#  Segnaposto: %value% = quello che il giocatore ha scritto, %usage% = come si usa
+#  il comando, e altri indicati caso per caso.
 # ----------------------------------------------------------------------
 messages:
   no-permission:
     type: error
-    channel: chat
-    text: "non hai il permesso per farlo"
-  player-not-found:
+    channel: actionbar
+    text: "non hai il permesso per usare questo comando"
+  unknown-subcommand:
     type: error
-    channel: chat
-    text: "giocatore non trovato, deve essere online"
-  invalid-number:
+    channel: actionbar
+    text: "comando sconosciuto: %value%, scrivi /bm help per vedere la lista"
+  missing-item:
     type: error
-    channel: chat
-    text: "inserisci un numero valido, maggiore di 0"
+    channel: actionbar
+    text: "manca il nome dell'oggetto, uso: %usage%, disponibili: %items%"
   unknown-item:
     type: error
-    channel: chat
-    text: "oggetto sconosciuto: %item%"
+    channel: actionbar
+    text: "oggetto sconosciuto: %value%, disponibili: %items%"
+  missing-block:
+    type: error
+    channel: actionbar
+    text: "manca il codice del blocco, uso: %usage% (da 1-1 a %max%-1)"
+  invalid-block:
+    type: error
+    channel: actionbar
+    text: "codice blocco non valido: %value%, scrivilo come numero-1, da 1-1 a %max%-1"
+  missing-action:
+    type: error
+    channel: actionbar
+    text: "manca l'azione, scegli tra: %actions%, uso: %usage%"
+  invalid-action:
+    type: error
+    channel: actionbar
+    text: "azione non valida: %value%, scegli tra: %actions%"
+  missing-type:
+    type: error
+    channel: actionbar
+    text: "manca il tipo di palla (%types% oppure all), uso: %usage%"
   unknown-ammo:
     type: error
-    channel: chat
-    text: "tipo di palla sconosciuto: %type%"
-  block-not-found:
+    channel: actionbar
+    text: "tipo di palla sconosciuto: %value%, scegli tra: %types% oppure all"
+  missing-number:
     type: error
+    channel: actionbar
+    text: "manca il numero, uso: %usage%"
+  invalid-number:
+    type: error
+    channel: actionbar
+    text: "numero non valido: %value%, deve essere un intero maggiore di 0"
+  player-not-found:
+    type: error
+    channel: actionbar
+    text: "giocatore non trovato o offline: %value%"
+  missing-player:
+    type: error
+    channel: actionbar
+    text: "da console devi indicare il giocatore, uso: %usage%"
+  given:
+    type: success
+    channel: actionbar
+    text: "hai ricevuto %item%"
+  given-other:
+    type: success
+    channel: actionbar
+    text: "hai dato %item% a %player%"
+  stat-updated:
+    type: success
+    channel: actionbar
+    text: "%player% ora ha %value% %stat%"
+  see:
+    type: info
     channel: chat
-    text: "blocco non valido, usa un numero da 1-1 a %max%-1"
+    text: "%player% ha %value% %stat%"
+  reloaded:
+    type: success
+    channel: actionbar
+    text: "config ricaricato, oggetti caricati: %count%"
   no-ammo:
     type: error
     channel: actionbar
@@ -85,66 +143,100 @@ messages:
     type: error
     channel: actionbar
     text: "non puoi rompere questo blocco"
-  cooldown:
+  upgrade-bought:
+    type: success
+    channel: actionbar
+    text: "potenziamento %upgrade% al livello %level% per %cost% %currency%"
+  upgrade-max:
     type: warning
     channel: actionbar
-    text: "ricarica in corso: %time%s"
-  given:
-    type: success
-    channel: chat
-    text: "hai ricevuto %item%"
-  given-other:
-    type: success
-    channel: chat
-    text: "hai dato %item% a %player%"
-  stat-updated:
-    type: success
-    channel: chat
-    text: "%player% ora ha %value% %stat%"
-  see:
-    type: info
-    channel: chat
-    text: "%player% ha %value% %stat%"
-  reloaded:
-    type: success
-    channel: chat
-    text: "config ricaricato, oggetti caricati: %count%"
-  help:
-    type: info
-    channel: chat
-    text:
-      - "comandi disponibili:"
-      - "/bm get <oggetto> [player]"
-      - "/bm getblock <numero>-1 [player]"
-      - "/bm ball <get|remove|see|reset> <tipo|all> [numero] [player]"
-      - "/bm blockcoin <get|remove|see|reset> [numero] [player]"
-      - "/bm blockshell <get|remove|see|reset> [numero] [player]"
-      - "/bm reload"
+    text: "il potenziamento %upgrade% e' gia al livello massimo"
+  upgrade-no-funds:
+    type: error
+    channel: actionbar
+    text: "non hai abbastanza %currency%: ti servono %cost%, ne hai %balance%"
+
+# ----------------------------------------------------------------------
+#  /blockmania help  (sempre in chat)
+#  Ogni comando ha: usage (come si scrive), description, example e permission
+#  (chi non ha il permesso non vede quel comando). usage viene usato anche
+#  nei messaggi di errore.
+# ----------------------------------------------------------------------
+help:
+  header: "&6&lblockmania &8- &7guida ai comandi"
+  usage-line: "&e%usage%"
+  description-line: "&8  » &7%description%"
+  example-line: "&8  » &7esempio: &f%example%"
+  footer: "&8<> = obbligatorio, [] = facoltativo, se non scrivi il player vale per te"
+  commands:
+    get:
+      permission: blockmania.get
+      usage: "/bm get <oggetto> [player]"
+      description: "ti da un oggetto, come il lanciapalle. se scrivi un player lo da a lui"
+      example: "/bm get lanciapalle"
+    getblock:
+      permission: blockmania.get
+      usage: "/bm getblock <numero>-1 [player]"
+      description: "ti da un blocco da piazzare. il numero e' il tipo di blocco, il -1 e' sempre uguale"
+      example: "/bm getblock 3-1"
+    ball:
+      permission: blockmania.stats
+      usage: "/bm ball <get|remove|see|reset> <tipo|all> [numero] [player]"
+      description: "gestisce le palle: get ne aggiunge, remove ne toglie, see le mostra, reset le azzera. all vale per tutti i tipi"
+      example: "/bm ball get standardball 20"
+    blockshell:
+      permission: blockmania.stats
+      usage: "/bm blockshell <get|remove|see|reset> [numero] [player]"
+      description: "gestisce le blockshell (hanno un massimo). get ne aggiunge, remove ne toglie, see le mostra, reset le azzera"
+      example: "/bm blockshell remove 3"
+    blockcoin:
+      permission: blockmania.stats
+      usage: "/bm blockcoin <get|remove|see|reset> [numero] [player]"
+      description: "gestisce i blockcoin (nessun limite). get ne aggiunge, remove ne toglie, see li mostra, reset li azzera"
+      example: "/bm blockcoin see doppiax"
+    coin:
+      permission: blockmania.stats
+      usage: "/bm coin <get|remove|see|reset> [numero] [player]"
+      description: "gestisce i coin (nessun limite), la valuta dei potenziamenti. get ne aggiunge, remove ne toglie, see li mostra, reset li azzera"
+      example: "/bm coin get 100"
+    reload:
+      permission: blockmania.reload
+      usage: "/bm reload"
+      description: "ricarica il config senza riavviare il server"
+      example: ""
+    help:
+      permission: ""
+      usage: "/bm help"
+      description: "mostra questa guida"
+      example: ""
 
 # ----------------------------------------------------------------------
 #  OGGETTI
 #  Ogni voce e' un oggetto che si ottiene con  /blockmania get <nome-voce>
 #  (scrivi il nome della voce in minuscolo)
-#  Segnaposto per name e lore: %damage% %speed% %cooldown% %ammo% %type%
+#  Segnaposto per name e lore: %damage% %speed% %cooldown% %ammo%
+#  (i valori mostrano gia' i potenziamenti del giocatore)
 # ----------------------------------------------------------------------
 items:
   lanciapalle:
     material: STICK            # tipo di oggetto (STICK, BLAZE_ROD, FEATHER, ...)
     custom-model-data: 100     # il numero del modello nel resource pack
     name: "&b&lLanciapalle"
-    type: "Arma"               # la "tipologia" mostrata nella lore
     lore:
       - ""
-      - "&7spara palle di neve con il"
-      - "&7tasto destro del mouse"
+      - "&7spara palle di neve contro i blocchi"
+      - "&7per indebolirli e distruggerli"
       - ""
-      - "&8• &7danno &f%damage%"
-      - "&8• &7velocita &f%speed%"
-      - "&8• &7ricarica &f%cooldown%s"
+      - "&8• &7danno &c%damage%"
+      - "&8• &7velocita &b%speed%"
+      - "&8• &7ricarica &e%cooldown%s"
       - "&8• &7munizioni &f%ammo%"
-      - "&8• &7tipo &f%type%"
-    speed: 1.5                 # velocita' della palla (quella normale e' 1.5)
-    cooldown: 0.5              # secondi tra un lancio e l'altro
+      - ""
+      - "&6tasto destro &7spara"
+      - "&6q &7cambia munizione"
+      - "&6shift + sinistro &7apre i potenziamenti"
+    speed: 1.5                 # velocita' base della palla (quella normale e' 1.5)
+    cooldown: 0.5              # secondi base tra uno sparo e l'altro
     ammo: standardball         # che tipo di palle consuma (vedi "ammo")
     sound: "entity.snowball.throw"   # suono dello sparo (vuoto = nessun suono)
     volume: 0.5
@@ -156,12 +248,13 @@ items:
 # ----------------------------------------------------------------------
 ammo:
   standardball:
-    damage: 50                 # vita che toglie a un blocco quando lo colpisce
+    damage: 50                 # vita base che toglie a un blocco quando lo colpisce
 
 # ----------------------------------------------------------------------
 #  BLOCKSHELL: +1 per ogni blocco distrutto. Al massimo non si possono
 #  distruggere altri blocchi: si possono solo indebolire (l'ultimo colpo non fa danno).
 #  BLOCKCOIN: +1 per ogni blocco distrutto, senza limite.
+#  COIN: per ora si guadagnano solo con il comando (in futuro vendendo le shell).
 # ----------------------------------------------------------------------
 blockshell:
   max: 10
@@ -172,19 +265,150 @@ rewards:
 
 # ----------------------------------------------------------------------
 #  BOSSBAR (la barra in alto, sempre piena)
-#  Segnaposto: %ammo% %shell% %shell_max% %coin%
+#  Segnaposto: %ammo% %shell% %shell_max% %blockcoin% %coin%
 # ----------------------------------------------------------------------
 bossbar:
   enabled: true
   always-visible: true         # false = visibile solo con il lanciapalle in mano
   ammo-type: standardball      # di quale tipo di palla mostra il numero
-  text: "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%coin%"
+  text: "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"
   color: BLUE                  # PINK BLUE RED GREEN YELLOW PURPLE WHITE
   style: PROGRESS              # PROGRESS NOTCHED_6 NOTCHED_10 NOTCHED_12 NOTCHED_20
 
 # ----------------------------------------------------------------------
+#  POTENZIAMENTI (GUI a 6 righe: shift + tasto sinistro con il lanciapalle)
+#  I livelli sono del giocatore e valgono per tutti i suoi lanciapalle.
+#  Per ogni potenziamento:
+#    slot (0-53)   posto nella GUI           max-level   livello massimo
+#    per-level     quanto cambia a livello   cost-base    costo del livello 1
+#    cost-increase quanto sale il costo a ogni livello
+#    material, name, label, lore, lore-max   aspetto
+#  Segnaposto: %level% %max% %current% %next% %cost% %currency% %balance%
+# ----------------------------------------------------------------------
+upgrades:
+  currency: coin               # cosa si spende: coin, blockcoin oppure blockshell
+  gui:
+    title: "&8potenziamenti"
+    filler:
+      material: BLACK_STAINED_GLASS_PANE
+      name: " "
+    info:
+      slot: 4
+      material: GOLD_INGOT
+      name: "&6&lportafoglio"
+      lore:
+        - ""
+        - "&8• &7coin &a%coin%"
+        - "&8• &7blockcoin &e%blockcoin%"
+        - "&8• &7blockshell &6%shell%&8/&6%shell_max%"
+        - "&8• &7palle &f%ammo%"
+    close:
+      slot: 49
+      material: BARRIER
+      name: "&c&lchiudi"
+      lore: []
+    sounds:
+      open:
+        sound: "block.chest.open"
+        volume: 0.6
+        pitch: 1.2
+      success:
+        sound: "entity.player.levelup"
+        volume: 0.6
+        pitch: 1.5
+      error:
+        sound: "entity.villager.no"
+        volume: 0.8
+        pitch: 1.0
+  damage:
+    slot: 20
+    material: BLAZE_POWDER
+    name: "&c&ldanno"
+    label: "danno"
+    max-level: 10
+    per-level: 10              # +10 danno a livello
+    cost-base: 5
+    cost-increase: 5
+    lore:
+      - ""
+      - "&7aumenta il danno delle tue palle"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7danno attuale &c%current%"
+      - "&8• &7prossimo livello &a%next%"
+      - ""
+      - "&8• &7costo &e%cost% &7%currency%"
+      - ""
+      - "&eclicca per potenziare"
+    lore-max:
+      - ""
+      - "&7aumenta il danno delle tue palle"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7danno attuale &c%current%"
+      - ""
+      - "&alivello massimo raggiunto"
+  cooldown:
+    slot: 22
+    material: CLOCK
+    name: "&e&lricarica"
+    label: "ricarica"
+    max-level: 8
+    per-level: 0.05            # -0.05 secondi a livello
+    min: 0.1                   # la ricarica non scende mai sotto questo valore
+    cost-base: 5
+    cost-increase: 5
+    lore:
+      - ""
+      - "&7riduce l'attesa tra uno sparo e l'altro"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7ricarica attuale &e%current%s"
+      - "&8• &7prossimo livello &a%next%s"
+      - ""
+      - "&8• &7costo &e%cost% &7%currency%"
+      - ""
+      - "&eclicca per potenziare"
+    lore-max:
+      - ""
+      - "&7riduce l'attesa tra uno sparo e l'altro"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7ricarica attuale &e%current%s"
+      - ""
+      - "&alivello massimo raggiunto"
+  speed:
+    slot: 24
+    material: FEATHER
+    name: "&b&lvelocita"
+    label: "velocita"
+    max-level: 10
+    per-level: 0.1             # +0.1 velocita a livello
+    cost-base: 5
+    cost-increase: 5
+    lore:
+      - ""
+      - "&7le palle viaggiano piu veloci"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7velocita attuale &b%current%"
+      - "&8• &7prossimo livello &a%next%"
+      - ""
+      - "&8• &7costo &e%cost% &7%currency%"
+      - ""
+      - "&eclicca per potenziare"
+    lore-max:
+      - ""
+      - "&7le palle viaggiano piu veloci"
+      - ""
+      - "&8• &7livello &f%level%&8/&f%max%"
+      - "&8• &7velocita attuale &b%current%"
+      - ""
+      - "&alivello massimo raggiunto"
+
+# ----------------------------------------------------------------------
 #  BLOCCHI CUSTOM (note block)
-#  Segnaposto per item-name e lore: %number% %variant% %health% %stages% %type%
+#  Segnaposto per item-name e lore: %number% %variant% %health%
 # ----------------------------------------------------------------------
 blocks:
   max: 114                     # fino a che numero si ottiene con /bm getblock N-1
@@ -195,12 +419,8 @@ blocks:
     - "&7blocco resistente, si distrugge"
     - "&7a colpi di palla di neve"
     - ""
-    - "&8• &7vita &f%health%"
-    - "&8• &7stadi di danno &f%stages%"
-    - "&8• &7tipo &f%type%"
+    - "&8• &7vita &a%health%"
     - "&8• &7codice &f%variant%"
-  default-type: "Standard"     # tipologia di tutti i blocchi...
-  types: {}                    # ...tranne quelli indicati qui, ad esempio:  1: "Cerchio"
   drop-on-destroy: false       # true = quando la vita arriva a 0 il blocco lascia l'oggetto
   health:
     base: 1000                 # vita del blocco 1

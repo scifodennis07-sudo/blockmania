@@ -17,13 +17,14 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Gestisce i numeri "virtuali" di ogni giocatore (palle, blockshell, blockcoin)
+ * Gestisce i numeri "virtuali" di ogni giocatore (palle, blockshell, blockcoin, coin)
  * e la bossbar che li mostra.
  */
 public final class AmmoManager {
 
     private static final String SHELL = "blockshell";
-    private static final String COIN = "blockcoin";
+    private static final String BLOCKCOIN = "blockcoin";
+    private static final String COIN = "coin";
 
     private final BlockMania plugin;
     private final Map<UUID, BossBar> bars = new HashMap<>();
@@ -73,12 +74,12 @@ public final class AmmoManager {
         return s == null ? Set.of() : s.getKeys(false);
     }
 
-    /** Danno che questo tipo di palla fa a un blocco. */
+    /** Danno base che questo tipo di palla fa a un blocco. */
     public int getDamage(String type) {
         return plugin.getConfig().getInt("ammo." + type.toLowerCase(Locale.ROOT) + ".damage", 50);
     }
 
-    // ---------- blockshell (con massimo) e blockcoin (senza limite) ----------
+    // ---------- blockshell (con massimo), blockcoin e coin (senza limite) ----------
 
     public int getShellMax() {
         return Math.max(1, plugin.getConfig().getInt("blockshell.max", 10));
@@ -92,12 +93,37 @@ public final class AmmoManager {
         setValue(player, SHELL, Math.min(value, getShellMax()));
     }
 
+    public int getBlockCoin(Player player) {
+        return getValue(player, BLOCKCOIN);
+    }
+
+    public void setBlockCoin(Player player, int value) {
+        setValue(player, BLOCKCOIN, value);
+    }
+
     public int getCoin(Player player) {
         return getValue(player, COIN);
     }
 
     public void setCoin(Player player, int value) {
         setValue(player, COIN, value);
+    }
+
+    /** Saldo di una valuta per nome: coin, blockcoin oppure blockshell. */
+    public int getBalance(Player player, String currency) {
+        return switch (currency.toLowerCase(Locale.ROOT)) {
+            case "blockcoin" -> getBlockCoin(player);
+            case "blockshell" -> getShell(player);
+            default -> getCoin(player);
+        };
+    }
+
+    public void setBalance(Player player, String currency, int value) {
+        switch (currency.toLowerCase(Locale.ROOT)) {
+            case "blockcoin" -> setBlockCoin(player, value);
+            case "blockshell" -> setShell(player, value);
+            default -> setCoin(player, value);
+        }
     }
 
     // ---------- bossbar ----------
@@ -150,7 +176,8 @@ public final class AmmoManager {
         boolean always = c.getBoolean("bossbar.always-visible", true);
         String type = c.getString("bossbar.ammo-type", "standardball").toLowerCase(Locale.ROOT);
         String template = c.getString("bossbar.text",
-                "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%coin%");
+                "&bstandardball: &f%ammo% &8| &6blockshell: &f%shell%/%shell_max% "
+                        + "&8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%");
         BossBar.Color color = parseColor(c.getString("bossbar.color", "BLUE"));
         BossBar.Overlay overlay = parseOverlay(c.getString("bossbar.style", "PROGRESS"));
         int shellMax = getShellMax();
@@ -172,6 +199,7 @@ public final class AmmoManager {
                     "%ammo%", String.valueOf(getAmmo(player, type)),
                     "%shell%", String.valueOf(getShell(player)),
                     "%shell_max%", String.valueOf(shellMax),
+                    "%blockcoin%", String.valueOf(getBlockCoin(player)),
                     "%coin%", String.valueOf(getCoin(player)));
 
             // la barra resta sempre piena: conta solo il testo

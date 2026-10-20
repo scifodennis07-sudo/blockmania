@@ -19,7 +19,7 @@ import java.util.UUID;
 public final class LauncherListener implements Listener {
 
     private final BlockMania plugin;
-    /** Ultimo lancio di ogni giocatore, per ogni oggetto (in millisecondi). */
+    /** Ultimo sparo di ogni giocatore, per ogni oggetto (in millisecondi). */
     private final Map<UUID, Map<String, Long>> lastUse = new HashMap<>();
 
     public LauncherListener(BlockMania plugin) {
@@ -29,10 +29,6 @@ public final class LauncherListener implements Listener {
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
-        Action action = event.getAction();
-        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
 
@@ -50,22 +46,37 @@ public final class LauncherListener implements Listener {
             return;
         }
 
+        Player player = event.getPlayer();
+        Action action = event.getAction();
+
+        // shift + tasto sinistro: apre la GUI dei potenziamenti
+        if (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK) {
+            if (player.isSneaking() && player.hasPermission("blockmania.use")) {
+                event.setCancelled(true);
+                plugin.getUpgrades().open(player, li);
+            }
+            return;
+        }
+
+        // tasto destro: spara
+        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) {
+            return;
+        }
+
         // e' un nostro oggetto: non deve fare altro (es. aprire casse)
         event.setCancelled(true);
 
-        Player player = event.getPlayer();
         if (!player.hasPermission("blockmania.use")) {
             return;
         }
 
+        UpgradeManager up = plugin.getUpgrades();
         long now = System.currentTimeMillis();
-        long cooldownMs = (long) (li.cooldownSeconds() * 1000);
+        long cooldownMs = (long) (up.cooldown(player, li.cooldownSeconds()) * 1000);
         Map<String, Long> uses = lastUse.computeIfAbsent(player.getUniqueId(), k -> new HashMap<>());
         Long last = uses.get(li.id());
         if (last != null && now - last < cooldownMs) {
-            double remaining = (cooldownMs - (now - last)) / 1000.0;
-            plugin.send(player, "cooldown", "%time%", String.format("%.1f", remaining));
-            return;
+            return; // in ricarica: nessun messaggio, il giocatore non deve sapere il tempo
         }
 
         AmmoManager ammo = plugin.getAmmo();
@@ -77,9 +88,12 @@ public final class LauncherListener implements Listener {
         uses.put(li.id(), now);
 
         Location eye = player.getEyeLocation();
-        Snowball ball = player.launchProjectile(Snowball.class, eye.getDirection().multiply(li.speed()));
-        // segniamo la palla con il suo tipo, cosi' sappiamo quanto danno fa ai blocchi
+        Snowball ball = player.launchProjectile(Snowball.class,
+                eye.getDirection().multiply(up.speed(player, li.speed())));
+        // segniamo la palla con il suo tipo e il suo danno (potenziamenti compresi)
         ball.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, li.ammoType());
+        ball.getPersistentDataContainer().set(plugin.getDamageKey(), PersistentDataType.INTEGER,
+                up.damage(player, li.ammoType()));
         plugin.playConfiguredSound(eye, "items." + li.id());
     }
 

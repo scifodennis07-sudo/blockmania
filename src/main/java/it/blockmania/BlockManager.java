@@ -171,7 +171,7 @@ public final class BlockManager {
                 }
                 FileConfiguration c = plugin.getConfig();
                 stats.setShell(shooter, stats.getShell(shooter) + Math.max(0, c.getInt("rewards.blockshell", 1)));
-                stats.setCoin(shooter, stats.getCoin(shooter) + Math.max(0, c.getInt("rewards.blockcoin", 1)));
+                stats.setBlockCoin(shooter, stats.getBlockCoin(shooter) + Math.max(0, c.getInt("rewards.blockcoin", 1)));
             }
             blocks.remove(key(block));
             dirty = true;
