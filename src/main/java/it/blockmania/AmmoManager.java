@@ -314,7 +314,7 @@ public final class AmmoManager {
                 continue;
             }
 
-            Component title = plugin.text(template,
+            Component title = plugin.bossText(template,
                     "%ammo%", String.valueOf(getAmmo(player, type)),
                     "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
                     "%shell%", String.valueOf(getShell(player)),

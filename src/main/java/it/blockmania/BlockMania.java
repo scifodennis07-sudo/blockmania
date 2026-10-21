@@ -38,6 +38,7 @@ public final class BlockMania extends JavaPlugin {
     private final Map<String, LauncherItem> items = new LinkedHashMap<>();
     private AmmoManager ammo;
     private BlockManager blocks;
+    private Background background;
 
     @Override
     public void onEnable() {
@@ -52,6 +53,7 @@ public final class BlockMania extends JavaPlugin {
         getConfig().options().copyDefaults(true);
         saveConfig();
         loadItems();
+        background = new Background(this);
 
         ammo = new AmmoManager(this);
         blocks = new BlockManager(this);
@@ -213,6 +215,22 @@ public final class BlockMania extends JavaPlugin {
         return item;
     }
 
+    public Background getBackground() {
+        return background;
+    }
+
+    /** Testo per le bossbar: come text(), con lo sfondo se attivo. */
+    public Component bossText(String template, String... replacements) {
+        String t = tiny(template);
+        for (int i = 0; i + 1 < replacements.length; i += 2) {
+            t = t.replace(replacements[i], replacements[i + 1]);
+        }
+        if (background != null && background.forBossbar()) {
+            t = background.wrap(t);
+        }
+        return color(t);
+    }
+
     /** Numero massimo di blocco ottenibile (blocks.max nel config, mai oltre il limite del pack). */
     public int getMaxBlock() {
         int configured = getConfig().getInt("blocks.max", BlockManager.MAX_BLOCKS);
@@ -272,7 +290,11 @@ public final class BlockMania extends JavaPlugin {
             for (int i = 0; i + 1 < replacements.length; i += 2) {
                 t = t.replace(replacements[i], highlight + replacements[i + 1] + baseColor);
             }
-            Component component = color(baseColor + t);
+            String legacy = baseColor + t;
+            if (actionBar && background != null && background.forActionbar()) {
+                legacy = background.wrap(legacy);
+            }
+            Component component = color(legacy);
             if (actionBar) {
                 ((Player) to).sendActionBar(component);
                 return;

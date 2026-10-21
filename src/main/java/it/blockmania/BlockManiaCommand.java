@@ -107,6 +107,7 @@ public final class BlockManiaCommand implements TabExecutor {
             case "blockshell" -> counter(sender, args, "blockshell");
             case "coin" -> counter(sender, args, "coin");
             case "shop" -> shop(sender, args);
+            case "bgtest" -> bgTest(sender, args);
             default -> plugin.send(sender, "unknown-subcommand", "%value%", args[0]);
         }
         return true;
@@ -153,6 +154,7 @@ public final class BlockManiaCommand implements TabExecutor {
         }
         plugin.reloadConfig();
         plugin.loadItems();
+        plugin.getBackground().reload();
         plugin.send(sender, "reloaded", "%count%", String.valueOf(plugin.getItems().size()));
     }
 
@@ -212,6 +214,23 @@ public final class BlockManiaCommand implements TabExecutor {
         if (!target.equals(sender)) {
             plugin.send(sender, "given-other", "%item%", name, "%player%", target.getName());
         }
+    }
+
+    // ---------- /blockmania bgtest <testo> ----------
+
+    /** Mostra un testo nella actionbar con lo sfondo, per controllare che sia centrato. */
+    private void bgTest(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.reload")) {
+            plugin.send(sender, "no-permission");
+            return;
+        }
+        if (!(sender instanceof Player player)) {
+            plugin.send(sender, "player-only");
+            return;
+        }
+        String text = args.length > 1 ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)) : "coin 25";
+        String legacy = "&f" + plugin.tiny(text);
+        player.sendActionBar(plugin.color(plugin.getBackground().wrap(legacy)));
     }
 
     // ---------- /blockmania shop <ammo|sell> ----------
@@ -410,6 +429,7 @@ public final class BlockManiaCommand implements TabExecutor {
                 result.add("shop");
             }
             if (sender.hasPermission("blockmania.reload")) {
+                result.add("bgtest");
                 result.add("reload");
             }
         } else {
