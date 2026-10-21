@@ -7,10 +7,10 @@ package it.blockmania;
 public final class Tiny {
 
     private static final String FROM = "abcdefghijklmnopqrstuvwxyz";
-    // ᴀ ʙ ᴄ ᴅ ᴇ ꜰ ɢ ʜ ɪ ᴊ ᴋ ʟ ᴍ ɴ ᴏ ᴘ ǫ ʀ ꜱ ᴛ ᴜ ᴠ ᴡ x ʏ ᴢ
+    // \u1d00 \u0299 \u1d04 \u1d05 \u1d07 \ua730 \u0262 \u029c \u026a \u1d0a \u1d0b \u029f \u1d0d \u0274 \u1d0f \u1d18 \u01eb \u0280 \ua731 \u1d1b \u1d1c \u1d20 \u1d21 x \u028f \u1d22
     private static final String TO =
-            "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍ"
-                    + "ɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢ";
+            "\u1d00\u0299\u1d04\u1d05\u1d07\ua730\u0262\u029c\u026a\u1d0a\u1d0b\u029f\u1d0d"
+                    + "\u0274\u1d0f\u1d18\u01eb\u0280\ua731\u1d1b\u1d1c\u1d20\u1d21x\u028f\u1d22";
 
     private static final String COLOR_CODES = "0123456789abcdefklmnorABCDEFKLMNOR";
 

@@ -228,6 +228,10 @@ public final class BlockManiaCommand implements TabExecutor {
             plugin.send(sender, "player-only");
             return;
         }
+        if (args.length > 1 && args[1].equalsIgnoreCase("debug")) {
+            sender.sendMessage(plugin.getBackground().describe());
+            return;
+        }
         String text = args.length > 1 ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)) : "coin 25";
         String legacy = "&f" + plugin.tiny(text);
         player.sendActionBar(plugin.color(plugin.getBackground().wrap(legacy)));

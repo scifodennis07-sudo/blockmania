@@ -50,37 +50,72 @@ public final class Background {
         adjust = c.getInt("background.adjust", 0);
         unknownWidth = Math.max(1, c.getInt("background.unknown-char-width", 6));
 
-        left = c.getString("background.left.char", "㰀");
-        center = c.getString("background.center.char", "㰁");
-        right = c.getString("background.right.char", "㰂");
+        left = c.getString("background.left.char", "\u3c00");
+        center = c.getString("background.center.char", "\u3c01");
+        right = c.getString("background.right.char", "\u3c02");
         leftWidth = Math.max(0, c.getInt("background.left.width", 6));
         centerWidth = Math.max(1, c.getInt("background.center.width", 1));
         rightWidth = Math.max(0, c.getInt("background.right.width", 6));
 
-        readSpaces(c.getConfigurationSection("background.negative-spaces"), negative);
-        readSpaces(c.getConfigurationSection("background.positive-spaces"), positive);
-        if (negative.isEmpty() || positive.isEmpty()) {
-            enabled = false;
-            plugin.getLogger().warning("background: mancano negative-spaces o positive-spaces, sfondo disattivato.");
+        readSpaces(c.getConfigurationSection("background.negative-spaces"), negative,
+                new int[]{1, 2, 3, 4, 5, 6, 16, 32},
+                new char[]{'\u2f1e', '\u3400', '\u3401', '\u3402', '\u3403', '\u3404', '\u4977', '\u4978'});
+        readSpaces(c.getConfigurationSection("background.positive-spaces"), positive,
+                new int[]{1, 2, 4, 8, 16, 32},
+                new char[]{'\u3410', '\u3411', '\u3412', '\u3413', '\u3414', '\u3415'});
+        plugin.getLogger().info("Sfondo: spazi negativi=" + negative.size() + ", positivi=" + positive.size()
+                + ", attivo=" + enabled);
+    }
+
+    /**
+     * Legge gli spazi dal config. Se il config non si legge (o e' vuoto) usa quelli standard
+     * del resource pack, cosi' lo sfondo non si rompe mai.
+     */
+    private void readSpaces(ConfigurationSection section, TreeMap<Integer, String> target,
+                            int[] defaultAmounts, char[] defaultChars) {
+        target.clear();
+        if (section != null) {
+            for (Map.Entry<String, Object> e : section.getValues(false).entrySet()) {
+                try {
+                    int amount = Integer.parseInt(e.getKey().trim());
+                    String chr = e.getValue() == null ? "" : String.valueOf(e.getValue());
+                    if (amount > 0 && !chr.isEmpty()) {
+                        target.put(amount, chr);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // chiave non numerica: la salto
+                }
+            }
+        }
+        if (target.isEmpty()) {
+            plugin.getLogger().warning("background: spazi non letti dal config, uso quelli standard.");
+            for (int i = 0; i < defaultAmounts.length; i++) {
+                target.put(defaultAmounts[i], String.valueOf(defaultChars[i]));
+            }
         }
     }
 
-    private void readSpaces(ConfigurationSection section, TreeMap<Integer, String> target) {
-        target.clear();
-        if (section == null) {
-            return;
+    /** Riepilogo dei caratteri letti (in esadecimale), per controllare che combacino con il pack. */
+    public String describe() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("sx=").append(hex(left)).append(" centro=").append(hex(center)).append(" dx=").append(hex(right));
+        sb.append(" | indietro: ");
+        for (Map.Entry<Integer, String> e : negative.entrySet()) {
+            sb.append(e.getKey()).append("=").append(hex(e.getValue())).append(" ");
         }
-        for (String key : section.getKeys(false)) {
-            try {
-                int amount = Integer.parseInt(key);
-                String chr = section.getString(key, "");
-                if (amount > 0 && !chr.isEmpty()) {
-                    target.put(amount, chr);
-                }
-            } catch (NumberFormatException ignored) {
-                // chiave non numerica: la salto
-            }
+        sb.append("| avanti: ");
+        for (Map.Entry<Integer, String> e : positive.entrySet()) {
+            sb.append(e.getKey()).append("=").append(hex(e.getValue())).append(" ");
         }
+        return sb.toString().trim();
+    }
+
+    private static String hex(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (char c : s.toCharArray()) {
+            sb.append(String.format("%04x", (int) c));
+        }
+        return sb.toString();
     }
 
     public boolean forActionbar() {
@@ -176,6 +211,9 @@ public final class Background {
 
     /** Mette lo sfondo dietro al testo. Il testo resta com'e', con i suoi colori. */
     public String wrap(String legacy) {
+        if (negative.isEmpty() || positive.isEmpty()) {
+            return legacy;
+        }
         int textWidth = measure(legacy);
         if (textWidth <= 0) {
             return legacy;
