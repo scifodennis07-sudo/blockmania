@@ -234,7 +234,7 @@ public final class BlockManiaCommand implements TabExecutor {
         }
         String text = args.length > 1 ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)) : "coin 25";
         String legacy = "&f" + plugin.tiny(text);
-        player.sendActionBar(plugin.color(plugin.getBackground().wrap(legacy)));
+        player.sendActionBar(plugin.withBackground(legacy));
     }
 
     // ---------- /blockmania shop <ammo|sell> ----------

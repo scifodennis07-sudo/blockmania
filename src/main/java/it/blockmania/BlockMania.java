@@ -1,6 +1,8 @@
 package it.blockmania;
 
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.ShadowColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Location;
@@ -219,16 +221,37 @@ public final class BlockMania extends JavaPlugin {
         return background;
     }
 
+    /** Testo con lo sfondo dietro. Lo sfondo non ha l'ombra (se remove-shadow e' attivo), il testo si'. */
+    public Component withBackground(String legacy) {
+        String[] parts = background.parts(legacy);
+        if (parts[0].isEmpty()) {
+            return color(legacy);
+        }
+        if (!background.removeShadow()) {
+            return color(parts[0] + legacy + parts[1]);
+        }
+        return Component.empty()
+                .append(color(parts[0]).shadowColor(ShadowColor.none()))
+                .append(color(legacy))
+                .append(color(parts[1]).shadowColor(ShadowColor.none()));
+    }
+
     /** Testo per le bossbar: come text(), con lo sfondo se attivo. */
     public Component bossText(String template, String... replacements) {
         String t = tiny(template);
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             t = t.replace(replacements[i], replacements[i + 1]);
         }
-        if (background != null && background.forBossbar()) {
-            t = background.wrap(t);
+        Component result = background != null && background.forBossbar() ? withBackground(t) : color(t);
+        String font = getConfig().getString("bossbar.font", "");
+        if (font != null && !font.isBlank()) {
+            try {
+                result = result.font(Key.key(font.trim()));
+            } catch (Exception ex) {
+                // nome del font non valido: resta il font normale
+            }
         }
-        return color(t);
+        return result;
     }
 
     /** Numero massimo di blocco ottenibile (blocks.max nel config, mai oltre il limite del pack). */
@@ -291,10 +314,8 @@ public final class BlockMania extends JavaPlugin {
                 t = t.replace(replacements[i], highlight + replacements[i + 1] + baseColor);
             }
             String legacy = baseColor + t;
-            if (actionBar && background != null && background.forActionbar()) {
-                legacy = background.wrap(legacy);
-            }
-            Component component = color(legacy);
+            Component component = actionBar && background != null && background.forActionbar()
+                    ? withBackground(legacy) : color(legacy);
             if (actionBar) {
                 ((Player) to).sendActionBar(component);
                 return;

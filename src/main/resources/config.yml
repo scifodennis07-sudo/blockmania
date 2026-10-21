@@ -425,6 +425,8 @@ bossbar:
   always-visible: true         # false = visibile solo con il lanciapalle in mano
   ammo-type: standardball      # di quale tipo di palla mostra il numero
   text: "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"
+  font: ""                     # font del pack per abbassare il testo, ad esempio "minecraft:bossbar"
+                               # (vuoto = font normale). Attivalo solo dopo aver messo bossbar.json nel pack
   color: BLUE                  # PINK BLUE RED GREEN YELLOW PURPLE WHITE
   style: PROGRESS              # PROGRESS NOTCHED_6 NOTCHED_10 NOTCHED_12 NOTCHED_20
 
@@ -599,6 +601,7 @@ background:
   enabled: true
   actionbar: true              # sfondo su tutti i messaggi della actionbar
   bossbar: true                # sfondo sul testo delle bossbar
+  remove-shadow: true          # true = lo sfondo non ha l'ombra (il testo la mantiene)
   padding: 0                   # pixel di margine in piu' dentro lo sfondo (ai due lati)
   adjust: 0                    # per correggere la larghezza: +1 allarga, -1 stringe (di 1 pixel)
   unknown-char-width: 6        # larghezza usata per le lettere che il font normale non ha

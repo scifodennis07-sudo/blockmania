@@ -209,14 +209,27 @@ public final class Background {
         return sb.toString();
     }
 
-    /** Mette lo sfondo dietro al testo. Il testo resta com'e', con i suoi colori. */
+    /** Mette lo sfondo dietro al testo (versione in una sola stringa, senza togliere l'ombra). */
     public String wrap(String legacy) {
+        String[] parts = parts(legacy);
+        return parts[0] + legacy + parts[1];
+    }
+
+    public boolean removeShadow() {
+        return plugin.getConfig().getBoolean("background.remove-shadow", true);
+    }
+
+    /**
+     * Ritorna {prima, dopo}: la parte che va PRIMA del testo (sfondo + ritorno indietro)
+     * e quella che va DOPO (avanzamento). Il testo in mezzo resta com'e'.
+     */
+    public String[] parts(String legacy) {
         if (negative.isEmpty() || positive.isEmpty()) {
-            return legacy;
+            return new String[]{"", ""};
         }
         int textWidth = measure(legacy);
         if (textWidth <= 0) {
-            return legacy;
+            return new String[]{"", ""};
         }
         // l'ultimo pixel dell'ultima lettera e' vuoto: il testo "visibile" e' 1 pixel in meno
         int visible = Math.max(1, textWidth - 1);
@@ -226,16 +239,16 @@ public final class Background {
         int total = leftWidth + pieces * centerWidth + rightWidth + 1;
         int textStart = leftWidth + padding;
 
-        StringBuilder sb = new StringBuilder("&f");
-        sb.append(left).append(move(-1));
+        StringBuilder before = new StringBuilder("&f");
+        before.append(left).append(move(-1));
         String piece = center + move(-1);
         for (int i = 0; i < pieces; i++) {
-            sb.append(piece);
+            before.append(piece);
         }
-        sb.append(right);
-        sb.append(move(textStart - total));
-        sb.append(legacy);
-        sb.append("&f").append(move(total - (textStart + textWidth)));
-        return sb.toString();
+        before.append(right);
+        before.append(move(textStart - total));
+
+        String after = "&f" + move(total - (textStart + textWidth));
+        return new String[]{before.toString(), after};
     }
 }
