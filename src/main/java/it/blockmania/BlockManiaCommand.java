@@ -111,6 +111,15 @@ public final class BlockManiaCommand implements TabExecutor {
             case "resetall" -> resetAll(sender, args);
             case "shop" -> shop(sender, args);
             case "bgtest" -> bgTest(sender, args);
+            case "guidebug" -> {
+                if (!sender.hasPermission("blockmania.reload")) {
+                    plugin.send(sender, "no-permission");
+                } else {
+                    for (String line : plugin.getUpgrades().debugTitle()) {
+                        sender.sendMessage(plugin.text(line));
+                    }
+                }
+            }
             default -> plugin.send(sender, "unknown-subcommand", "%value%", args[0]);
         }
         return true;
@@ -507,6 +516,7 @@ public final class BlockManiaCommand implements TabExecutor {
             }
             if (sender.hasPermission("blockmania.reload")) {
                 result.add("bgtest");
+                result.add("guidebug");
                 result.add("reload");
             }
         } else {

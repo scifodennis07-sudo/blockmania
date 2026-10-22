@@ -657,6 +657,10 @@ upgrade-gui:
   title:
     text: "&8potenziamenti"
     font: ""                   # font di title.text (vuoto = normale)
+    # larghezza (in pixel) dei caratteri disegnati usati in title.text: larghezza dell'immagine nel pack + 1.
+    # Serve per mettere i numeri sempre nello stesso punto sopra lo sfondo. Le lettere normali le calcola da solo.
+    widths:
+      "\u3c03": 179
     slash: "/"
     page:
       text: "&8%page%%slash%%pages%"   # vuoto = niente numeri

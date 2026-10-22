@@ -453,11 +453,10 @@ public final class UpgradeManager implements Listener {
         }
         m.appendTail(shifted);
 
-        Component titleText = withFont(plugin.color(plugin.tiny(shifted.toString())), c.getString(GUI + "title.font", ""));
-        Component result = Component.empty();
+        Component result = withFont(plugin.color(plugin.tiny(shifted.toString())), c.getString(GUI + "title.font", ""));
 
-        // I numeri delle pagine si scrivono PER PRIMI, in una posizione fissa, e poi si torna all'inizio:
-        // cosi il titolo puo' avere qualsiasi lunghezza o sfondo senza spostarli.
+        // I numeri delle pagine vanno DOPO lo sfondo (altrimenti lo sfondo li copre). Per metterli sempre nello
+        // stesso punto, dal punto dove finisce il titolo si torna indietro della sua larghezza.
         String pageRaw = c.getString(GUI + "title.page.text", "");
         if (pageRaw != null && !pageRaw.isBlank()) {
             String slash = c.getString(GUI + "title.slash", "/");
@@ -469,11 +468,93 @@ public final class UpgradeManager implements Listener {
             int width = Math.max(0, advance - 1);
             int center = c.getInt(GUI + "title.page.center", 81);
             int start = center - width / 2;
-            result = result.append(plugin.color("&f" + plugin.getBackground().shift(start)))
-                    .append(withFont(plugin.color(pageText), c.getString(GUI + "title.page.font", "")))
-                    .append(plugin.color("&f" + plugin.getBackground().shift(-(start + advance))));
+            int move = start - titleAdvance(raw);
+            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)))
+                    .append(withFont(plugin.color(pageText), c.getString(GUI + "title.page.font", "")));
         }
-        return result.append(titleText);
+        return result;
+    }
+
+    /**
+     * Quanti pixel avanza il cursore scrivendo title.text. Le lettere normali le misura da solo, gli
+     * spostamenti {shift:N} li somma, e per i caratteri disegnati (sfondi) usa title.widths.
+     */
+    private int titleAdvance(String raw) {
+        var c = plugin.getConfig();
+        int manual = c.getInt(GUI + "title.advance", 0);
+        if (manual > 0) {
+            return manual; // valore fisso scelto da te: niente calcolo
+        }
+        Map<Character, Integer> widths = new HashMap<>();
+        ConfigurationSection section = c.getConfigurationSection(GUI + "title.widths");
+        if (section != null) {
+            for (String k : section.getKeys(false)) {
+                if (k.length() == 1) {
+                    widths.put(k.charAt(0), section.getInt(k));
+                }
+            }
+        }
+        int total = 0;
+        Matcher m = SHIFT.matcher(raw);
+        int last = 0;
+        while (m.find()) {
+            total += pieceAdvance(raw.substring(last, m.start()), widths);
+            total += Integer.parseInt(m.group(1));
+            last = m.end();
+        }
+        total += pieceAdvance(raw.substring(last), widths);
+        return total;
+    }
+
+    private int pieceAdvance(String piece, Map<Character, Integer> widths) {
+        int total = 0;
+        StringBuilder normal = new StringBuilder();
+        for (char ch : piece.toCharArray()) {
+            Integer w = widths.get(ch);
+            if (w != null) {
+                total += w;
+            } else {
+                normal.append(ch);
+            }
+        }
+        return total + plugin.getBackground().measure(plugin.tiny(normal.toString()));
+    }
+
+    private static String codes(String text) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            if (ch < 32 || ch > 126) {
+                sb.append(String.format("\\u%04x", (int) ch));
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Per /bm guidebug: mostra i valori che il plugin calcola per mettere i numeri delle pagine. */
+    public List<String> debugTitle() {
+        var c = plugin.getConfig();
+        List<String> out = new ArrayList<>();
+        String raw = c.getString(GUI + "title.text", "");
+        ConfigurationSection w = c.getConfigurationSection(GUI + "title.widths");
+        String pageRaw = c.getString(GUI + "title.page.text", "");
+        out.add("&etitle.text = &f" + codes(raw));
+        out.add("&ewidths = &f" + (w == null ? "NON TROVATO" : w.getKeys(false).stream()
+                .map(k -> codes(k) + "=" + w.getInt(k)).toList()));
+        out.add("&etitle.advance (fisso) = &f" + c.getInt(GUI + "title.advance", 0));
+        int adv = titleAdvance(raw);
+        out.add("&eavanzamento del titolo = &f" + adv);
+        String pageText = pageRaw.replace("%page%", glyphs(1)).replace("%pages%", glyphs(1))
+                .replace("%slash%", c.getString(GUI + "title.slash", "/"));
+        out.add("&epage.text = &f" + codes(pageRaw) + " &e-> &f" + codes(pageText));
+        int pageAdv = plugin.getBackground().measure(pageText);
+        int center = c.getInt(GUI + "title.page.center", 81);
+        int move = center - Math.max(0, pageAdv - 1) / 2 - adv;
+        out.add("&elarghezza numeri = &f" + pageAdv + " &ecenter = &f" + center + " &espostamento = &f" + move);
+        out.add("&espazi usati = &f" + codes(plugin.getBackground().shift(move)));
+        out.add("&efont numeri = &f'" + c.getString(GUI + "title.page.font", "") + "'");
+        return out;
     }
 
     // ---------- aprire e usare la GUI ----------
