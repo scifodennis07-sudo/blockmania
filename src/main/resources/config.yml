@@ -25,6 +25,7 @@ tab:
 #    highlight colore dei valori (nomi, numeri) dentro al messaggio
 #    prefix    testo messo PRIMA del messaggio (vuoto = niente)
 #    suffix    testo messo DOPO il messaggio
+#    uniform   true = tutto il messaggio (anche i valori) ha lo stesso colore
 # ----------------------------------------------------------------------
 styles:
   error:
@@ -32,6 +33,7 @@ styles:
     highlight: "&f"
     prefix: ""
     suffix: ""
+    uniform: true
   success:
     color: "&a"
     highlight: "&f"
@@ -47,6 +49,58 @@ styles:
     highlight: "&f"
     prefix: ""
     suffix: ""
+
+# ----------------------------------------------------------------------
+#  PALETTE: i tuoi colori al posto di quelli classici di Minecraft
+#  Ogni colore ha due valori (inizio e fine): il testo di quel colore diventa una
+#  leggera sfumatura. Metti due volte lo stesso valore per un colore pieno.
+#  Funziona ovunque (messaggi, lore, bossbar...) dove scrivi i codici:
+#    &c rosso  &a verde  &e giallo  &b azzurro  &9 blu  &6 oro  &7 grigio ...
+#  Il bianco (&f) resta bianco vero: serve per gli sfondi disegnati.
+#  Colori disponibili: black dark_blue dark_green dark_aqua dark_red dark_purple gold gray
+#                      dark_gray blue green aqua red light_purple yellow white
+#  Per spegnere tutto: enabled: false
+# ----------------------------------------------------------------------
+palette:
+  enabled: true
+  colors:
+    dark_blue: ["#3F51D6", "#2A32A8"]
+    dark_green: ["#2FA84F", "#1F7A3A"]
+    dark_aqua: ["#35C4C4", "#238DA6"]
+    dark_red: ["#D63A3A", "#A32232"]
+    dark_purple: ["#B04CE0", "#7B2FB5"]
+    gold: ["#FFC247", "#FF9A2E"]
+    gray: ["#C4C8D4", "#9EA3B3"]
+    dark_gray: ["#7A7F8E", "#565A68"]
+    blue: ["#54DAF4", "#4C7DD7"]
+    green: ["#7DF28A", "#3FD061"]
+    aqua: ["#6FF0F0", "#3CC0E8"]
+    red: ["#FF7A7A", "#E5384F"]
+    light_purple: ["#FF9AF5", "#D95CE8"]
+    yellow: ["#FFF27A", "#FFCB3D"]
+
+# ----------------------------------------------------------------------
+#  MESSAGGI MENTRE HAI UNA GUI APERTA
+#  L'actionbar con una GUI aperta e' coperta: il messaggio compare in una bossbar.
+# ----------------------------------------------------------------------
+gui-messages:
+  seconds: 3
+
+# ----------------------------------------------------------------------
+#  NUMERI DISEGNATI (nel pack, in font/default.json)
+#  Ogni set e' fatto da 11 caratteri di fila: le cifre 0-9 e la barra "/".
+#  Scrivi qui il PRIMO carattere (quello dello 0). Gli "-shadow" sono le ombre.
+#    main    numeri orizzontali (1/2)
+#    top     numero in alto nelle colonne verticali    bottom  numero in basso
+# ----------------------------------------------------------------------
+glyphs:
+  main: "\uE400"
+  main-shadow: "\uE410"
+  top: "\uE420"
+  top-shadow: "\uE430"
+  bottom: "\uE440"
+  bottom-shadow: "\uE450"
+  shadow-color: "#3F3F3F"     # colore dell'ombra dei numeri
 
 # ----------------------------------------------------------------------
 #  MESSAGGI
@@ -209,6 +263,10 @@ messages:
     type: success
     channel: actionbar
     text: "potenziamento %upgrade% al livello %level% per %cost% %currency%"
+  sale-no-gui:
+    type: error
+    channel: actionbar
+    text: "non puoi aprire nessuna gui mentre stai vendendo"
   upgrade-locked:
     type: error
     channel: actionbar
@@ -265,6 +323,11 @@ help:
       usage: "/bm mine <get|remove|see|reset> [numero] [player]"
       description: "gestisce la miniera del giocatore (parte da 1). Decide fino a che livello puo potenziare"
       example: "/bm mine get 1"
+    items:
+      permission: blockmania.get
+      usage: "/bm items [player]"
+      description: "apre la lista di tutti gli oggetti custom: clicca per riceverli"
+      example: "/bm items"
     upgrade:
       permission: blockmania.stats
       usage: "/bm upgrade <get|remove|see|reset> <damage|cooldown|speed|capacity|all> [numero] [player]"
@@ -653,7 +716,8 @@ upgrade-gui:
       description: "puoi portare piu palle"
 
   # TITOLO. title.text e' il testo/sfondo disegnato (i caratteri del tuo font); {shift:N} sposta di N pixel
-  # (negativo = indietro). I numeri delle pagine si mettono in title.page, con un font abbassato.
+  # (negativo = indietro). I numeri delle pagine stanno in title.page e restano fermi
+  # qualunque sia il titolo.
   title:
     text: "&8potenziamenti"
     font: ""                   # font di title.text (vuoto = normale)
@@ -661,13 +725,151 @@ upgrade-gui:
     # Serve per mettere i numeri sempre nello stesso punto sopra lo sfondo. Le lettere normali le calcola da solo.
     widths:
       "\u3c03": 179
-    slash: "/"
+    advance: 0                 # 0 = calcolato da solo. Se metti un numero, vale sempre quello
     page:
-      text: "&8%page%%slash%%pages%"   # vuoto = niente numeri
-      font: "minecraft:gui"            # font abbassato (gui.json nel pack)
-      center: 81                       # centro dei numeri, in pixel dall'inizio del titolo (81 = slot 4). Fisso: non dipende dal testo del titolo
-    # se disegni dei numeri tuoi, metti qui i caratteri: digits: {"0": "\uE400", "1": "\uE401"}
-    digits: {}
+      text: "%page%/%pages%"   # vuoto = niente numeri
+      set: main                # quale set di numeri (vedi "glyphs")
+      shadow: true             # true = numeri con l'ombra
+      shadow-set: main-shadow
+      font: ""
+      center: 73               # centro dei numeri, in pixel dall'inizio del titolo (piu' alto = piu' a destra)
+
+# ----------------------------------------------------------------------
+#  GUI DEGLI OGGETTI  (/bm items)
+#  In alto le categorie, al centro gli oggetti: clic = ne ricevi 1, shift + clic = uno stack.
+#  Gli slot si contano da 0 (riga 1 = 0-8, riga 2 = 9-17 ...).
+#  Segnaposto: %page% %pages% %category% %count% (nelle categorie anche %material% %cmd% negli oggetti)
+# ----------------------------------------------------------------------
+items-gui:
+  invisible:
+    material: GLASS_PANE
+    cmd: 999
+
+  slots:
+    close: [0, 1]
+    categories: [2, 3, 4, 5, 6, 7, 8]
+    up: [17, 26]               # freccia su (pagina precedente)
+    page: [35]                 # al centro: il numero di pagina
+    down: [44, 53]             # freccia giu' (pagina successiva)
+    grid: [9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51, 52]
+
+  sounds:
+    open:
+      sound: "block.chest.open"
+      volume: 0.6
+      pitch: 1.2
+    page:
+      sound: "ui.button.click"
+      volume: 0.6
+      pitch: 1.2
+    give:
+      sound: "entity.item.pickup"
+      volume: 0.5
+      pitch: 1.4
+
+  close:
+    name: "&cchiudi"
+    lore: []
+  up:
+    name: "&7pagina precedente"
+    lore:
+      - "&8pagina &f%page%&8/&f%pages%"
+  page:
+    name: "&7pagina &f%page%&8/&f%pages%"
+    lore:
+      - "&8%category%: &f%count% &8oggetti"
+  down:
+    name: "&7pagina successiva"
+    lore:
+      - "&8pagina &f%page%&8/&f%pages%"
+  empty-category:
+    name: "&8in arrivo"
+    lore:
+      - ""
+      - "&7questa categoria non e' ancora pronta"
+  selected-line: "&a► aperta"
+  click-line: "&eclicca per aprire"
+
+  # come si vede un oggetto nella lista (se non e' un lanciapalle o un blocco)
+  item-name: "&f%material% &8cmd &f%cmd%"
+  item-lore:
+    - ""
+    - "&6clic &7ne ricevi 1"
+    - "&6shift + clic &7ricevi uno stack"
+
+  # LE CATEGORIE (la barra in alto, una per slot di "categories").
+  #   type: blocks = i note block custom (solo la variante 1 di ognuno)
+  #         items  = un oggetto per ogni custom-model-data indicato (material + cmds)
+  #         none   = posto ancora vuoto
+  #   cmds: elenco o intervalli, ad esempio  "1-53"  oppure  "1,2,3,10,999"  oppure  [1, 2]
+  categories:
+    - id: noteblock
+      type: blocks
+      name: "&fnote block"
+      lore:
+        - ""
+        - "&7tutti i blocchi custom"
+    - id: stick
+      type: items
+      material: STICK
+      cmds: "1-2"
+      name: "&fstick"
+      lore:
+        - ""
+        - "&7oggetti con il modello dello stick"
+    - id: feather
+      type: items
+      material: FEATHER
+      cmds: "1-53"
+      name: "&fpiuma"
+      lore:
+        - ""
+        - "&7oggetti con il modello della piuma"
+    - id: glass_pane
+      type: items
+      material: GLASS_PANE
+      cmds: "1,2,3,4,10,999"
+      name: "&fpannello"
+      lore:
+        - ""
+        - "&7pannelli di vetro con modelli e icone"
+    - id: snowball
+      type: items
+      material: SNOWBALL
+      cmds: "1-4"
+      name: "&fpalla di neve"
+      lore:
+        - ""
+        - "&7palle con il modello custom"
+    - id: free1
+      type: none
+      name: "&8in arrivo"
+      lore:
+        - ""
+        - "&7categoria non ancora impostata"
+    - id: free2
+      type: none
+      name: "&8in arrivo"
+      lore:
+        - ""
+        - "&7categoria non ancora impostata"
+
+  # TITOLO: sfondo disegnato + numeri verticali (1 sopra, 2 sotto) nella casella a destra
+  title:
+    text: "&f{shift:-15}\u3c04"
+    font: ""
+    widths:
+      "\u3c04": 179           # larghezza dell'immagine oggetti.png + 1
+    advance: 0
+    numbers:
+      enabled: true
+      center: 156             # centro dei numeri verso destra, in pixel dall'inizio del titolo
+      shadow: true
+      current-set: top        # numero della pagina attuale (in alto)
+      current-shadow-set: top-shadow
+      total-set: bottom       # numero delle pagine totali (in basso)
+      total-shadow-set: bottom-shadow
+      font: ""
 
 # ----------------------------------------------------------------------
 #  SFONDO AUTOMATICO dietro ad actionbar e bossbar
@@ -726,6 +928,7 @@ background:
 blocks:
   max: 114                     # fino a che numero si ottiene con /bm getblock N-1
                                # (con i soli note block il massimo possibile e' 114)
+  custom-model-data: true      # true = l'oggetto ha il suo modello nel pack (si vede la grafica nell'inventario)
   item-name: "&e&lBlocco %number%"
   lore:
     - ""

@@ -48,14 +48,14 @@ public final class BlockManiaCommand implements TabExecutor {
         if (args.length > index) {
             Player found = Bukkit.getPlayerExact(args[index]);
             if (found == null) {
-                plugin.send(sender, "player-not-found", "%value%", args[index]);
+                plugin.sendCommand(sender, "player-not-found", "%value%", args[index]);
             }
             return found;
         }
         if (sender instanceof Player self) {
             return self;
         }
-        plugin.send(sender, "missing-player", "%usage%", usage(usageKey));
+        plugin.sendCommand(sender, "missing-player", "%usage%", usage(usageKey));
         return null;
     }
 
@@ -110,17 +110,18 @@ public final class BlockManiaCommand implements TabExecutor {
             case "upgrade" -> upgrade(sender, args);
             case "resetall" -> resetAll(sender, args);
             case "shop" -> shop(sender, args);
+            case "items" -> items(sender, args);
             case "bgtest" -> bgTest(sender, args);
             case "guidebug" -> {
                 if (!sender.hasPermission("blockmania.reload")) {
-                    plugin.send(sender, "no-permission");
+                    plugin.sendCommand(sender, "no-permission");
                 } else {
                     for (String line : plugin.getUpgrades().debugTitle()) {
                         sender.sendMessage(plugin.text(line));
                     }
                 }
             }
-            default -> plugin.send(sender, "unknown-subcommand", "%value%", args[0]);
+            default -> plugin.sendCommand(sender, "unknown-subcommand", "%value%", args[0]);
         }
         return true;
     }
@@ -161,30 +162,31 @@ public final class BlockManiaCommand implements TabExecutor {
 
     private void reload(CommandSender sender) {
         if (!sender.hasPermission("blockmania.reload")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         plugin.reloadConfig();
         plugin.loadItems();
         plugin.getBackground().reload();
-        plugin.send(sender, "reloaded", "%count%", String.valueOf(plugin.getItems().size()));
+        plugin.reloadPalette();
+        plugin.sendCommand(sender, "reloaded", "%count%", String.valueOf(plugin.getItems().size()));
     }
 
     // ---------- /blockmania get <oggetto> [giocatore] ----------
 
     private void getItem(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.get")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (args.length < 2) {
-            plugin.send(sender, "missing-item", "%usage%", usage("get"),
+            plugin.sendCommand(sender, "missing-item", "%usage%", usage("get"),
                     "%items%", String.join(", ", plugin.getItems().keySet()));
             return;
         }
         LauncherItem li = plugin.getItem(args[1]);
         if (li == null) {
-            plugin.send(sender, "unknown-item", "%value%", args[1],
+            plugin.sendCommand(sender, "unknown-item", "%value%", args[1],
                     "%items%", String.join(", ", plugin.getItems().keySet()));
             return;
         }
@@ -199,18 +201,18 @@ public final class BlockManiaCommand implements TabExecutor {
 
     private void getBlock(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.get")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (args.length < 2) {
-            plugin.send(sender, "missing-block", "%usage%", usage("getblock"),
+            plugin.sendCommand(sender, "missing-block", "%usage%", usage("getblock"),
                     "%max%", String.valueOf(plugin.getMaxBlock()));
             return;
         }
         Integer number = parseBlockNumber(args[1].toLowerCase(Locale.ROOT));
         int max = plugin.getMaxBlock();
         if (number == null || number < 1 || number > max) {
-            plugin.send(sender, "invalid-block", "%value%", args[1], "%max%", String.valueOf(max));
+            plugin.sendCommand(sender, "invalid-block", "%value%", args[1], "%max%", String.valueOf(max));
             return;
         }
         Player target = resolveTarget(sender, args, 2, "getblock");
@@ -224,7 +226,7 @@ public final class BlockManiaCommand implements TabExecutor {
         give(target, stack);
         plugin.send(target, "given", "%item%", name);
         if (!target.equals(sender)) {
-            plugin.send(sender, "given-other", "%item%", name, "%player%", target.getName());
+            plugin.sendCommand(sender, "given-other", "%item%", name, "%player%", target.getName());
         }
     }
 
@@ -233,11 +235,11 @@ public final class BlockManiaCommand implements TabExecutor {
     /** Mostra un testo nella actionbar con lo sfondo, per controllare che sia centrato. */
     private void bgTest(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.reload")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (!(sender instanceof Player player)) {
-            plugin.send(sender, "player-only");
+            plugin.sendCommand(sender, "player-only");
             return;
         }
         if (args.length > 1 && args[1].equalsIgnoreCase("debug")) {
@@ -249,20 +251,34 @@ public final class BlockManiaCommand implements TabExecutor {
         player.sendActionBar(plugin.withBackground(legacy));
     }
 
+    // ---------- /blockmania items [giocatore] ----------
+
+    private void items(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.get")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        Player target = resolveTarget(sender, args, 1, "items");
+        if (target == null) {
+            return;
+        }
+        plugin.getItemsGui().open(target);
+    }
+
     // ---------- /blockmania shop <ammo|sell> ----------
 
     private void shop(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.shop.edit")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (args.length < 2) {
-            plugin.send(sender, "missing-shop", "%usage%", usage("shop"));
+            plugin.sendCommand(sender, "missing-shop", "%usage%", usage("shop"));
             return;
         }
         String type = args[1].toLowerCase(Locale.ROOT);
         if (!ShopManager.TYPES.contains(type)) {
-            plugin.send(sender, "invalid-shop", "%value%", args[1]);
+            plugin.sendCommand(sender, "invalid-shop", "%value%", args[1]);
             return;
         }
         Player target = resolveTarget(sender, args, 2, "shop");
@@ -277,23 +293,23 @@ public final class BlockManiaCommand implements TabExecutor {
 
     private void ball(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.stats")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (args.length < 2) {
-            plugin.send(sender, "missing-action", "%usage%", usage("ball"), "%actions%", actions());
+            plugin.sendCommand(sender, "missing-action", "%usage%", usage("ball"), "%actions%", actions());
             return;
         }
         String action = args[1].toLowerCase(Locale.ROOT);
         if (!ACTIONS.contains(action)) {
-            plugin.send(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
+            plugin.sendCommand(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
             return;
         }
 
         AmmoManager ammo = plugin.getAmmo();
         String types = String.join(", ", ammo.types());
         if (args.length < 3) {
-            plugin.send(sender, "missing-type", "%usage%", usage("ball"), "%types%", types);
+            plugin.sendCommand(sender, "missing-type", "%usage%", usage("ball"), "%types%", types);
             return;
         }
         String type = args[2].toLowerCase(Locale.ROOT);
@@ -304,7 +320,7 @@ public final class BlockManiaCommand implements TabExecutor {
         } else if (ammo.exists(type)) {
             chosen.add(type);
         } else {
-            plugin.send(sender, "unknown-ammo", "%value%", args[2], "%types%", types);
+            plugin.sendCommand(sender, "unknown-ammo", "%value%", args[2], "%types%", types);
             return;
         }
 
@@ -320,22 +336,22 @@ public final class BlockManiaCommand implements TabExecutor {
 
     private void upgrade(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.stats")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (args.length < 2) {
-            plugin.send(sender, "missing-action", "%usage%", usage("upgrade"), "%actions%", actions());
+            plugin.sendCommand(sender, "missing-action", "%usage%", usage("upgrade"), "%actions%", actions());
             return;
         }
         String action = args[1].toLowerCase(Locale.ROOT);
         if (!ACTIONS.contains(action)) {
-            plugin.send(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
+            plugin.sendCommand(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
             return;
         }
         UpgradeManager up = plugin.getUpgrades();
         String types = String.join(", ", UpgradeManager.IDS);
         if (args.length < 3) {
-            plugin.send(sender, "missing-type", "%usage%", usage("upgrade"), "%types%", types);
+            plugin.sendCommand(sender, "missing-type", "%usage%", usage("upgrade"), "%types%", types);
             return;
         }
         String type = args[2].toLowerCase(Locale.ROOT);
@@ -345,7 +361,7 @@ public final class BlockManiaCommand implements TabExecutor {
         } else if (UpgradeManager.IDS.contains(type)) {
             chosen.add(type);
         } else {
-            plugin.send(sender, "unknown-upgrade", "%value%", args[2], "%types%", types);
+            plugin.sendCommand(sender, "unknown-upgrade", "%value%", args[2], "%types%", types);
             return;
         }
         List<Stat> stats = new ArrayList<>();
@@ -360,7 +376,7 @@ public final class BlockManiaCommand implements TabExecutor {
 
     private void resetAll(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.stats")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         Player target = resolveTarget(sender, args, 1, "resetall");
@@ -376,7 +392,7 @@ public final class BlockManiaCommand implements TabExecutor {
         ammo.setCoin(target, 0);
         ammo.setMine(target, 0);
         plugin.getUpgrades().resetLevels(target);
-        plugin.send(sender, "reset-all", "%player%", target.getName());
+        plugin.sendCommand(sender, "reset-all", "%player%", target.getName());
         if (!target.equals(sender)) {
             plugin.send(target, "reset-all", "%player%", target.getName());
         }
@@ -386,16 +402,16 @@ public final class BlockManiaCommand implements TabExecutor {
 
     private void counter(CommandSender sender, String[] args, String which) {
         if (!sender.hasPermission("blockmania.stats")) {
-            plugin.send(sender, "no-permission");
+            plugin.sendCommand(sender, "no-permission");
             return;
         }
         if (args.length < 2) {
-            plugin.send(sender, "missing-action", "%usage%", usage(which), "%actions%", actions());
+            plugin.sendCommand(sender, "missing-action", "%usage%", usage(which), "%actions%", actions());
             return;
         }
         String action = args[1].toLowerCase(Locale.ROOT);
         if (!ACTIONS.contains(action)) {
-            plugin.send(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
+            plugin.sendCommand(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
             return;
         }
 
@@ -420,12 +436,12 @@ public final class BlockManiaCommand implements TabExecutor {
         int playerIndex = amountIndex;
         if (needsAmount) {
             if (args.length <= amountIndex) {
-                plugin.send(sender, "missing-number", "%usage%", usage(usageKey), "%action%", action);
+                plugin.sendCommand(sender, "missing-number", "%usage%", usage(usageKey), "%action%", action);
                 return;
             }
             amount = parseAmount(args[amountIndex]);
             if (amount <= 0) {
-                plugin.send(sender, "invalid-number", "%value%", args[amountIndex]);
+                plugin.sendCommand(sender, "invalid-number", "%value%", args[amountIndex]);
                 return;
             }
             playerIndex = amountIndex + 1;
@@ -441,7 +457,7 @@ public final class BlockManiaCommand implements TabExecutor {
 
             // see: mostra solo il valore in chat, senza cambiare niente
             if (action.equals("see")) {
-                plugin.send(sender, "see",
+                plugin.sendCommand(sender, "see",
                         "%stat%", plugin.tiny(stat.name()),
                         "%player%", target.getName(),
                         "%value%", format(stat, target, current));
@@ -463,7 +479,7 @@ public final class BlockManiaCommand implements TabExecutor {
                     "%player%", target.getName(),
                     "%value%", format(stat, target, next)
             };
-            plugin.send(sender, "stat-updated", replacements);
+            plugin.sendCommand(sender, "stat-updated", replacements);
             if (!target.equals(sender)) {
                 plugin.send(target, "stat-updated", replacements);
             }
@@ -501,6 +517,7 @@ public final class BlockManiaCommand implements TabExecutor {
             if (canGet) {
                 result.add("get");
                 result.add("getblock");
+                result.add("items");
             }
             if (canStats) {
                 result.add("ball");
@@ -532,6 +549,10 @@ public final class BlockManiaCommand implements TabExecutor {
                 if (args.length == 2) {
                     result.addAll(plugin.getItems().keySet());
                 } else if (args.length == 3) {
+                    addPlayers(result);
+                }
+            } else if (sub.equals("items") && canGet) {
+                if (args.length == 2) {
                     addPlayers(result);
                 }
             } else if (sub.equals("getblock") && canGet) {

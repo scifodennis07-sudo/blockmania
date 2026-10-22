@@ -356,6 +356,20 @@ public final class ShopManager implements Listener {
     //  Vendita delle blockshell
     // ------------------------------------------------------------------
 
+    /** True mentre il giocatore sta vendendo le shell. */
+    public boolean isSelling(Player player) {
+        return sales.containsKey(player.getUniqueId());
+    }
+
+    /** Durante la vendita non si puo' aprire nessuna GUI. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onInventoryOpen(org.bukkit.event.inventory.InventoryOpenEvent event) {
+        if (event.getPlayer() instanceof Player player && sales.containsKey(player.getUniqueId())) {
+            event.setCancelled(true);
+            plugin.send(player, "sale-no-gui");
+        }
+    }
+
     private void startSale(Player player, Entity stand) {
         if (sales.containsKey(player.getUniqueId())) {
             plugin.send(player, "sell-busy");

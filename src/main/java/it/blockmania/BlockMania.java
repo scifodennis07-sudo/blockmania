@@ -1,10 +1,13 @@
 package it.blockmania;
 
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.ShadowColor;
+import net.kyori.adventure.text.format.Style;
+import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -12,24 +15,23 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 public final class BlockMania extends JavaPlugin {
-
-    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.builder()
-            .character('&')
-            .hexColors()
-            .build();
 
     private NamespacedKey itemKey;
     private NamespacedKey blockKey;
@@ -41,6 +43,12 @@ public final class BlockMania extends JavaPlugin {
     private AmmoManager ammo;
     private BlockManager blocks;
     private Background background;
+    private ItemsGui itemsGui;
+
+    /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
+    private final Map<Character, int[]> palette = new HashMap<>();
+    private final Map<UUID, BossBar> messageBars = new HashMap<>();
+    private final Map<UUID, BukkitTask> messageTasks = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -56,6 +64,7 @@ public final class BlockMania extends JavaPlugin {
         saveConfig();
         loadItems();
         background = new Background(this);
+        reloadPalette();
 
         ammo = new AmmoManager(this);
         blocks = new BlockManager(this);
@@ -74,6 +83,8 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new CustomBlockListener(this), this);
         getServer().getPluginManager().registerEvents(upgrades, this);
         getServer().getPluginManager().registerEvents(shops, this);
+        itemsGui = new ItemsGui(this);
+        getServer().getPluginManager().registerEvents(itemsGui, this);
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
 
@@ -182,6 +193,10 @@ public final class BlockMania extends JavaPlugin {
 
     public UpgradeManager getUpgrades() {
         return upgrades;
+    }
+
+    public ItemsGui getItemsGui() {
+        return itemsGui;
     }
 
     public AmmoManager getAmmo() {
@@ -329,9 +344,193 @@ public final class BlockMania extends JavaPlugin {
         return getConfig().getBoolean("tiny-text", true) ? Tiny.convert(text) : text;
     }
 
-    /** Trasforma "&aTesto" (e "&#rrggbb") in un testo colorato, senza corsivo. */
+    // ------------------------------------------------------------------
+    //  Colori: codici &, esadecimali e PALETTE (colori tuoi con sfumatura)
+    // ------------------------------------------------------------------
+
+    private static final Map<String, Character> PALETTE_CODES = Map.ofEntries(
+            Map.entry("black", '0'), Map.entry("dark_blue", '1'), Map.entry("dark_green", '2'),
+            Map.entry("dark_aqua", '3'), Map.entry("dark_red", '4'), Map.entry("dark_purple", '5'),
+            Map.entry("gold", '6'), Map.entry("gray", '7'), Map.entry("dark_gray", '8'),
+            Map.entry("blue", '9'), Map.entry("green", 'a'), Map.entry("aqua", 'b'),
+            Map.entry("red", 'c'), Map.entry("light_purple", 'd'), Map.entry("yellow", 'e'),
+            Map.entry("white", 'f'));
+
+    private static final String[] VANILLA_HEX = {
+            "000000", "0000AA", "00AA00", "00AAAA", "AA0000", "AA00AA", "FFAA00", "AAAAAA",
+            "555555", "5555FF", "55FF55", "55FFFF", "FF5555", "FF55FF", "FFFF55", "FFFFFF"};
+
+    private static int[] parseHex(String text) {
+        if (text == null) {
+            return null;
+        }
+        String t = text.trim();
+        if (t.startsWith("#")) {
+            t = t.substring(1);
+        } else if (t.toLowerCase(Locale.ROOT).startsWith("&#")) {
+            t = t.substring(2);
+        }
+        if (t.length() != 6) {
+            return null;
+        }
+        try {
+            int v = Integer.parseInt(t, 16);
+            return new int[]{(v >> 16) & 255, (v >> 8) & 255, v & 255};
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    /** Rilegge la sezione "palette" del config. Il bianco (&f) resta quello vero, a meno che tu non lo definisca. */
+    public void reloadPalette() {
+        palette.clear();
+        var c = getConfig();
+        if (!c.getBoolean("palette.enabled", true)) {
+            return;
+        }
+        ConfigurationSection section = c.getConfigurationSection("palette.colors");
+        if (section == null) {
+            return;
+        }
+        for (String name : section.getKeys(false)) {
+            Character code = PALETTE_CODES.get(name.toLowerCase(Locale.ROOT));
+            if (code == null) {
+                continue;
+            }
+            List<String> values = section.isList(name) ? section.getStringList(name)
+                    : List.of(section.getString(name, ""));
+            if (values.isEmpty()) {
+                continue;
+            }
+            int[] from = parseHex(values.get(0));
+            int[] to = values.size() > 1 ? parseHex(values.get(1)) : from;
+            if (from == null || to == null) {
+                continue;
+            }
+            palette.put(code, new int[]{from[0], from[1], from[2], to[0], to[1], to[2]});
+        }
+    }
+
+    private static int vanillaIndex(char code) {
+        return Character.digit(code, 16);
+    }
+
+    /** Toglie dal testo tutti i codici colore e formato (&c, &#ff0000, &l ...). */
+    public static String stripCodes(String text) {
+        return text.replaceAll("(?i)&(#[0-9a-f]{6}|[0-9a-fk-or])", "");
+    }
+
+    private static Component styled(String text, TextColor color, boolean[] deco) {
+        Style.Builder style = Style.style().decoration(TextDecoration.ITALIC, false);
+        if (color != null) {
+            style.color(color);
+        }
+        if (deco[0]) {
+            style.decoration(TextDecoration.BOLD, true);
+        }
+        if (deco[1]) {
+            style.decoration(TextDecoration.ITALIC, true);
+        }
+        if (deco[2]) {
+            style.decoration(TextDecoration.UNDERLINED, true);
+        }
+        if (deco[3]) {
+            style.decoration(TextDecoration.STRIKETHROUGH, true);
+        }
+        if (deco[4]) {
+            style.decoration(TextDecoration.OBFUSCATED, true);
+        }
+        return Component.text(text, style.build());
+    }
+
+    private void flush(StringBuilder buffer, List<Component> out, TextColor color, int[] gradient, boolean[] deco) {
+        if (buffer.length() == 0) {
+            return;
+        }
+        String text = buffer.toString();
+        buffer.setLength(0);
+        boolean sloped = gradient != null && (gradient[0] != gradient[3] || gradient[1] != gradient[4]
+                || gradient[2] != gradient[5]);
+        if (!sloped) {
+            out.add(styled(text, gradient != null ? TextColor.color(gradient[0], gradient[1], gradient[2]) : color, deco));
+            return;
+        }
+        int n = text.length();
+        for (int i = 0; i < n; i++) {
+            double t = n > 1 ? (double) i / (n - 1) : 0;
+            int r = (int) Math.round(gradient[0] + (gradient[3] - gradient[0]) * t);
+            int g = (int) Math.round(gradient[1] + (gradient[4] - gradient[1]) * t);
+            int b = (int) Math.round(gradient[2] + (gradient[5] - gradient[2]) * t);
+            out.add(styled(String.valueOf(text.charAt(i)), TextColor.color(r, g, b), deco));
+        }
+    }
+
+    /**
+     * Trasforma "&aTesto" (e "&#rrggbb") in un testo colorato, senza corsivo.
+     * I colori che hai messo nella "palette" del config diventano la loro sfumatura.
+     */
     public Component color(String legacy) {
-        return LEGACY.deserialize(legacy).decoration(TextDecoration.ITALIC, false);
+        if (legacy == null || legacy.isEmpty()) {
+            return Component.empty();
+        }
+        List<Component> out = new ArrayList<>();
+        StringBuilder buffer = new StringBuilder();
+        TextColor color = null;
+        int[] gradient = null;
+        boolean[] deco = new boolean[5];
+        int len = legacy.length();
+        for (int i = 0; i < len; i++) {
+            char ch = legacy.charAt(i);
+            if (ch == '&' && i + 1 < len) {
+                char n = legacy.charAt(i + 1);
+                char low = Character.toLowerCase(n);
+                if (n == '#' && i + 7 < len + 0 && parseHex(legacy.substring(i + 2, i + 8)) != null) {
+                    flush(buffer, out, color, gradient, deco);
+                    int[] rgb = parseHex(legacy.substring(i + 2, i + 8));
+                    color = TextColor.color(rgb[0], rgb[1], rgb[2]);
+                    gradient = null;
+                    deco = new boolean[5];
+                    i += 7;
+                    continue;
+                }
+                if (Character.digit(low, 16) >= 0) {
+                    flush(buffer, out, color, gradient, deco);
+                    int[] g = palette.get(low);
+                    gradient = g;
+                    int[] v = parseHex(VANILLA_HEX[vanillaIndex(low)]);
+                    color = TextColor.color(v[0], v[1], v[2]);
+                    deco = new boolean[5];
+                    i++;
+                    continue;
+                }
+                int decoIndex = switch (low) {
+                    case 'l' -> 0;
+                    case 'o' -> 1;
+                    case 'n' -> 2;
+                    case 'm' -> 3;
+                    case 'k' -> 4;
+                    default -> -1;
+                };
+                if (decoIndex >= 0) {
+                    flush(buffer, out, color, gradient, deco);
+                    deco = deco.clone();
+                    deco[decoIndex] = true;
+                    i++;
+                    continue;
+                }
+                if (low == 'r') {
+                    flush(buffer, out, color, gradient, deco);
+                    color = null;
+                    gradient = null;
+                    deco = new boolean[5];
+                    i++;
+                    continue;
+                }
+            }
+            buffer.append(ch);
+        }
+        flush(buffer, out, color, gradient, deco);
+        return Component.empty().decoration(TextDecoration.ITALIC, false).children(out);
     }
 
     /** Nomi, lore e bossbar: tiny text, segnaposto sostituiti (coppie chiave, valore) e colori. */
@@ -343,12 +542,55 @@ public final class BlockMania extends JavaPlugin {
         return color(t);
     }
 
+    /** True se il giocatore ha una GUI aperta (l'actionbar in quel caso e' coperta). */
+    public boolean hasOpenGui(Player player) {
+        return player.getOpenInventory().getTopInventory().getType() != InventoryType.CRAFTING;
+    }
+
+    /** Mostra un messaggio in una bossbar per qualche secondo (si vede anche con una GUI aperta). */
+    public void showBossMessage(Player player, String legacy) {
+        UUID id = player.getUniqueId();
+        BossBar old = messageBars.remove(id);
+        if (old != null) {
+            player.hideBossBar(old);
+        }
+        BukkitTask oldTask = messageTasks.remove(id);
+        if (oldTask != null) {
+            oldTask.cancel();
+        }
+        BossBar bar = BossBar.bossBar(bossSegments(List.of(legacy), -1), 1f,
+                BossBar.Color.WHITE, BossBar.Overlay.PROGRESS);
+        messageBars.put(id, bar);
+        player.showBossBar(bar);
+        long ticks = Math.max(1, (long) (getConfig().getDouble("gui-messages.seconds", 3.0) * 20));
+        messageTasks.put(id, Bukkit.getScheduler().runTaskLater(this, () -> {
+            Player online = Bukkit.getPlayer(id);
+            if (online != null) {
+                online.hideBossBar(bar);
+            }
+            if (messageBars.get(id) == bar) {
+                messageBars.remove(id);
+            }
+            messageTasks.remove(id);
+        }, ticks));
+    }
+
+    /** Messaggi legati a un comando: se e' un errore va sempre in chat (non in actionbar). */
+    public void sendCommand(CommandSender to, String key, String... replacements) {
+        String type = getConfig().getString("messages." + key + ".type", "error");
+        deliver(to, key, type.equalsIgnoreCase("error"), replacements);
+    }
+
     /**
      * Invia un messaggio standard preso da "messages.<chiave>" nel config.
      * Il tipo (error, success, info, warning) decide lo stile, il canale (chat o actionbar)
-     * decide dove appare.
+     * decide dove appare. Con una GUI aperta l'actionbar diventa una bossbar.
      */
     public void send(CommandSender to, String key, String... replacements) {
+        deliver(to, key, false, replacements);
+    }
+
+    private void deliver(CommandSender to, String key, boolean forceChat, String... replacements) {
         ConfigurationSection m = getConfig().getConfigurationSection("messages." + key);
         String type = "error";
         String channel = "actionbar";
@@ -360,20 +602,32 @@ public final class BlockMania extends JavaPlugin {
         } else {
             lines = List.of(getConfig().getString("messages." + key, key));
         }
+        if (forceChat) {
+            channel = "chat";
+        }
 
         String base = "styles." + type;
         String baseColor = getConfig().getString(base + ".color", "&7");
         String highlight = getConfig().getString(base + ".highlight", "&f");
         String prefix = getConfig().getString(base + ".prefix", "");
         String suffix = getConfig().getString(base + ".suffix", "");
+        boolean uniform = getConfig().getBoolean(base + ".uniform", false);
         boolean actionBar = channel.equalsIgnoreCase("actionbar") && to instanceof Player;
 
         for (String line : lines) {
             String t = tiny(prefix + line + suffix);
+            if (uniform) {
+                t = stripCodes(t);
+            }
             for (int i = 0; i + 1 < replacements.length; i += 2) {
-                t = t.replace(replacements[i], highlight + replacements[i + 1] + baseColor);
+                String value = uniform ? stripCodes(replacements[i + 1]) : replacements[i + 1];
+                t = t.replace(replacements[i], uniform ? value : highlight + value + baseColor);
             }
             String legacy = baseColor + t;
+            if (actionBar && hasOpenGui((Player) to)) {
+                showBossMessage((Player) to, legacy);
+                return;
+            }
             Component component = actionBar && background != null && background.forActionbar()
                     ? withBackground(legacy) : color(legacy);
             if (actionBar) {
@@ -461,6 +715,9 @@ public final class BlockMania extends JavaPlugin {
             meta.lore(lore);
         }
         meta.getPersistentDataContainer().set(blockKey, PersistentDataType.INTEGER, number);
+        if (getConfig().getBoolean("blocks.custom-model-data", true)) {
+            meta.setCustomModelData(BlockManager.itemModelData(number, 1));
+        }
         stack.setItemMeta(meta);
         return stack;
     }

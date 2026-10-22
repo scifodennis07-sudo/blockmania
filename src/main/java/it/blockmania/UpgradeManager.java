@@ -414,110 +414,33 @@ public final class UpgradeManager implements Listener {
 
     // ---------- titolo (con i numeri delle pagine) ----------
 
-    private static final Pattern SHIFT = Pattern.compile("\\{shift:(-?\\d+)\\}");
-
-    private String glyphs(int number) {
-        var c = plugin.getConfig();
-        StringBuilder sb = new StringBuilder();
-        for (char ch : String.valueOf(number).toCharArray()) {
-            String glyph = c.getString(GUI + "title.digits." + ch, "");
-            sb.append(glyph.isEmpty() ? String.valueOf(ch) : glyph);
-        }
-        return sb.toString();
-    }
-
-    private Component withFont(Component component, String font) {
-        if (font == null || font.isBlank()) {
-            return component;
-        }
-        try {
-            return component.font(Key.key(font.trim()));
-        } catch (Exception ex) {
-            return component; // nome del font non valido: resta il font normale
-        }
-    }
-
     /**
      * Titolo della GUI: title.text (qui di solito va lo sfondo disegnato del pack) e, dopo, i numeri
-     * delle pagine (title.page.*) scritti con un font abbassato e centrati tra le frecce.
+     * delle pagine (title.page.*) in una posizione fissa, con la loro ombra.
      */
     private Component title(int page, int pages) {
+        return buildTitle(page, pages).build();
+    }
+
+    private GuiTitle buildTitle(int page, int pages) {
         var c = plugin.getConfig();
-        String raw = c.getString(GUI + "title.text", "&8potenziamenti");
-        // prima gli spostamenti {shift:N} (altrimenti il tiny text cambierebbe le lettere)
-        Matcher m = SHIFT.matcher(raw);
-        StringBuilder shifted = new StringBuilder();
-        while (m.find()) {
-            String space = plugin.getBackground().shift(Integer.parseInt(m.group(1)));
-            m.appendReplacement(shifted, Matcher.quoteReplacement(space));
-        }
-        m.appendTail(shifted);
-
-        Component result = withFont(plugin.color(plugin.tiny(shifted.toString())), c.getString(GUI + "title.font", ""));
-
-        // I numeri delle pagine vanno DOPO lo sfondo (altrimenti lo sfondo li copre). Per metterli sempre nello
-        // stesso punto, dal punto dove finisce il titolo si torna indietro della sua larghezza.
+        GuiTitle t = new GuiTitle(plugin);
+        t.text(c.getString(GUI + "title.text", "&8potenziamenti"), c.getString(GUI + "title.font", ""),
+                GUI + "title");
         String pageRaw = c.getString(GUI + "title.page.text", "");
         if (pageRaw != null && !pageRaw.isBlank()) {
-            String slash = c.getString(GUI + "title.slash", "/");
-            String pageText = pageRaw
-                    .replace("%page%", glyphs(page + 1))
-                    .replace("%pages%", glyphs(pages))
-                    .replace("%slash%", slash);
-            int advance = plugin.getBackground().measure(pageText);
-            int width = Math.max(0, advance - 1);
-            int center = c.getInt(GUI + "title.page.center", 81);
-            int start = center - width / 2;
-            int move = start - titleAdvance(raw);
-            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)))
-                    .append(withFont(plugin.color(pageText), c.getString(GUI + "title.page.font", "")));
+            String plain = BlockMania.stripCodes(pageRaw)
+                    .replace("%page%", String.valueOf(page + 1))
+                    .replace("%pages%", String.valueOf(pages))
+                    .replace("%slash%", "/");
+            String set = c.getString(GUI + "title.page.set", "main");
+            String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
+            int center = c.getInt(GUI + "title.page.center", 73);
+            int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
+            t.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
+                    c.getString(GUI + "title.page.font", ""));
         }
-        return result;
-    }
-
-    /**
-     * Quanti pixel avanza il cursore scrivendo title.text. Le lettere normali le misura da solo, gli
-     * spostamenti {shift:N} li somma, e per i caratteri disegnati (sfondi) usa title.widths.
-     */
-    private int titleAdvance(String raw) {
-        var c = plugin.getConfig();
-        int manual = c.getInt(GUI + "title.advance", 0);
-        if (manual > 0) {
-            return manual; // valore fisso scelto da te: niente calcolo
-        }
-        Map<Character, Integer> widths = new HashMap<>();
-        ConfigurationSection section = c.getConfigurationSection(GUI + "title.widths");
-        if (section != null) {
-            for (String k : section.getKeys(false)) {
-                if (k.length() == 1) {
-                    widths.put(k.charAt(0), section.getInt(k));
-                }
-            }
-        }
-        int total = 0;
-        Matcher m = SHIFT.matcher(raw);
-        int last = 0;
-        while (m.find()) {
-            total += pieceAdvance(raw.substring(last, m.start()), widths);
-            total += Integer.parseInt(m.group(1));
-            last = m.end();
-        }
-        total += pieceAdvance(raw.substring(last), widths);
-        return total;
-    }
-
-    private int pieceAdvance(String piece, Map<Character, Integer> widths) {
-        int total = 0;
-        StringBuilder normal = new StringBuilder();
-        for (char ch : piece.toCharArray()) {
-            Integer w = widths.get(ch);
-            if (w != null) {
-                total += w;
-            } else {
-                normal.append(ch);
-            }
-        }
-        return total + plugin.getBackground().measure(plugin.tiny(normal.toString()));
+        return t;
     }
 
     private static String codes(String text) {
@@ -538,22 +461,13 @@ public final class UpgradeManager implements Listener {
         List<String> out = new ArrayList<>();
         String raw = c.getString(GUI + "title.text", "");
         ConfigurationSection w = c.getConfigurationSection(GUI + "title.widths");
-        String pageRaw = c.getString(GUI + "title.page.text", "");
         out.add("&etitle.text = &f" + codes(raw));
         out.add("&ewidths = &f" + (w == null ? "NON TROVATO" : w.getKeys(false).stream()
                 .map(k -> codes(k) + "=" + w.getInt(k)).toList()));
-        out.add("&etitle.advance (fisso) = &f" + c.getInt(GUI + "title.advance", 0));
-        int adv = titleAdvance(raw);
-        out.add("&eavanzamento del titolo = &f" + adv);
-        String pageText = pageRaw.replace("%page%", glyphs(1)).replace("%pages%", glyphs(1))
-                .replace("%slash%", c.getString(GUI + "title.slash", "/"));
-        out.add("&epage.text = &f" + codes(pageRaw) + " &e-> &f" + codes(pageText));
-        int pageAdv = plugin.getBackground().measure(pageText);
-        int center = c.getInt(GUI + "title.page.center", 81);
-        int move = center - Math.max(0, pageAdv - 1) / 2 - adv;
-        out.add("&elarghezza numeri = &f" + pageAdv + " &ecenter = &f" + center + " &espostamento = &f" + move);
-        out.add("&espazi usati = &f" + codes(plugin.getBackground().shift(move)));
-        out.add("&efont numeri = &f'" + c.getString(GUI + "title.page.font", "") + "'");
+        GuiTitle t = new GuiTitle(plugin).text(raw, "", GUI + "title");
+        out.add("&eavanzamento del titolo = &f" + t.cursor());
+        out.add("&egruppo glyphs.main = &f" + codes(c.getString("glyphs.main", "")));
+        out.add("&ecenter = &f" + c.getInt(GUI + "title.page.center", 73));
         return out;
     }
 

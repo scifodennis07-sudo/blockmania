@@ -29,6 +29,11 @@ public final class BlockManager {
     /** Quanti blocchi complessivi si possono avere: 1140 modelli / 10 varianti. */
     public static final int MAX_BLOCKS = 114;
 
+    /** Custom model data dell'oggetto "numero-variante": (numero-1)*10+variante, da 1 a 1140. */
+    public static int itemModelData(int number, int variant) {
+        return (number - 1) * VARIANTS + variant;
+    }
+
     /** Gli strumenti del note block, nello stesso ordine usato per generare il resource pack. */
     private static final String[] INSTRUMENTS = {
             "harp", "basedrum", "snare", "hat", "bass", "flute", "bell", "guitar", "chime",
