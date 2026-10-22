@@ -25,6 +25,9 @@ public final class Background {
     private int adjust;
     private int unknownWidth;
 
+    private String barLeft;
+    private String barRight;
+    private int barCap;
     private String barFill;
     private String barEmpty;
     private String left;
@@ -61,6 +64,9 @@ public final class Background {
 
         barFill = c.getString("background.bar.fill", "\u3c10");
         barEmpty = c.getString("background.bar.empty", "\u3c11");
+        barLeft = c.getString("background.bar.left", "");
+        barRight = c.getString("background.bar.right", "");
+        barCap = Math.max(1, c.getInt("background.bar.cap-width", 1));
         if (!c.getBoolean("background.bar.enabled", true)) {
             barFill = "";
             barEmpty = "";
@@ -269,11 +275,19 @@ public final class Background {
 
         if (progress >= 0 && !barFill.isEmpty() && !barEmpty.isEmpty()) {
             int width = total - 1; // larghezza visibile dello sfondo
-            int filled = (int) Math.round(Math.max(0.0, Math.min(1.0, progress)) * width);
+            boolean caps = !barLeft.isEmpty() && !barRight.isEmpty() && width > 2 * barCap;
+            int inner = caps ? width - 2 * barCap : width;
+            int filled = (int) Math.round(Math.max(0.0, Math.min(1.0, progress)) * inner);
             after.append(move(-total));
             String back = move(-1);
-            for (int i = 0; i < width; i++) {
+            if (caps) {
+                after.append(barLeft).append(back);
+            }
+            for (int i = 0; i < inner; i++) {
                 after.append(i < filled ? barFill : barEmpty).append(back);
+            }
+            if (caps) {
+                after.append(barRight).append(back);
             }
             after.append(move(total - width));
         }

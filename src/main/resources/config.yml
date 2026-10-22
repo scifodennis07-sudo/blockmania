@@ -619,6 +619,9 @@ background:
     enabled: true
     fill: "\u3c10"              # pezzo pieno (1 pixel)
     empty: "\u3c11"             # pezzo vuoto (1 pixel)
+    left: "\u3c12"              # bordo sinistro fisso della barra (vuoto = nessun bordo)
+    right: "\u3c13"             # bordo destro fisso
+    cap-width: 1                 # larghezza in pixel dei due bordi (come le PNG)
   # spazi invisibili del font: quantita' in pixel -> carattere
   negative-spaces:
     1: "\u2f1e"
