@@ -74,6 +74,20 @@ public final class UpgradeManager implements Listener {
         player.getPersistentDataContainer().set(key(id), PersistentDataType.INTEGER, Math.max(0, level));
     }
 
+    /** Per i comandi: imposta il livello (tra 0 e il massimo) e aggiorna i lanciapalle del giocatore. */
+    public void setLevelAdmin(Player player, String id, int level) {
+        setLevel(player, id, Math.min(level, maxLevel(id)));
+        refreshLaunchers(player);
+    }
+
+    /** Per i comandi: riporta tutti i potenziamenti a 0. */
+    public void resetLevels(Player player) {
+        for (String id : IDS) {
+            setLevel(player, id, 0);
+        }
+        refreshLaunchers(player);
+    }
+
     public int maxLevel(String id) {
         return Math.max(0, plugin.getConfig().getInt("upgrades." + id + ".max-level", 10));
     }
@@ -383,11 +397,11 @@ public final class UpgradeManager implements Listener {
             String key = switch (state) {
                 case AVAILABLE -> "available";
                 case LOCKED -> "locked";
-                case MAX -> "max";
+                case MAX -> "maxed";
                 default -> "none";
             };
             String bp = GUI + "buttons." + key;
-            int defaultCmd = state == State.AVAILABLE ? 1 : state == State.LOCKED ? 2 : 3;
+            int defaultCmd = state == State.AVAILABLE ? 1 : (state == State.LOCKED || state == State.MAX) ? 2 : 3;
             String name = c.getString(bp + ".name", "livello %level%");
             List<String> lore = c.getStringList(bp + ".lore");
             String action = state == State.AVAILABLE || state == State.LOCKED || state == State.MAX ? "buy:" + id : null;
@@ -439,8 +453,11 @@ public final class UpgradeManager implements Listener {
         }
         m.appendTail(shifted);
 
-        Component result = withFont(plugin.color(plugin.tiny(shifted.toString())), c.getString(GUI + "title.font", ""));
+        Component titleText = withFont(plugin.color(plugin.tiny(shifted.toString())), c.getString(GUI + "title.font", ""));
+        Component result = Component.empty();
 
+        // I numeri delle pagine si scrivono PER PRIMI, in una posizione fissa, e poi si torna all'inizio:
+        // cosi il titolo puo' avere qualsiasi lunghezza o sfondo senza spostarli.
         String pageRaw = c.getString(GUI + "title.page.text", "");
         if (pageRaw != null && !pageRaw.isBlank()) {
             String slash = c.getString(GUI + "title.slash", "/");
@@ -448,15 +465,15 @@ public final class UpgradeManager implements Listener {
                     .replace("%page%", glyphs(page + 1))
                     .replace("%pages%", glyphs(pages))
                     .replace("%slash%", slash);
-            // larghezza del testo (senza l'ultimo pixel vuoto) per centrarlo
-            int width = Math.max(0, plugin.getBackground().measure(pageText) - 1);
-            int center = c.getInt(GUI + "title.page.center", 80);
-            int advance = c.getInt(GUI + "title.text-advance", 0);
-            int move = center - width / 2 - advance;
-            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)))
-                    .append(withFont(plugin.color(pageText), c.getString(GUI + "title.page.font", "")));
+            int advance = plugin.getBackground().measure(pageText);
+            int width = Math.max(0, advance - 1);
+            int center = c.getInt(GUI + "title.page.center", 81);
+            int start = center - width / 2;
+            result = result.append(plugin.color("&f" + plugin.getBackground().shift(start)))
+                    .append(withFont(plugin.color(pageText), c.getString(GUI + "title.page.font", "")))
+                    .append(plugin.color("&f" + plugin.getBackground().shift(-(start + advance))));
         }
-        return result;
+        return result.append(titleText);
     }
 
     // ---------- aprire e usare la GUI ----------

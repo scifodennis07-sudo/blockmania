@@ -92,7 +92,7 @@ messages:
   missing-type:
     type: error
     channel: actionbar
-    text: "manca il tipo di palla (%types% oppure all), uso: %usage%"
+    text: "manca il tipo (%types% oppure all), uso: %usage%"
   unknown-ammo:
     type: error
     channel: actionbar
@@ -125,6 +125,14 @@ messages:
     type: success
     channel: actionbar
     text: "%player% ora ha %value% %stat%"
+  reset-all:
+    type: success
+    channel: actionbar
+    text: "%player% e stato resettato: palle, coin, blockcoin, blockshell, miniera e potenziamenti"
+  unknown-upgrade:
+    type: error
+    channel: actionbar
+    text: "il potenziamento %value% non esiste. Scegli tra: %types%"
   see:
     type: info
     channel: chat
@@ -257,6 +265,16 @@ help:
       usage: "/bm mine <get|remove|see|reset> [numero] [player]"
       description: "gestisce la miniera del giocatore (parte da 1). Decide fino a che livello puo potenziare"
       example: "/bm mine get 1"
+    upgrade:
+      permission: blockmania.stats
+      usage: "/bm upgrade <get|remove|see|reset> <damage|cooldown|speed|capacity|all> [numero] [player]"
+      description: "cambia il livello dei potenziamenti di un giocatore"
+      example: "/bm upgrade get damage 2"
+    resetall:
+      permission: blockmania.stats
+      usage: "/bm resetall [player]"
+      description: "resetta tutto a un giocatore: palle, coin, blockcoin, blockshell, miniera e potenziamenti"
+      example: "/bm resetall Dennis"
     coin:
       permission: blockmania.stats
       usage: "/bm coin <get|remove|see|reset> [numero] [player]"
@@ -565,7 +583,7 @@ upgrade-gui:
       - "&8• &7miniera &f%mine%"
 
   # i tre tasti: cmd 1 = verde (si puo' potenziare), 2 = rosso (serve la miniera dopo),
-  # 3 = grigio (potenziamento che non esiste ancora). "max" e' il livello massimo raggiunto.
+  # 3 = grigio (potenziamento che non esiste ancora). "maxed" = livello massimo raggiunto (rosso).
   buttons:
     available:
       material: GLASS_PANE
@@ -594,10 +612,10 @@ upgrade-gui:
       lore:
         - ""
         - "&7qui arrivera un nuovo potenziamento"
-    max:
+    maxed:
       material: GLASS_PANE
-      cmd: 1
-      name: "&alivello massimo"
+      cmd: 2
+      name: "&clivello massimo"
       lore:
         - ""
         - "&8• &7%label% &f%current%"
@@ -639,12 +657,11 @@ upgrade-gui:
   title:
     text: "&8potenziamenti"
     font: ""                   # font di title.text (vuoto = normale)
-    text-advance: 0            # di quanti pixel va avanti il cursore alla fine di title.text (se torna all'inizio: 0)
     slash: "/"
     page:
       text: "&8%page%%slash%%pages%"   # vuoto = niente numeri
       font: "minecraft:gui"            # font abbassato (gui.json nel pack)
-      center: 80                       # centro dei numeri, in pixel dall'inizio del titolo (80 = centro della GUI)
+      center: 81                       # centro dei numeri, in pixel dall'inizio del titolo (81 = slot 4). Fisso: non dipende dal testo del titolo
     # se disegni dei numeri tuoi, metti qui i caratteri: digits: {"0": "\uE400", "1": "\uE401"}
     digits: {}
 

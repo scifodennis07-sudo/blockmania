@@ -107,6 +107,8 @@ public final class BlockManiaCommand implements TabExecutor {
             case "blockshell" -> counter(sender, args, "blockshell");
             case "coin" -> counter(sender, args, "coin");
             case "mine" -> counter(sender, args, "mine");
+            case "upgrade" -> upgrade(sender, args);
+            case "resetall" -> resetAll(sender, args);
             case "shop" -> shop(sender, args);
             case "bgtest" -> bgTest(sender, args);
             default -> plugin.send(sender, "unknown-subcommand", "%value%", args[0]);
@@ -305,6 +307,72 @@ public final class BlockManiaCommand implements TabExecutor {
         runStats(sender, action, stats, args, 3, "ball");
     }
 
+    // ---------- /blockmania upgrade <get|remove|see|reset> <potenziamento|all> [numero] [giocatore] ----------
+
+    private void upgrade(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.stats")) {
+            plugin.send(sender, "no-permission");
+            return;
+        }
+        if (args.length < 2) {
+            plugin.send(sender, "missing-action", "%usage%", usage("upgrade"), "%actions%", actions());
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        if (!ACTIONS.contains(action)) {
+            plugin.send(sender, "invalid-action", "%value%", args[1], "%actions%", actions());
+            return;
+        }
+        UpgradeManager up = plugin.getUpgrades();
+        String types = String.join(", ", UpgradeManager.IDS);
+        if (args.length < 3) {
+            plugin.send(sender, "missing-type", "%usage%", usage("upgrade"), "%types%", types);
+            return;
+        }
+        String type = args[2].toLowerCase(Locale.ROOT);
+        List<String> chosen = new ArrayList<>();
+        if (type.equals("all")) {
+            chosen.addAll(UpgradeManager.IDS);
+        } else if (UpgradeManager.IDS.contains(type)) {
+            chosen.add(type);
+        } else {
+            plugin.send(sender, "unknown-upgrade", "%value%", args[2], "%types%", types);
+            return;
+        }
+        List<Stat> stats = new ArrayList<>();
+        for (String id : chosen) {
+            stats.add(new Stat(id, p -> up.getLevel(p, id), (p, v) -> up.setLevelAdmin(p, id, v),
+                    p -> up.maxLevel(id)));
+        }
+        runStats(sender, action, stats, args, 3, "upgrade");
+    }
+
+    // ---------- /blockmania resetall [giocatore] ----------
+
+    private void resetAll(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.stats")) {
+            plugin.send(sender, "no-permission");
+            return;
+        }
+        Player target = resolveTarget(sender, args, 1, "resetall");
+        if (target == null) {
+            return;
+        }
+        AmmoManager ammo = plugin.getAmmo();
+        for (String t : ammo.types()) {
+            ammo.setAmmo(target, t, 0);
+        }
+        ammo.setShell(target, 0);
+        ammo.setBlockCoin(target, 0);
+        ammo.setCoin(target, 0);
+        ammo.setMine(target, 0);
+        plugin.getUpgrades().resetLevels(target);
+        plugin.send(sender, "reset-all", "%player%", target.getName());
+        if (!target.equals(sender)) {
+            plugin.send(target, "reset-all", "%player%", target.getName());
+        }
+    }
+
     // ---------- /blockmania blockcoin|blockshell|coin <get|remove|see|reset> [numero] [giocatore] ----------
 
     private void counter(CommandSender sender, String[] args, String which) {
@@ -431,6 +499,8 @@ public final class BlockManiaCommand implements TabExecutor {
                 result.add("blockshell");
                 result.add("coin");
                 result.add("mine");
+                result.add("upgrade");
+                result.add("resetall");
             }
             if (sender.hasPermission("blockmania.shop.edit")) {
                 result.add("shop");
@@ -471,6 +541,24 @@ public final class BlockManiaCommand implements TabExecutor {
                     } else if (args.length == (amount ? 5 : 4)) {
                         addPlayers(result);
                     }
+                }
+            } else if (sub.equals("upgrade") && canStats) {
+                if (args.length == 2) {
+                    result.addAll(ACTIONS);
+                } else if (args.length == 3) {
+                    result.addAll(UpgradeManager.IDS);
+                    result.add("all");
+                } else {
+                    boolean amount = args[1].equalsIgnoreCase("get") || args[1].equalsIgnoreCase("remove");
+                    if (amount && args.length == 4) {
+                        addNumberHint(result);
+                    } else if (args.length == (amount ? 5 : 4)) {
+                        addPlayers(result);
+                    }
+                }
+            } else if (sub.equals("resetall") && canStats) {
+                if (args.length == 2) {
+                    addPlayers(result);
                 }
             } else if ((sub.equals("blockcoin") || sub.equals("blockshell") || sub.equals("coin") || sub.equals("mine")) && canStats) {
                 if (args.length == 2) {
