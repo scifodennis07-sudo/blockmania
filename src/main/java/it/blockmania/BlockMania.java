@@ -223,7 +223,12 @@ public final class BlockMania extends JavaPlugin {
 
     /** Testo con lo sfondo dietro. Lo sfondo non ha l'ombra (se remove-shadow e' attivo), il testo si'. */
     public Component withBackground(String legacy) {
-        String[] parts = background.parts(legacy);
+        return withBackground(legacy, -1);
+    }
+
+    /** Come sopra, con in piu' una barra di avanzamento sotto lo sfondo (progress da 0 a 1; -1 = niente barra). */
+    public Component withBackground(String legacy, double progress) {
+        String[] parts = background.parts(legacy, progress);
         if (parts[0].isEmpty()) {
             return color(legacy);
         }
@@ -238,11 +243,16 @@ public final class BlockMania extends JavaPlugin {
 
     /** Testo per le bossbar: come text(), con lo sfondo se attivo. */
     public Component bossText(String template, String... replacements) {
+        return bossTextBar(template, -1, replacements);
+    }
+
+    /** Come bossText, con una barra di avanzamento disegnata sotto lo sfondo (progress da 0 a 1). */
+    public Component bossTextBar(String template, double progress, String... replacements) {
         String t = tiny(template);
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             t = t.replace(replacements[i], replacements[i + 1]);
         }
-        Component result = background != null && background.forBossbar() ? withBackground(t) : color(t);
+        Component result = background != null && background.forBossbar() ? withBackground(t, progress) : color(t);
         String font = getConfig().getString("bossbar.font", "");
         if (font != null && !font.isBlank()) {
             try {

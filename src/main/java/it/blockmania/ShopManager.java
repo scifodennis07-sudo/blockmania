@@ -415,7 +415,9 @@ public final class ShopManager implements Listener {
                     .replace("%level%", String.valueOf(e.getKey()))
                     .replace("%coins%", String.valueOf(e.getValue() * ammo.shellValue(e.getKey()))));
         }
-        return plugin.bossText(cfg().getString("shops.sell.bossbar.text", "&7vendita: %groups%"),
+        double progress = cfg().getBoolean("shops.sell.bossbar.progress-bar", true) && sale.total > 0
+                ? (double) sale.done / sale.total : -1;
+        return plugin.bossTextBar(cfg().getString("shops.sell.bossbar.text", "&7vendita: %groups%"), progress,
                 "%groups%", String.join(separator, parts),
                 "%total%", String.valueOf(sale.expected),
                 "%earned%", String.valueOf(sale.coins),

@@ -25,6 +25,8 @@ public final class Background {
     private int adjust;
     private int unknownWidth;
 
+    private String barFill;
+    private String barEmpty;
     private String left;
     private String center;
     private String right;
@@ -56,6 +58,13 @@ public final class Background {
         leftWidth = Math.max(0, c.getInt("background.left.width", 6));
         centerWidth = Math.max(1, c.getInt("background.center.width", 1));
         rightWidth = Math.max(0, c.getInt("background.right.width", 6));
+
+        barFill = c.getString("background.bar.fill", "\u3c10");
+        barEmpty = c.getString("background.bar.empty", "\u3c11");
+        if (!c.getBoolean("background.bar.enabled", true)) {
+            barFill = "";
+            barEmpty = "";
+        }
 
         readSpaces(c.getConfigurationSection("background.negative-spaces"), negative,
                 new int[]{1, 2, 3, 4, 5, 6, 16, 32},
@@ -224,6 +233,14 @@ public final class Background {
      * e quella che va DOPO (avanzamento). Il testo in mezzo resta com'e'.
      */
     public String[] parts(String legacy) {
+        return parts(legacy, -1);
+    }
+
+    /**
+     * Come parts(legacy), ma se progress e' tra 0 e 1 disegna sotto lo sfondo una barra di avanzamento
+     * larga quanto lo sfondo (pezzi "pieni" e "vuoti" presi dal font).
+     */
+    public String[] parts(String legacy, double progress) {
         if (negative.isEmpty() || positive.isEmpty()) {
             return new String[]{"", ""};
         }
@@ -248,7 +265,18 @@ public final class Background {
         before.append(right);
         before.append(move(textStart - total));
 
-        String after = "&f" + move(total - (textStart + textWidth));
-        return new String[]{before.toString(), after};
+        StringBuilder after = new StringBuilder("&f").append(move(total - (textStart + textWidth)));
+
+        if (progress >= 0 && !barFill.isEmpty() && !barEmpty.isEmpty()) {
+            int width = total - 1; // larghezza visibile dello sfondo
+            int filled = (int) Math.round(Math.max(0.0, Math.min(1.0, progress)) * width);
+            after.append(move(-total));
+            String back = move(-1);
+            for (int i = 0; i < width; i++) {
+                after.append(i < filled ? barFill : barEmpty).append(back);
+            }
+            after.append(move(total - width));
+        }
+        return new String[]{before.toString(), after.toString()};
     }
 }

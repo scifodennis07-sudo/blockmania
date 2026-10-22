@@ -400,6 +400,7 @@ shops:
       separator: " &8| "
       color: GREEN
       style: PROGRESS
+      progress-bar: true       # true = disegna la barra sotto lo sfondo (serve bossbar.json aggiornato)
     sounds:
       tick:
         sound: "block.note_block.hat"
@@ -614,6 +615,10 @@ background:
   right:
     char: "\u3c02"             # bordo destro
     width: 6
+  bar:                         # barra di avanzamento sotto lo sfondo (usata dalla vendita shell)
+    enabled: true
+    fill: "\u3c10"              # pezzo pieno (1 pixel)
+    empty: "\u3c11"             # pezzo vuoto (1 pixel)
   # spazi invisibili del font: quantita' in pixel -> carattere
   negative-spaces:
     1: "\u2f1e"
