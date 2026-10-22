@@ -234,6 +234,15 @@ public final class AmmoManager {
         setValue(player, COIN, value);
     }
 
+    /** Miniera del giocatore (parte da 1). Serve a sapere fino a che livello puo' potenziare. */
+    public int getMine(Player player) {
+        return Math.max(1, getValue(player, "mine"));
+    }
+
+    public void setMine(Player player, int value) {
+        setValue(player, "mine", value);
+    }
+
     /** Saldo di una valuta per nome: coin, blockcoin oppure blockshell. */
     public int getBalance(Player player, String currency) {
         return switch (currency.toLowerCase(Locale.ROOT)) {

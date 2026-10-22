@@ -56,10 +56,10 @@ public final class LauncherListener implements Listener {
         Player player = event.getPlayer();
         Action action = event.getAction();
 
-        // shift + tasto sinistro: apre la GUI dei potenziamenti
+        // tasto sinistro (senza shift): apre la GUI dei potenziamenti
         if (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK) {
-            if (player.isSneaking() && player.hasPermission("blockmania.use")) {
-                event.setCancelled(true);
+            event.setCancelled(true);
+            if (!player.isSneaking() && player.hasPermission("blockmania.use")) {
                 plugin.getUpgrades().open(player, li);
             }
             return;

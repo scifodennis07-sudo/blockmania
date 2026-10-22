@@ -106,6 +106,7 @@ public final class BlockManiaCommand implements TabExecutor {
             case "blockcoin" -> counter(sender, args, "blockcoin");
             case "blockshell" -> counter(sender, args, "blockshell");
             case "coin" -> counter(sender, args, "coin");
+            case "mine" -> counter(sender, args, "mine");
             case "shop" -> shop(sender, args);
             case "bgtest" -> bgTest(sender, args);
             default -> plugin.send(sender, "unknown-subcommand", "%value%", args[0]);
@@ -325,6 +326,7 @@ public final class BlockManiaCommand implements TabExecutor {
         Stat stat = switch (which) {
             case "blockshell" -> new Stat("blockshell", ammo::getShell, ammo::setShell, p -> ammo.getShellMax());
             case "blockcoin" -> new Stat("blockcoin", ammo::getBlockCoin, ammo::setBlockCoin, p -> Integer.MAX_VALUE);
+            case "mine" -> new Stat("mine", ammo::getMine, ammo::setMine, p -> Integer.MAX_VALUE);
             default -> new Stat("coin", ammo::getCoin, ammo::setCoin, p -> Integer.MAX_VALUE);
         };
         runStats(sender, action, List.of(stat), args, 2, which);
@@ -428,6 +430,7 @@ public final class BlockManiaCommand implements TabExecutor {
                 result.add("blockcoin");
                 result.add("blockshell");
                 result.add("coin");
+                result.add("mine");
             }
             if (sender.hasPermission("blockmania.shop.edit")) {
                 result.add("shop");
@@ -469,7 +472,7 @@ public final class BlockManiaCommand implements TabExecutor {
                         addPlayers(result);
                     }
                 }
-            } else if ((sub.equals("blockcoin") || sub.equals("blockshell") || sub.equals("coin")) && canStats) {
+            } else if ((sub.equals("blockcoin") || sub.equals("blockshell") || sub.equals("coin") || sub.equals("mine")) && canStats) {
                 if (args.length == 2) {
                     result.addAll(ACTIONS);
                 } else {
