@@ -241,18 +241,68 @@ public final class BlockMania extends JavaPlugin {
                 .append(color(parts[1]).shadowColor(ShadowColor.none()));
     }
 
+    /** Piu' testi, ognuno nel suo sfondo, messi in fila e centrati. progress >= 0 aggiunge la barra sotto tutti. */
+    public Component withBackgrounds(List<String> segments, double progress) {
+        boolean noShadow = background.removeShadow();
+        Component out = Component.empty();
+        int totalAll = 0;
+        boolean any = false;
+        for (String seg : segments) {
+            String[] parts = background.parts(seg);
+            int total = background.totalOf(seg);
+            if (parts[0].isEmpty() || total <= 0) {
+                out = out.append(color(seg));
+                continue;
+            }
+            if (any && background.gap() > 0) {
+                Component gap = color("&f" + background.shift(background.gap()));
+                out = out.append(noShadow ? gap.shadowColor(ShadowColor.none()) : gap);
+                totalAll += background.gap();
+            }
+            Component before = color(parts[0]);
+            Component after = color(parts[1]);
+            out = out.append(noShadow ? before.shadowColor(ShadowColor.none()) : before)
+                    .append(color(seg))
+                    .append(noShadow ? after.shadowColor(ShadowColor.none()) : after);
+            totalAll += total;
+            any = true;
+        }
+        if (any && progress >= 0) {
+            String bar = background.bar(totalAll, progress);
+            if (!bar.isEmpty()) {
+                Component b = color("&f" + bar);
+                out = out.append(noShadow ? b.shadowColor(ShadowColor.none()) : b);
+            }
+        }
+        return out;
+    }
+
     /** Testo per le bossbar: come text(), con lo sfondo se attivo. */
     public Component bossText(String template, String... replacements) {
-        return bossTextBar(template, -1, replacements);
+        return bossSegments(List.of(template), -1, replacements);
     }
 
     /** Come bossText, con una barra di avanzamento disegnata sotto lo sfondo (progress da 0 a 1). */
     public Component bossTextBar(String template, double progress, String... replacements) {
-        String t = tiny(template);
-        for (int i = 0; i + 1 < replacements.length; i += 2) {
-            t = t.replace(replacements[i], replacements[i + 1]);
+        return bossSegments(List.of(template), progress, replacements);
+    }
+
+    /** Bossbar fatta di piu' pezzi, ognuno con il suo sfondo. */
+    public Component bossSegments(List<String> templates, double progress, String... replacements) {
+        List<String> legacies = new ArrayList<>();
+        for (String template : templates) {
+            String t = tiny(template);
+            for (int i = 0; i + 1 < replacements.length; i += 2) {
+                t = t.replace(replacements[i], replacements[i + 1]);
+            }
+            legacies.add(t);
         }
-        Component result = background != null && background.forBossbar() ? withBackground(t, progress) : color(t);
+        Component result;
+        if (background != null && background.forBossbar()) {
+            result = withBackgrounds(legacies, progress);
+        } else {
+            result = color(String.join(" ", legacies));
+        }
         String font = getConfig().getString("bossbar.font", "");
         if (font != null && !font.isBlank()) {
             try {

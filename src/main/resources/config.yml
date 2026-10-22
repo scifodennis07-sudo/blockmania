@@ -168,11 +168,11 @@ messages:
   sell-done:
     type: success
     channel: actionbar
-    text: "hai venduto %shells% blockshell e ricevuto %coins% coin"
+    text: "hai ottenuto %coins% coin"
   sell-cancelled:
     type: error
     channel: actionbar
-    text: "vendita interrotta: %shells% blockshell vendute per %coins% coin"
+    text: "vendita interrotta, hai ottenuto %coins% coin"
   shop-removed:
     type: success
     channel: actionbar
@@ -394,10 +394,11 @@ shops:
       - "&7tasto destro per vendere le tue blockshell"
       - "&8hai &f%shells% &8shell, valgono &e%coins% coin"
     bossbar:
-      # segnaposto: %groups% %total% (coin totali) %earned% (guadagnati finora) %done% %shells%
-      text: "&7vendita: %groups% &8| &atotale: &f%total% coin"
-      group-format: "&fx%count% &7lv%level% &e%coins% coin"   # una voce per livello
-      separator: " &8| "
+      # Ogni livello di shell ha il suo riquadro. Segnaposto di group-format:
+      #   %count% quante shell di quel livello  %level% il livello
+      #   %coins% quanto vale UNA shell di quel livello  %group_total% valore di tutte quelle del livello
+      group-format: "&fx%count% &7lv%level% &e%coins% coin"
+      title: ""                # riquadro iniziale facoltativo, ad esempio "&7vendita" (vuoto = nessuno)
       color: GREEN
       style: PROGRESS
       progress-bar: true       # true = disegna la barra sotto lo sfondo (serve bossbar.json aggiornato)
@@ -425,7 +426,13 @@ bossbar:
   enabled: true
   always-visible: true         # false = visibile solo con il lanciapalle in mano
   ammo-type: standardball      # di quale tipo di palla mostra il numero
-  text: "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"
+  # un riquadro (sfondo) per ogni voce della lista. Aggiungi, togli o cambia le righe come vuoi
+  segments:
+    - "&bstandardball: &f%ammo%&8/&f%ammo_max%"
+    - "&6blockshell: &f%shell%/%shell_max%"
+    - "&eblockcoin: &f%blockcoin%"
+    - "&acoin: &f%coin%"
+  text: "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"   # usato solo se segments e' vuoto
   font: ""                     # font del pack per abbassare il testo, ad esempio "minecraft:bossbar"
                                # (vuoto = font normale). Attivalo solo dopo aver messo bossbar.json nel pack
   color: BLUE                  # PINK BLUE RED GREEN YELLOW PURPLE WHITE
@@ -604,6 +611,7 @@ background:
   bossbar: true                # sfondo sul testo delle bossbar
   remove-shadow: true          # true = lo sfondo non ha l'ombra (il testo la mantiene)
   padding: 0                   # pixel di margine in piu' dentro lo sfondo (ai due lati)
+  gap: 3                       # pixel di distanza tra un riquadro e l'altro
   adjust: 0                    # per correggere la larghezza: +1 allarga, -1 stringe (di 1 pixel)
   unknown-char-width: 6        # larghezza usata per le lettere che il font normale non ha
   left:

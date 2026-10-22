@@ -238,6 +238,58 @@ public final class Background {
      * Ritorna {prima, dopo}: la parte che va PRIMA del testo (sfondo + ritorno indietro)
      * e quella che va DOPO (avanzamento). Il testo in mezzo resta com'e'.
      */
+    /** Larghezza totale (in pixel) che occupa lo sfondo di questo testo. 0 se non si puo' fare. */
+    public int totalOf(String legacy) {
+        if (negative.isEmpty() || positive.isEmpty()) {
+            return 0;
+        }
+        int textWidth = measure(legacy);
+        if (textWidth <= 0) {
+            return 0;
+        }
+        int visible = Math.max(1, textWidth - 1);
+        int centerSpan = Math.max(0, visible + 2 * padding + adjust);
+        int pieces = (centerSpan + centerWidth - 1) / centerWidth;
+        return leftWidth + pieces * centerWidth + rightWidth + 1;
+    }
+
+    /** Spostamento in pixel (positivo = avanti, negativo = indietro). */
+    public String shift(int amount) {
+        return move(amount);
+    }
+
+    /** Distanza in pixel tra due sfondi messi uno accanto all'altro. */
+    public int gap() {
+        return Math.max(0, plugin.getConfig().getInt("background.gap", 3));
+    }
+
+    /**
+     * Barra di avanzamento larga "total" pixel. Parte dal punto dove ci si trova (a fine riga),
+     * torna all'inizio, disegna la barra e si rimette alla fine.
+     */
+    public String bar(int total, double progress) {
+        if (barFill.isEmpty() || barEmpty.isEmpty() || total < 3 || negative.isEmpty() || positive.isEmpty()) {
+            return "";
+        }
+        int width = total - 1;
+        boolean caps = !barLeft.isEmpty() && !barRight.isEmpty() && width > 2 * barCap;
+        int inner = caps ? width - 2 * barCap : width;
+        int filled = (int) Math.round(Math.max(0.0, Math.min(1.0, progress)) * inner);
+        StringBuilder sb = new StringBuilder(move(-total));
+        String back = move(-1);
+        if (caps) {
+            sb.append(barLeft).append(back);
+        }
+        for (int i = 0; i < inner; i++) {
+            sb.append(i < filled ? barFill : barEmpty).append(back);
+        }
+        if (caps) {
+            sb.append(barRight).append(back);
+        }
+        sb.append(move(total - width));
+        return sb.toString();
+    }
+
     public String[] parts(String legacy) {
         return parts(legacy, -1);
     }

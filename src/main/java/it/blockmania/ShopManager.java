@@ -405,24 +405,27 @@ public final class ShopManager implements Listener {
 
     private Component saleText(Sale sale) {
         AmmoManager ammo = plugin.getAmmo();
-        String format = plugin.tiny(cfg().getString("shops.sell.bossbar.group-format",
-                "&fx%count% &7lv%level% &e%coins% coin"));
-        String separator = plugin.tiny(cfg().getString("shops.sell.bossbar.separator", " &8| "));
-        List<String> parts = new ArrayList<>();
+        String format = cfg().getString("shops.sell.bossbar.group-format",
+                "&fx%count% &7lv%level% &e%coins% coin");
+        List<String> segments = new ArrayList<>();
+        String title = cfg().getString("shops.sell.bossbar.title", "");
+        if (title != null && !title.isBlank()) {
+            segments.add(title
+                    .replace("%done%", String.valueOf(sale.done))
+                    .replace("%shells%", String.valueOf(sale.total)));
+        }
+        // un riquadro per ogni livello. %coins% = quanto vale UNA shell di quel livello
         for (Map.Entry<Integer, Integer> e : sale.groups.entrySet()) {
-            parts.add(format
+            int each = ammo.shellValue(e.getKey());
+            segments.add(format
                     .replace("%count%", String.valueOf(e.getValue()))
                     .replace("%level%", String.valueOf(e.getKey()))
-                    .replace("%coins%", String.valueOf(e.getValue() * ammo.shellValue(e.getKey()))));
+                    .replace("%coins%", String.valueOf(each))
+                    .replace("%group_total%", String.valueOf(each * e.getValue())));
         }
         double progress = cfg().getBoolean("shops.sell.bossbar.progress-bar", true) && sale.total > 0
                 ? (double) sale.done / sale.total : -1;
-        return plugin.bossTextBar(cfg().getString("shops.sell.bossbar.text", "&7vendita: %groups%"), progress,
-                "%groups%", String.join(separator, parts),
-                "%total%", String.valueOf(sale.expected),
-                "%earned%", String.valueOf(sale.coins),
-                "%done%", String.valueOf(sale.done),
-                "%shells%", String.valueOf(sale.total));
+        return plugin.bossSegments(segments, progress);
     }
 
     private void tickSale(UUID id) {
