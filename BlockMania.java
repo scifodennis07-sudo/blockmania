@@ -1,6 +1,8 @@
 package it.blockmania;
 
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.ShadowColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Location;
@@ -38,6 +40,7 @@ public final class BlockMania extends JavaPlugin {
     private final Map<String, LauncherItem> items = new LinkedHashMap<>();
     private AmmoManager ammo;
     private BlockManager blocks;
+    private Background background;
 
     @Override
     public void onEnable() {
@@ -52,6 +55,7 @@ public final class BlockMania extends JavaPlugin {
         getConfig().options().copyDefaults(true);
         saveConfig();
         loadItems();
+        background = new Background(this);
 
         ammo = new AmmoManager(this);
         blocks = new BlockManager(this);
@@ -213,6 +217,103 @@ public final class BlockMania extends JavaPlugin {
         return item;
     }
 
+    public Background getBackground() {
+        return background;
+    }
+
+    /** Testo con lo sfondo dietro. Lo sfondo non ha l'ombra (se remove-shadow e' attivo), il testo si'. */
+    public Component withBackground(String legacy) {
+        return withBackground(legacy, -1);
+    }
+
+    /** Come sopra, con in piu' una barra di avanzamento sotto lo sfondo (progress da 0 a 1; -1 = niente barra). */
+    public Component withBackground(String legacy, double progress) {
+        String[] parts = background.parts(legacy, progress);
+        if (parts[0].isEmpty()) {
+            return color(legacy);
+        }
+        if (!background.removeShadow()) {
+            return color(parts[0] + legacy + parts[1]);
+        }
+        return Component.empty()
+                .append(color(parts[0]).shadowColor(ShadowColor.none()))
+                .append(color(legacy))
+                .append(color(parts[1]).shadowColor(ShadowColor.none()));
+    }
+
+    /** Piu' testi, ognuno nel suo sfondo, messi in fila e centrati. progress >= 0 aggiunge la barra sotto tutti. */
+    public Component withBackgrounds(List<String> segments, double progress) {
+        boolean noShadow = background.removeShadow();
+        Component out = Component.empty();
+        int totalAll = 0;
+        boolean any = false;
+        for (String seg : segments) {
+            String[] parts = background.parts(seg);
+            int total = background.totalOf(seg);
+            if (parts[0].isEmpty() || total <= 0) {
+                out = out.append(color(seg));
+                continue;
+            }
+            if (any && background.gap() > 0) {
+                Component gap = color("&f" + background.shift(background.gap()));
+                out = out.append(noShadow ? gap.shadowColor(ShadowColor.none()) : gap);
+                totalAll += background.gap();
+            }
+            Component before = color(parts[0]);
+            Component after = color(parts[1]);
+            out = out.append(noShadow ? before.shadowColor(ShadowColor.none()) : before)
+                    .append(color(seg))
+                    .append(noShadow ? after.shadowColor(ShadowColor.none()) : after);
+            totalAll += total;
+            any = true;
+        }
+        if (any && progress >= 0) {
+            String bar = background.bar(totalAll, progress);
+            if (!bar.isEmpty()) {
+                Component b = color("&f" + bar);
+                out = out.append(noShadow ? b.shadowColor(ShadowColor.none()) : b);
+            }
+        }
+        return out;
+    }
+
+    /** Testo per le bossbar: come text(), con lo sfondo se attivo. */
+    public Component bossText(String template, String... replacements) {
+        return bossSegments(List.of(template), -1, replacements);
+    }
+
+    /** Come bossText, con una barra di avanzamento disegnata sotto lo sfondo (progress da 0 a 1). */
+    public Component bossTextBar(String template, double progress, String... replacements) {
+        return bossSegments(List.of(template), progress, replacements);
+    }
+
+    /** Bossbar fatta di piu' pezzi, ognuno con il suo sfondo. */
+    public Component bossSegments(List<String> templates, double progress, String... replacements) {
+        List<String> legacies = new ArrayList<>();
+        for (String template : templates) {
+            String t = tiny(template);
+            for (int i = 0; i + 1 < replacements.length; i += 2) {
+                t = t.replace(replacements[i], replacements[i + 1]);
+            }
+            legacies.add(t);
+        }
+        Component result;
+        if (background != null && background.forBossbar()) {
+            result = withBackgrounds(legacies, progress);
+        } else {
+            result = color(String.join(" ", legacies));
+        }
+        String font = getConfig().getString("bossbar.font", "");
+        if (font != null && !font.isBlank()) {
+            try {
+                result = result.font(Key.key(font.trim()));
+            } catch (Exception ex) {
+                // nome del font non valido: resta il font normale
+            }
+        }
+        return result;
+    }
+
     /** Numero massimo di blocco ottenibile (blocks.max nel config, mai oltre il limite del pack). */
     public int getMaxBlock() {
         int configured = getConfig().getInt("blocks.max", BlockManager.MAX_BLOCKS);
@@ -272,7 +373,9 @@ public final class BlockMania extends JavaPlugin {
             for (int i = 0; i + 1 < replacements.length; i += 2) {
                 t = t.replace(replacements[i], highlight + replacements[i + 1] + baseColor);
             }
-            Component component = color(baseColor + t);
+            String legacy = baseColor + t;
+            Component component = actionBar && background != null && background.forActionbar()
+                    ? withBackground(legacy) : color(legacy);
             if (actionBar) {
                 ((Player) to).sendActionBar(component);
                 return;

@@ -14,6 +14,7 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Locale;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -233,6 +234,15 @@ public final class AmmoManager {
         setValue(player, COIN, value);
     }
 
+    /** Miniera del giocatore (parte da 1). Serve a sapere fino a che livello puo' potenziare. */
+    public int getMine(Player player) {
+        return Math.max(1, getValue(player, "mine"));
+    }
+
+    public void setMine(Player player, int value) {
+        setValue(player, "mine", value);
+    }
+
     /** Saldo di una valuta per nome: coin, blockcoin oppure blockshell. */
     public int getBalance(Player player, String currency) {
         return switch (currency.toLowerCase(Locale.ROOT)) {
@@ -294,9 +304,12 @@ public final class AmmoManager {
         boolean enabled = c.getBoolean("bossbar.enabled", true);
         boolean always = c.getBoolean("bossbar.always-visible", true);
         String type = c.getString("bossbar.ammo-type", "standardball").toLowerCase(Locale.ROOT);
-        String template = c.getString("bossbar.text",
-                "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% "
-                        + "&8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%");
+        List<String> templates = c.getStringList("bossbar.segments");
+        if (templates.isEmpty()) {
+            templates = List.of(c.getString("bossbar.text",
+                    "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% "
+                            + "&8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"));
+        }
         BossBar.Color color = parseColor(c.getString("bossbar.color", "BLUE"));
         BossBar.Overlay overlay = parseOverlay(c.getString("bossbar.style", "PROGRESS"));
         int shellMax = getShellMax();
@@ -314,7 +327,7 @@ public final class AmmoManager {
                 continue;
             }
 
-            Component title = plugin.text(template,
+            Component title = plugin.bossSegments(templates, -1,
                     "%ammo%", String.valueOf(getAmmo(player, type)),
                     "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
                     "%shell%", String.valueOf(getShell(player)),

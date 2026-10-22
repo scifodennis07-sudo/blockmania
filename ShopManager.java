@@ -15,7 +15,9 @@ import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
+import io.papermc.paper.event.player.PrePlayerAttackEntityEvent;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -195,29 +197,50 @@ public final class ShopManager implements Listener {
     //  Protezione degli stand
     // ------------------------------------------------------------------
 
-    /** Si toglie con shift + tasto sinistro a mano vuota (solo con blockmania.shop.edit). */
-    @EventHandler(ignoreCancelled = true)
-    public void onDamage(EntityDamageEvent event) {
-        String type = shopType(event.getEntity());
-        if (type == null) {
+    /** Toglie lo stand e rida' la piuma al giocatore. */
+    private void removeShop(Player p, Entity stand, String type) {
+        if (!stand.isValid()) {
             return;
         }
-        event.setCancelled(true);
-        if (event instanceof EntityDamageByEntityEvent byEntity
-                && byEntity.getDamager() instanceof Player p
-                && p.hasPermission("blockmania.shop.edit")
-                && p.isSneaking()
-                && p.getInventory().getItemInMainHand().getType().isAir()) {
-            event.getEntity().remove();
-            Holo h = holos.remove(p.getUniqueId());
-            if (h != null) {
-                h.display().remove();
-            }
-            Map<Integer, ItemStack> left = p.getInventory().addItem(createShopItem(type));
-            for (ItemStack extra : left.values()) {
-                p.getWorld().dropItem(p.getLocation(), extra);
-            }
+        stand.remove();
+        Holo h = holos.remove(p.getUniqueId());
+        if (h != null) {
+            h.display().remove();
         }
+        Map<Integer, ItemStack> left = p.getInventory().addItem(createShopItem(type));
+        for (ItemStack extra : left.values()) {
+            p.getWorld().dropItem(p.getLocation(), extra);
+        }
+        plugin.send(p, "shop-removed", "%shop%", type);
+    }
+
+    /** Colpire uno stand di negozio non fa niente (si toglie con shift + destro). */
+    private boolean handleAttack(Player p, Entity stand) {
+        if (shopType(stand) == null) {
+            return false;
+        }
+        if (p.hasPermission("blockmania.shop.edit")) {
+            plugin.send(p, "shop-remove-hint");
+        }
+        return true;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onAttack(PrePlayerAttackEntityEvent event) {
+        if (handleAttack(event.getPlayer(), event.getAttacked())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onDamage(EntityDamageEvent event) {
+        if (shopType(event.getEntity()) == null) {
+            return;
+        }
+        if (event instanceof EntityDamageByEntityEvent byEntity && byEntity.getDamager() instanceof Player p) {
+            handleAttack(p, event.getEntity());
+        }
+        event.setCancelled(true);
     }
 
     /** Piazzare la piuma del negozio crea lo stand. */
@@ -276,6 +299,12 @@ public final class ShopManager implements Listener {
             return;
         }
         Player player = event.getPlayer();
+        // shift + destro a mano vuota (solo con blockmania.shop.edit): toglie il negozio
+        if (player.isSneaking() && player.hasPermission("blockmania.shop.edit")
+                && player.getInventory().getItemInMainHand().getType().isAir()) {
+            removeShop(player, event.getRightClicked(), type);
+            return;
+        }
         if (!player.hasPermission("blockmania.use")) {
             return;
         }
@@ -376,22 +405,27 @@ public final class ShopManager implements Listener {
 
     private Component saleText(Sale sale) {
         AmmoManager ammo = plugin.getAmmo();
-        String format = plugin.tiny(cfg().getString("shops.sell.bossbar.group-format",
-                "&fx%count% &7lv%level% &e%coins% coin"));
-        String separator = plugin.tiny(cfg().getString("shops.sell.bossbar.separator", " &8| "));
-        List<String> parts = new ArrayList<>();
+        String format = cfg().getString("shops.sell.bossbar.group-format",
+                "&fx%count% &7lv%level% &e%coins% coin");
+        List<String> segments = new ArrayList<>();
+        String title = cfg().getString("shops.sell.bossbar.title", "");
+        if (title != null && !title.isBlank()) {
+            segments.add(title
+                    .replace("%done%", String.valueOf(sale.done))
+                    .replace("%shells%", String.valueOf(sale.total)));
+        }
+        // un riquadro per ogni livello. %coins% = quanto vale UNA shell di quel livello
         for (Map.Entry<Integer, Integer> e : sale.groups.entrySet()) {
-            parts.add(format
+            int each = ammo.shellValue(e.getKey());
+            segments.add(format
                     .replace("%count%", String.valueOf(e.getValue()))
                     .replace("%level%", String.valueOf(e.getKey()))
-                    .replace("%coins%", String.valueOf(e.getValue() * ammo.shellValue(e.getKey()))));
+                    .replace("%coins%", String.valueOf(each))
+                    .replace("%group_total%", String.valueOf(each * e.getValue())));
         }
-        return plugin.text(cfg().getString("shops.sell.bossbar.text", "&7vendita: %groups%"),
-                "%groups%", String.join(separator, parts),
-                "%total%", String.valueOf(sale.expected),
-                "%earned%", String.valueOf(sale.coins),
-                "%done%", String.valueOf(sale.done),
-                "%shells%", String.valueOf(sale.total));
+        double progress = cfg().getBoolean("shops.sell.bossbar.progress-bar", true) && sale.total > 0
+                ? (double) sale.done / sale.total : -1;
+        return plugin.bossSegments(segments, progress);
     }
 
     private void tickSale(UUID id) {
