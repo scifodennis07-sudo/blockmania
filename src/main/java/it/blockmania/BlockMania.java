@@ -121,6 +121,7 @@ public final class BlockMania extends JavaPlugin {
             ammo.stop();
         }
         if (blocks != null) {
+            blocks.finishAllShakes();
             blocks.save();
         }
     }

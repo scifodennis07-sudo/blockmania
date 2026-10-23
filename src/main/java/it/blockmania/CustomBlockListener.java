@@ -75,7 +75,7 @@ public final class CustomBlockListener implements Listener {
     @EventHandler
     public void onProjectileHit(ProjectileHitEvent event) {
         Block hit = event.getHitBlock();
-        if (hit == null || hit.getType() != Material.NOTE_BLOCK) {
+        if (hit == null || (hit.getType() != Material.NOTE_BLOCK && hit.getType() != Material.BARRIER)) {
             return;
         }
         String type = event.getEntity().getPersistentDataContainer()

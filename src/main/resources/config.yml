@@ -940,6 +940,8 @@ background:
 blocks:
   max: 114                     # fino a che numero si ottiene con /bm getblock N-1
                                # (con i soli note block il massimo possibile e' 114)
+  auto-detect: true            # true = ogni note block con lo stato di un blocco custom viene riconosciuto
+                               # da solo (cosi' funzionano anche quelli piazzati con WorldEdit)
   custom-model-data: true      # true = l'oggetto ha il suo modello nel pack (si vede la grafica nell'inventario)
   item-name: "&e&lBlocco %number%"
   lore:
@@ -962,6 +964,14 @@ blocks:
 #  sound: nome del suono di Minecraft (vuoto = nessun suono)
 # ----------------------------------------------------------------------
 effects:
+  shake:                       # vibrazione del blocco quando viene colpito o distrutto
+    enabled: true
+    on-hit: true               # vibra quando lo colpisci
+    on-break: true             # vibra e si rimpicciolisce quando viene distrutto
+    hit-ticks: 8               # durata della vibrazione al colpo (20 tick = 1 secondo)
+    break-ticks: 10            # durata quando viene distrutto
+    strength: 0.06             # quanto si sposta (in blocchi). 0.03 = poco, 0.1 = tanto
+    break-shrink: true         # true = si rimpicciolisce mentre vibra, quando viene distrutto
   hit:
     particles: 8
     sound: "block.stone.hit"

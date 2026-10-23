@@ -9,7 +9,14 @@ import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Transformation;
+import org.joml.AxisAngle4f;
+import org.joml.Vector3f;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,6 +24,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Tiene traccia dei blocchi custom piazzati (numero del blocco + vita rimasta)
@@ -65,6 +75,13 @@ public final class BlockManager {
     private final Map<String, Tracked> blocks = new HashMap<>();
     private boolean dirty;
 
+    /** Animazioni di vibrazione in corso (chiave del blocco -> animazione). */
+    private final Map<String, Shake> shakes = new HashMap<>();
+
+    private static final Pattern P_INSTRUMENT = Pattern.compile("instrument=([a-z_]+)");
+    private static final Pattern P_NOTE = Pattern.compile("note=(\\d+)");
+    private static final Pattern P_POWERED = Pattern.compile("powered=(true|false)");
+
     public BlockManager(BlockMania plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "blocks.yml");
@@ -78,12 +95,75 @@ public final class BlockManager {
         return blocks.size();
     }
 
-    /** Ritorna i dati del blocco se e' un nostro blocco custom, altrimenti null. */
+    /**
+     * Ritorna i dati del blocco se e' un nostro blocco custom, altrimenti null.
+     * Un note block con uno stato custom che non e' nel registro (per esempio piazzato con
+     * WorldEdit) viene registrato da solo, con la vita che corrisponde al suo stato.
+     */
     public Tracked get(Block block) {
-        if (block.getType() != Material.NOTE_BLOCK) {
+        String k = key(block);
+        Material type = block.getType();
+        if (type == Material.BARRIER) {
+            // durante la vibrazione il blocco e' una barrier: conta ancora come il suo blocco
+            return shakes.containsKey(k) ? blocks.get(k) : healOrphanBarrier(block, k);
+        }
+        if (type != Material.NOTE_BLOCK) {
+            if (blocks.remove(k) != null) {
+                dirty = true; // il blocco e' stato tolto da qualcun altro
+            }
             return null;
         }
-        return blocks.get(key(block));
+        Tracked t = blocks.get(k);
+        int idx = decodeIndex(block);
+        if (idx > 0 && autoDetect()) {
+            int number = (idx - 1) / VARIANTS + 1;
+            int stage = (idx - 1) % VARIANTS + 1;
+            if (t == null || t.number != number) {
+                int max = maxHealth(number);
+                int lost = (int) Math.ceil((stage - 1) * max / (double) VARIANTS);
+                t = new Tracked(number, Math.max(1, max - lost));
+                blocks.put(k, t);
+                dirty = true;
+            }
+        }
+        return t;
+    }
+
+    /** Una barrier senza animazione sopra un blocco registrato: resto di un'animazione interrotta. */
+    private Tracked healOrphanBarrier(Block block, String k) {
+        Tracked t = blocks.get(k);
+        if (t != null) {
+            block.setBlockData(dataFor(t.number, stageFor(t.hp, maxHealth(t.number))), false);
+        }
+        return t;
+    }
+
+    private boolean autoDetect() {
+        return plugin.getConfig().getBoolean("blocks.auto-detect", true);
+    }
+
+    /** Indice 1..1140 dello stato del note block (stesso schema di dataFor), 0 se non e' uno stato custom. */
+    private int decodeIndex(Block block) {
+        String data = block.getBlockData().getAsString();
+        Matcher mi = P_INSTRUMENT.matcher(data);
+        Matcher mn = P_NOTE.matcher(data);
+        Matcher mp = P_POWERED.matcher(data);
+        if (!mi.find() || !mn.find() || !mp.find()) {
+            return 0;
+        }
+        int instrument = -1;
+        for (int i = 0; i < INSTRUMENTS.length; i++) {
+            if (INSTRUMENTS[i].equals(mi.group(1))) {
+                instrument = i;
+                break;
+            }
+        }
+        if (instrument < 0) {
+            return 0;
+        }
+        int idx = instrument * 50 + Integer.parseInt(mn.group(1)) * 2 + (mp.group(1).equals("true") ? 1 : 0);
+        int limit = Math.min(MAX_BLOCKS, Math.max(1, plugin.getConfig().getInt("blocks.max", MAX_BLOCKS)));
+        return idx >= 1 && idx <= limit * VARIANTS ? idx : 0;
     }
 
     /** Vita massima del blocco numero N, secondo il config. */
@@ -133,8 +213,13 @@ public final class BlockManager {
 
     /** Toglie il blocco dall'elenco (non lo rimuove dal mondo). */
     public void remove(Block block) {
-        if (blocks.remove(key(block)) != null) {
+        String k = key(block);
+        if (blocks.remove(k) != null) {
             dirty = true;
+        }
+        Shake s = shakes.remove(k);
+        if (s != null) {
+            s.stop(); // il blocco e' gia' stato tolto da chi chiama: niente da ripristinare
         }
     }
 
@@ -162,10 +247,13 @@ public final class BlockManager {
         }
         int max = maxHealth(t.number);
         int newHp = t.hp - amount;
+        int stageBefore = stageFor(t.hp, max);
 
         World world = block.getWorld();
         Location center = block.getLocation().add(0.5, 0.5, 0.5);
-        BlockData before = block.getBlockData();
+        BlockData before = dataFor(t.number, stageBefore);
+        FileConfiguration c = plugin.getConfig();
+        boolean shake = c.getBoolean("effects.shake.enabled", true);
 
         if (newHp <= 0) {
             if (shooter != null) {
@@ -174,19 +262,26 @@ public final class BlockManager {
                     plugin.send(shooter, "shell-full");
                     return; // l'ultimo colpo non fa danno
                 }
-                FileConfiguration c = plugin.getConfig();
                 stats.addShell(shooter, t.number, Math.max(0, c.getInt("rewards.blockshell", 1)));
                 stats.setBlockCoin(shooter, stats.getBlockCoin(shooter) + Math.max(0, c.getInt("rewards.blockcoin", 1)));
             }
             blocks.remove(key(block));
             dirty = true;
-            block.setType(Material.AIR, false);
-            int breakParticles = plugin.getConfig().getInt("effects.destroy.particles", 40);
+            if (shake && c.getBoolean("effects.shake.on-break", true)) {
+                startShake(block, t.number, stageBefore, true);
+            } else {
+                Shake running = shakes.remove(key(block));
+                if (running != null) {
+                    running.stop();
+                }
+                block.setType(Material.AIR, false);
+            }
+            int breakParticles = c.getInt("effects.destroy.particles", 40);
             if (breakParticles > 0) {
                 world.spawnParticle(Particle.BLOCK, center, breakParticles, 0.3, 0.3, 0.3, before);
             }
             plugin.playConfiguredSound(center, "effects.destroy");
-            if (plugin.getConfig().getBoolean("blocks.drop-on-destroy", false)) {
+            if (c.getBoolean("blocks.drop-on-destroy", false)) {
                 world.dropItemNaturally(center, plugin.createBlockItem(t.number));
             }
             return;
@@ -194,12 +289,126 @@ public final class BlockManager {
 
         t.hp = newHp;
         dirty = true;
-        block.setBlockData(dataFor(t.number, stageFor(t.hp, max)), false);
-        int hitParticles = plugin.getConfig().getInt("effects.hit.particles", 8);
+        int stage = stageFor(t.hp, max);
+        if (shake && c.getBoolean("effects.shake.on-hit", true)) {
+            startShake(block, t.number, stage, false);
+        } else {
+            block.setBlockData(dataFor(t.number, stage), false);
+        }
+        int hitParticles = c.getInt("effects.hit.particles", 8);
         if (hitParticles > 0) {
             world.spawnParticle(Particle.BLOCK, center, hitParticles, 0.25, 0.25, 0.25, before);
         }
         plugin.playConfiguredSound(center, "effects.hit");
+    }
+
+    // ------------------------------------------------------------------
+    //  Vibrazione: il blocco diventa una barrier e un "fantasma" con il suo modello trema
+    // ------------------------------------------------------------------
+
+    /** Un'animazione in corso su un blocco. */
+    private final class Shake {
+        final Block block;
+        final String key;
+        ItemDisplay display;
+        BukkitTask task;
+        int age;
+        int duration;
+        boolean breaking;
+
+        Shake(Block block, String key) {
+            this.block = block;
+            this.key = key;
+        }
+
+        /** Ferma l'animazione e toglie il fantasma (non tocca il blocco). */
+        void stop() {
+            if (task != null) {
+                task.cancel();
+                task = null;
+            }
+            if (display != null) {
+                display.remove();
+                display = null;
+            }
+        }
+    }
+
+    private ItemStack modelItem(int number, int stage) {
+        ItemStack stack = new ItemStack(Material.NOTE_BLOCK);
+        ItemMeta meta = stack.getItemMeta();
+        meta.setCustomModelData(itemModelData(number, stage));
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    private void startShake(Block block, int number, int stage, boolean breaking) {
+        FileConfiguration c = plugin.getConfig();
+        String k = key(block);
+        int ticks = Math.max(2, breaking ? c.getInt("effects.shake.break-ticks", 10)
+                : c.getInt("effects.shake.hit-ticks", 8));
+        Shake s = shakes.get(k);
+        if (s == null) {
+            s = new Shake(block, k);
+            Location center = block.getLocation().add(0.5, 0.5, 0.5);
+            ItemStack item = modelItem(number, stage);
+            s.display = block.getWorld().spawn(center, ItemDisplay.class, d -> {
+                d.setItemStack(item);
+                d.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
+                d.setPersistent(false);
+                d.setInterpolationDuration(2);
+                d.setViewRange(1.5f);
+            });
+            block.setType(Material.BARRIER, false);
+            shakes.put(k, s);
+            final Shake shake = s;
+            s.task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> tickShake(shake), 2L, 2L);
+        } else if (s.display != null) {
+            s.display.setItemStack(modelItem(number, stage));
+        }
+        s.age = 0;
+        s.duration = ticks;
+        s.breaking = s.breaking || breaking;
+    }
+
+    private void tickShake(Shake s) {
+        s.age += 2;
+        if (s.age >= s.duration || s.display == null || !s.display.isValid()) {
+            finishShake(s);
+            return;
+        }
+        double p = s.age / (double) s.duration;
+        float strength = (float) plugin.getConfig().getDouble("effects.shake.strength", 0.06);
+        float damp = (float) (1 - p);
+        ThreadLocalRandom r = ThreadLocalRandom.current();
+        Vector3f move = new Vector3f(
+                (float) (r.nextDouble() - 0.5) * 2 * strength * damp,
+                (float) (r.nextDouble() - 0.5) * 2 * strength * damp,
+                (float) (r.nextDouble() - 0.5) * 2 * strength * damp);
+        float scale = s.breaking && plugin.getConfig().getBoolean("effects.shake.break-shrink", true)
+                ? (float) Math.max(0.05, 1 - p) : 1f;
+        s.display.setTransformation(new Transformation(move, new AxisAngle4f(),
+                new Vector3f(scale, scale, scale), new AxisAngle4f()));
+        s.display.setInterpolationDelay(0);
+    }
+
+    /** Fine dell'animazione: il blocco torna normale (o sparisce, se e' stato distrutto). */
+    private void finishShake(Shake s) {
+        shakes.remove(s.key);
+        s.stop();
+        Tracked t = blocks.get(s.key);
+        if (t != null) {
+            s.block.setBlockData(dataFor(t.number, stageFor(t.hp, maxHealth(t.number))), false);
+        } else if (s.block.getType() == Material.BARRIER) {
+            s.block.setType(Material.AIR, false);
+        }
+    }
+
+    /** Chiude tutte le animazioni subito (spegnimento del server): niente barrier rimaste in giro. */
+    public void finishAllShakes() {
+        for (Shake s : new ArrayList<>(shakes.values())) {
+            finishShake(s);
+        }
     }
 
     public void load() {
