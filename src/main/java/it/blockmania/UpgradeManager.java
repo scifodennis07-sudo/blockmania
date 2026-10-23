@@ -32,6 +32,7 @@ import java.util.regex.Pattern;
  */
 public final class UpgradeManager implements Listener {
 
+    private static final int SIZE = 54;
     private static final List<String> BASE_IDS = List.of("damage", "cooldown", "speed", "capacity");
 
     /**
