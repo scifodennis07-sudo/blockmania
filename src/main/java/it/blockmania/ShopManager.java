@@ -48,7 +48,22 @@ import java.util.UUID;
  */
 public final class ShopManager implements Listener {
 
-    public static final List<String> TYPES = List.of("ammo", "sell");
+    /**
+     * Tutti i negozi: ogni voce della sezione "shops" del config. "sell" vende le blockshell,
+     * tutti gli altri (ammo, doubleball, ghostball ...) vendono palle.
+     */
+    public List<String> types() {
+        var section = plugin.getConfig().getConfigurationSection("shops");
+        List<String> out = new ArrayList<>();
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                if (section.isConfigurationSection(key)) {
+                    out.add(key);
+                }
+            }
+        }
+        return out;
+    }
 
     private final BlockMania plugin;
 
@@ -109,7 +124,13 @@ public final class ShopManager implements Listener {
     }
 
     private static int defaultModel(String type) {
-        return type.equals("sell") ? 6 : 1;
+        return switch (type) {
+            case "sell" -> 6;
+            case "doubleball" -> 2;
+            case "ghostball" -> 3;
+            case "explosionball" -> 4;
+            default -> 1;
+        };
     }
 
     private boolean matches(ItemStack helmet, String type) {
@@ -131,7 +152,7 @@ public final class ShopManager implements Listener {
             return null;
         }
         ItemStack helmet = stand.getEquipment().getHelmet();
-        for (String type : TYPES) {
+        for (String type : types()) {
             if (matches(helmet, type)) {
                 return type;
             }
@@ -255,7 +276,7 @@ public final class ShopManager implements Listener {
             return;
         }
         String type = null;
-        for (String t : TYPES) {
+        for (String t : types()) {
             if (matches(item, t)) {
                 type = t;
             }
@@ -308,10 +329,10 @@ public final class ShopManager implements Listener {
         if (!player.hasPermission("blockmania.use")) {
             return;
         }
-        if (type.equals("ammo")) {
-            buyAmmo(player);
-        } else {
+        if (type.equals("sell")) {
             startSale(player, event.getRightClicked());
+        } else {
+            buyAmmo(player, type);
         }
     }
 
@@ -319,14 +340,29 @@ public final class ShopManager implements Listener {
     //  Negozio palle
     // ------------------------------------------------------------------
 
-    private void buyAmmo(Player player) {
+    /** Il tipo di palla venduto da questo negozio (shops.<negozio>.ammo-type, se manca vale il nome del negozio). */
+    private String ballOf(String shop) {
+        String fallback = shop.equals("ammo") ? "standardball" : shop;
+        return cfg().getString("shops." + shop + ".ammo-type", fallback).toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Prezzo del rifornimento: "price" e' il prezzo per riempire la capienza base (ammo.<tipo>.max).
+     * Con la capienza potenziata si paga in proporzione alle palle che mancano.
+     */
+    private int priceFor(String shop, String ballType, int missing) {
+        int price = cfg().getInt("shops." + shop + ".price", 10);
+        int base = Math.max(1, plugin.getAmmo().getAmmoBaseMax(ballType));
+        return Math.max(1, (int) Math.ceil(price * (double) missing / base));
+    }
+
+    private void buyAmmo(Player player, String shop) {
         AmmoManager ammo = plugin.getAmmo();
-        String type = cfg().getString("shops.ammo.ammo-type", "standardball").toLowerCase(Locale.ROOT);
+        String type = ballOf(shop);
         if (!ammo.exists(type)) {
             return;
         }
-        int price = cfg().getInt("shops.ammo.price", 10);
-        String currency = cfg().getString("shops.ammo.currency", "coin");
+        String currency = cfg().getString("shops." + shop + ".currency", "coin");
 
         int current = ammo.getAmmo(player, type);
         int max = ammo.getAmmoMax(player, type);
@@ -334,13 +370,14 @@ public final class ShopManager implements Listener {
             plugin.send(player, "ammo-full", "%ammo%", current + "/" + max);
             return;
         }
+        int price = priceFor(shop, type, max - current);
         int balance = ammo.getBalance(player, currency);
         if (balance < price) {
             plugin.send(player, "shop-no-funds",
                     "%price%", String.valueOf(price),
                     "%currency%", plugin.tiny(currency),
                     "%balance%", String.valueOf(balance));
-            plugin.playConfiguredSound(player.getLocation(), "shops.ammo.sounds.error");
+            plugin.playConfiguredSound(player.getLocation(), "shops." + shop + ".sounds.error");
             return;
         }
         ammo.setBalance(player, currency, balance - price);
@@ -349,7 +386,7 @@ public final class ShopManager implements Listener {
                 "%amount%", String.valueOf(max - current),
                 "%price%", String.valueOf(price),
                 "%currency%", plugin.tiny(currency));
-        plugin.playConfiguredSound(player.getLocation(), "shops.ammo.sounds.buy");
+        plugin.playConfiguredSound(player.getLocation(), "shops." + shop + ".sounds.buy");
     }
 
     // ------------------------------------------------------------------
@@ -555,7 +592,8 @@ public final class ShopManager implements Listener {
         AmmoManager ammo = plugin.getAmmo();
         List<String> lines = cfg().getStringList("shops." + type + ".hologram");
         String currency = cfg().getString("shops." + type + ".currency", "coin");
-        String ammoType = cfg().getString("shops.ammo.ammo-type", "standardball").toLowerCase(Locale.ROOT);
+        String ammoType = ballOf(type);
+        int missing = Math.max(0, ammo.getAmmoMax(player, ammoType) - ammo.getAmmo(player, ammoType));
 
         int expected = 0;
         for (Map.Entry<Integer, Integer> e : ammo.getShells(player).entrySet()) {
@@ -564,7 +602,9 @@ public final class ShopManager implements Listener {
         List<Component> parts = new ArrayList<>();
         for (String line : lines) {
             parts.add(plugin.text(line,
-                    "%price%", String.valueOf(cfg().getInt("shops.ammo.price", 10)),
+                    "%price%", String.valueOf(priceFor(type, ammoType, missing == 0
+                            ? ammo.getAmmoMax(player, ammoType) : missing)),
+                    "%ball%", plugin.tiny(ammoType),
                     "%currency%", plugin.tiny(currency),
                     "%balance%", String.valueOf(ammo.getBalance(player, currency)),
                     "%ammo%", String.valueOf(ammo.getAmmo(player, ammoType)),

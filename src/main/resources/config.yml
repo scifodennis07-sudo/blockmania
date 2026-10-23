@@ -398,8 +398,8 @@ help:
       example: "/bm coin get 100"
     shop:
       permission: blockmania.shop.edit
-      usage: "/bm shop <ammo|sell> [player]"
-      description: "ti da la piuma per piazzare un negozio: ammo per comprare le palle, sell per vendere le blockshell"
+      usage: "/bm shop <ammo|doubleball|ghostball|explosionball|sell> [player]"
+      description: "ti da la piuma per piazzare un negozio: uno per ogni palla (ammo = standardball) e sell per vendere le blockshell"
       example: "/bm shop ammo"
     bgtest:
       permission: blockmania.reload
@@ -579,9 +579,84 @@ shops:
         - "&8shift + destro a mano vuota per toglierlo"
     ammo-type: standardball    # che palle riempie
     currency: coin             # cosa si paga: coin, blockcoin oppure blockshell
-    price: 10                  # prezzo del rifornimento completo
+    price: 10                  # prezzo per riempire la capienza base (con la capienza potenziata si paga in proporzione alle palle che mancano)
     hologram:
       - "&e&lnegozio palle"
+      - "&7clicca per acquistare per &e%price% %currency%"
+      - "&8palle &f%ammo%&8/&f%ammo_max%"
+    sounds:
+      buy:
+        sound: "entity.experience_orb.pickup"
+        volume: 0.8
+        pitch: 1.2
+      error:
+        sound: "entity.villager.no"
+        volume: 0.8
+        pitch: 1.0
+  doubleball:
+    material: FEATHER
+    custom-model-data: 2
+    item:                      # la piuma che si ottiene con /bm shop doubleball
+      name: "&b&lnegozio doubleball"
+      lore:
+        - ""
+        - "&7piazzala per creare il negozio di doubleball"
+        - "&8shift + destro a mano vuota per toglierlo"
+    ammo-type: doubleball
+    currency: coin
+    price: 150
+    hologram:
+      - "&b&lnegozio doubleball"
+      - "&7clicca per acquistare per &e%price% %currency%"
+      - "&8palle &f%ammo%&8/&f%ammo_max%"
+    sounds:
+      buy:
+        sound: "entity.experience_orb.pickup"
+        volume: 0.8
+        pitch: 1.2
+      error:
+        sound: "entity.villager.no"
+        volume: 0.8
+        pitch: 1.0
+  ghostball:
+    material: FEATHER
+    custom-model-data: 3
+    item:                      # la piuma che si ottiene con /bm shop ghostball
+      name: "&d&lnegozio ghostball"
+      lore:
+        - ""
+        - "&7piazzala per creare il negozio di ghostball"
+        - "&8shift + destro a mano vuota per toglierlo"
+    ammo-type: ghostball
+    currency: coin
+    price: 2500
+    hologram:
+      - "&d&lnegozio ghostball"
+      - "&7clicca per acquistare per &e%price% %currency%"
+      - "&8palle &f%ammo%&8/&f%ammo_max%"
+    sounds:
+      buy:
+        sound: "entity.experience_orb.pickup"
+        volume: 0.8
+        pitch: 1.2
+      error:
+        sound: "entity.villager.no"
+        volume: 0.8
+        pitch: 1.0
+  explosionball:
+    material: FEATHER
+    custom-model-data: 4
+    item:                      # la piuma che si ottiene con /bm shop explosionball
+      name: "&c&lnegozio explosionball"
+      lore:
+        - ""
+        - "&7piazzala per creare il negozio di explosionball"
+        - "&8shift + destro a mano vuota per toglierlo"
+    ammo-type: explosionball
+    currency: coin
+    price: 40000
+    hologram:
+      - "&c&lnegozio explosionball"
       - "&7clicca per acquistare per &e%price% %currency%"
       - "&8palle &f%ammo%&8/&f%ammo_max%"
     sounds:
@@ -665,13 +740,31 @@ bossbar:
 upgrades:
   currency: coin               # cosa si spende: coin, blockcoin oppure blockshell
 
-  # MINIERE: fino a che livello di potenziamento si puo' arrivare con ogni miniera.
-  # "1: 3" = con la miniera 1 si puo' arrivare al livello 3. Oltre serve la miniera dopo
+  # MINIERE: ogni miniera sblocca 10 livelli di potenziamento (21 miniere = 210 livelli).
+  # "1: 10" = con la miniera 1 si puo' arrivare al livello 10. Oltre serve la miniera dopo
   # (il tasto diventa rosso). La miniera del giocatore si cambia con  /bm mine get 1 <player>
   mines:
-    1: 3
-    2: 6
-    3: 10
+    1: 10
+    2: 20
+    3: 30
+    4: 40
+    5: 50
+    6: 60
+    7: 70
+    8: 80
+    9: 90
+    10: 100
+    11: 110
+    12: 120
+    13: 130
+    14: 140
+    15: 150
+    16: 160
+    17: 170
+    18: 180
+    19: 190
+    20: 200
+    21: 210
 
   gui:
     sounds:
@@ -692,50 +785,65 @@ upgrades:
         volume: 0.8
         pitch: 1.0
 
+  # Per ogni potenziamento:
+  #   cost-base      costo del livello 1
+  #   cost-growth    il costo cresce in modo esponenziale: cost-base x cost-growth ^ livello
+  #                  (1.05 = +5% a ogni livello. Piu' e' alto, piu' sale in fretta)
+  #   cost-increase  (solo se togli cost-growth) il costo sale di tanto a ogni livello
   damage:
     label: "danno"
-    max-level: 10
+    max-level: 210
     per-level: 10              # +10 danno a livello
     cost-base: 5
-    cost-increase: 5
+    cost-growth: 1.05
   cooldown:
     label: "ricarica"
-    max-level: 8
-    per-level: 0.05            # -0.05 secondi a livello
+    max-level: 210
+    per-level: 0.0019          # -0.0019 secondi a livello (a 210 livelli si arriva al minimo)
     min: 0.1                   # la ricarica non scende mai sotto questo valore
     cost-base: 5
-    cost-increase: 5
+    cost-growth: 1.05
   speed:
     label: "velocita"
-    max-level: 10
-    per-level: 0.1             # +0.1 velocita a livello
+    max-level: 210
+    per-level: 0.01            # +0.01 velocita a livello
     cost-base: 5
-    cost-increase: 5
-  # capienza: un potenziamento per ogni tipo di palla (capacity = standardball, capacity_<tipo> per le altre)
-  capacity:
-    label: "capienza standardball"
-    max-level: 5
-    per-level: 10              # +10 palle al massimo a livello
+    cost-growth: 1.05
+  capacity:                    # capienza delle BLOCKSHELL
+    label: "capienza shell"
+    max-level: 210
+    per-level: 1               # +1 shell al massimo a livello
     cost-base: 10
-    cost-increase: 10
+    cost-growth: 1.055
+  # capienza di ogni palla: capacity_<nome palla>
+  capacity_standardball:
+    label: "capacità standardball"
+    short: "capacità"          # nome mostrato nella lore (senza il nome della palla)
+    max-level: 210
+    per-level: 5               # +5 palle al massimo a livello
+    cost-base: 10
+    cost-growth: 1.05
   capacity_doubleball:
-    label: "capienza doubleball"
-    max-level: 5
-    per-level: 10
-    cost-base: 15
-    cost-increase: 15
-  capacity_ghostball:
-    label: "capienza ghostball"
-    max-level: 5
-    per-level: 10
+    label: "capacità doubleball"
+    short: "capacità"
+    max-level: 210
+    per-level: 5
     cost-base: 20
-    cost-increase: 20
+    cost-growth: 1.055
+  capacity_ghostball:
+    label: "capacità ghostball"
+    short: "capacità"
+    max-level: 210
+    per-level: 5
+    cost-base: 40
+    cost-growth: 1.06
   capacity_explosionball:
-    label: "capienza explosionball"
-    max-level: 5
-    per-level: 10
-    cost-base: 25
-    cost-increase: 25
+    label: "capacità explosionball"
+    short: "capacità"
+    max-level: 210
+    per-level: 5
+    cost-base: 80
+    cost-growth: 1.065
 
 # ----------------------------------------------------------------------
 #  GUI DEI POTENZIAMENTI (6 righe = 54 slot, si contano da 0: riga 1 = 0-8, riga 2 = 9-17 ...)
@@ -752,7 +860,7 @@ upgrade-gui:
 
   # ordine dei potenziamenti. Ogni pagina ne contiene tanti quante sono le "positions" qui sotto.
   # Se ne aggiungi altri compaiono pagine nuove da sole.
-  order: [damage, cooldown, speed, capacity, capacity_doubleball, capacity_ghostball, capacity_explosionball]
+  order: [damage, cooldown, speed, capacity, capacity_standardball, capacity_doubleball, capacity_ghostball, capacity_explosionball]
 
   slots:
     close: [0, 1]              # X
@@ -856,6 +964,11 @@ upgrade-gui:
     capacity:
       material: GLASS_PANE
       cmd: 104
+      name: "&f%label%"
+      description: "puoi portare piu blockshell"
+    capacity_standardball:
+      material: GLASS_PANE
+      cmd: 108
       name: "&f%label%"
       description: "puoi portare piu standardball"
     capacity_doubleball:

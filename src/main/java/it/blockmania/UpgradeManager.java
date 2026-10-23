@@ -33,35 +33,28 @@ import java.util.regex.Pattern;
 public final class UpgradeManager implements Listener {
 
     private static final List<String> BASE_IDS = List.of("damage", "cooldown", "speed", "capacity");
-    /** La palla che usa il potenziamento "capacity" senza nome (cosi' i livelli gia' comprati restano). */
-    private static final String STANDARD_BALL = "standardball";
 
-    /** Tutti i potenziamenti: danno, ricarica, velocita' e una capienza per ogni tipo di palla. */
+    /**
+     * Tutti i potenziamenti: danno, ricarica, velocita', "capacity" (capienza delle blockshell)
+     * e una capienza per ogni tipo di palla (capacity_standardball, capacity_doubleball ...).
+     */
     public List<String> ids() {
         List<String> out = new ArrayList<>(BASE_IDS);
         for (String type : plugin.getAmmo().types()) {
-            String low = type.toLowerCase(Locale.ROOT);
-            if (!low.equals(STANDARD_BALL)) {
-                out.add("capacity_" + low);
-            }
+            out.add(capacityId(type));
         }
         return out;
     }
 
     /** Il potenziamento di capienza di questo tipo di palla. */
     public static String capacityId(String ammoType) {
-        String low = ammoType.toLowerCase(Locale.ROOT);
-        return low.equals(STANDARD_BALL) ? "capacity" : "capacity_" + low;
+        return "capacity_" + ammoType.toLowerCase(Locale.ROOT);
     }
 
     /** Il tipo di palla di un potenziamento di capienza, oppure null se non lo e'. */
     private static String capacityType(String id) {
-        if (id.equals("capacity")) {
-            return STANDARD_BALL;
-        }
         return id.startsWith("capacity_") ? id.substring("capacity_".length()) : null;
     }
-    private static final int SIZE = 54;
 
     /** Serve a riconoscere la nostra GUI tra tutti gli inventari. */
     public static final class Holder implements InventoryHolder {
@@ -124,15 +117,25 @@ public final class UpgradeManager implements Listener {
         return plugin.getConfig().getDouble("upgrades." + id + ".per-level", 0);
     }
 
-    /** Costo per passare dal livello "level" al successivo (si puo' forzare con upgrades.<id>.costs.<livello-nuovo>). */
+    /**
+     * Costo per passare dal livello "level" al successivo. Si puo' forzare con upgrades.<id>.costs.<livello-nuovo>.
+     * Con cost-growth (es. 1.06) il costo cresce in modo esponenziale: cost-base * cost-growth ^ livello.
+     * Senza cost-growth cresce di cost-increase a ogni livello.
+     */
     private int cost(String id, int level) {
         int forced = plugin.getConfig().getInt("upgrades." + id + ".costs." + (level + 1), -1);
         if (forced >= 0) {
             return forced;
         }
-        int base = plugin.getConfig().getInt("upgrades." + id + ".cost-base", 5);
-        int increase = plugin.getConfig().getInt("upgrades." + id + ".cost-increase", 5);
-        return Math.max(0, base + increase * level);
+        double base = plugin.getConfig().getDouble("upgrades." + id + ".cost-base", 5);
+        double growth = plugin.getConfig().getDouble("upgrades." + id + ".cost-growth", 0);
+        double value;
+        if (growth > 1) {
+            value = base * Math.pow(growth, level);
+        } else {
+            value = base + plugin.getConfig().getDouble("upgrades." + id + ".cost-increase", 5) * level;
+        }
+        return (int) Math.max(0, Math.min(2_000_000_000d, Math.round(value)));
     }
 
     private String currency() {
@@ -150,6 +153,11 @@ public final class UpgradeManager implements Listener {
 
     private double speedAt(int level, double base) {
         return base + level * perLevel("speed");
+    }
+
+    /** Blockshell in piu' che il giocatore puo' tenere grazie al potenziamento "capacity". */
+    public int shellBonus(Player player) {
+        return (int) Math.round(getLevel(player, "capacity") * perLevel("capacity"));
     }
 
     /** Palle in piu' di questo tipo che il giocatore puo' tenere grazie al suo potenziamento di capienza. */
@@ -174,6 +182,9 @@ public final class UpgradeManager implements Listener {
     }
 
     private String valueText(String id, int level, LauncherItem li) {
+        if (id.equals("capacity")) {
+            return String.valueOf(plugin.getAmmo().getShellMax() + (int) Math.round(level * perLevel(id)));
+        }
         String capacityOf = capacityType(id);
         if (capacityOf != null) {
             return String.valueOf(plugin.getAmmo().getAmmoBaseMax(capacityOf)
@@ -243,15 +254,36 @@ public final class UpgradeManager implements Listener {
         } else {
             meta.displayName(plugin.text(name, r));
             if (!lore.isEmpty()) {
+                // nella lore %label% mostra il nome corto (es. "capacita'" senza il nome della palla)
+                String[] loreR = shortLabels(r);
                 List<Component> lines = new ArrayList<>();
                 for (String line : lore) {
-                    lines.add(plugin.text(line, r));
+                    lines.add(plugin.text(line, loreR));
                 }
                 meta.lore(lines);
             }
         }
         stack.setItemMeta(meta);
         return stack;
+    }
+
+    /** Copia dei segnaposto dove %label% vale come %short%. */
+    private static String[] shortLabels(String[] r) {
+        String[] out = r.clone();
+        String shortName = null;
+        for (int i = 0; i + 1 < r.length; i += 2) {
+            if (r[i].equals("%short%")) {
+                shortName = r[i + 1];
+            }
+        }
+        if (shortName != null) {
+            for (int i = 0; i + 1 < out.length; i += 2) {
+                if (out[i].equals("%label%")) {
+                    out[i + 1] = shortName;
+                }
+            }
+        }
+        return out;
     }
 
     /** Pannello invisibile (modello 999). Con name/lore mostra il testo quando ci passi sopra. */
@@ -343,7 +375,7 @@ public final class UpgradeManager implements Listener {
                 "%coin%", String.valueOf(ammo.getCoin(player)),
                 "%blockcoin%", String.valueOf(ammo.getBlockCoin(player)),
                 "%shell%", String.valueOf(ammo.getShell(player)),
-                "%shell_max%", String.valueOf(ammo.getShellMax()),
+                "%shell_max%", String.valueOf(ammo.getShellMax(player)),
                 "%ammo%", String.valueOf(ammo.getAmmo(player, ammoType)),
                 "%mine%", String.valueOf(ammo.getMine(player)),
                 "%page%", String.valueOf(page + 1),
@@ -359,6 +391,8 @@ public final class UpgradeManager implements Listener {
         List<String> r = new ArrayList<>(List.of(general));
         r.addAll(List.of(
                 "%label%", plugin.tiny(plugin.getConfig().getString("upgrades." + id + ".label", id)),
+                "%short%", plugin.tiny(plugin.getConfig().getString("upgrades." + id + ".short",
+                        plugin.getConfig().getString("upgrades." + id + ".label", id))),
                 "%description%", plugin.tiny(plugin.getConfig().getString(path + ".description", "")),
                 "%level%", String.valueOf(level),
                 "%max%", String.valueOf(max),

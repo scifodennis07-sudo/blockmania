@@ -386,7 +386,7 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         String type = args[1].toLowerCase(Locale.ROOT);
-        if (!ShopManager.TYPES.contains(type)) {
+        if (!plugin.getShops().types().contains(type)) {
             plugin.sendCommand(sender, "invalid-shop", "%value%", args[1]);
             return;
         }
@@ -526,7 +526,7 @@ public final class BlockManiaCommand implements TabExecutor {
 
         AmmoManager ammo = plugin.getAmmo();
         Stat stat = switch (which) {
-            case "blockshell" -> new Stat("blockshell", ammo::getShell, ammo::setShell, p -> ammo.getShellMax());
+            case "blockshell" -> new Stat("blockshell", ammo::getShell, ammo::setShell, p -> ammo.getShellMax(p));
             case "blockcoin" -> new Stat("blockcoin", ammo::getBlockCoin, ammo::setBlockCoin, p -> Integer.MAX_VALUE);
             case "mine" -> new Stat("mine", ammo::getMine, ammo::setMine, p -> Integer.MAX_VALUE);
             default -> new Stat("coin", ammo::getCoin, ammo::setCoin, p -> Integer.MAX_VALUE);
@@ -698,8 +698,7 @@ public final class BlockManiaCommand implements TabExecutor {
             String sub = args[0].toLowerCase(Locale.ROOT);
             if (sub.equals("shop") && sender.hasPermission("blockmania.shop.edit")) {
                 if (args.length == 2) {
-                    result.add("ammo");
-                    result.add("sell");
+                    result.addAll(plugin.getShops().types());
                 } else if (args.length == 3) {
                     addPlayers(result);
                 }

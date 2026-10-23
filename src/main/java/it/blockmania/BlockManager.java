@@ -282,7 +282,7 @@ public final class BlockManager {
         if (newHp <= 0) {
             if (shooter != null) {
                 AmmoManager stats = plugin.getAmmo();
-                if (stats.getShell(shooter) >= stats.getShellMax()) {
+                if (stats.getShell(shooter) >= stats.getShellMax(shooter)) {
                     plugin.send(shooter, "shell-full");
                     return; // l'ultimo colpo non fa danno
                 }

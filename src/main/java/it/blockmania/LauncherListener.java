@@ -16,7 +16,6 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.Material;
 import org.bukkit.inventory.PlayerInventory;
@@ -300,27 +299,6 @@ public final class LauncherListener implements Listener {
         return stack;
     }
 
-    /** Tasto F con il lanciapalle in mano: cambia il tipo di palla. */
-    @EventHandler
-    public void onSwap(PlayerSwapHandItemsEvent event) {
-        Player player = event.getPlayer();
-        LauncherItem li = plugin.getLauncher(player.getInventory().getItemInMainHand());
-        if (li == null) {
-            return;
-        }
-        event.setCancelled(true);
-        if (!player.hasPermission("blockmania.use")) {
-            return;
-        }
-        AmmoManager ammo = plugin.getAmmo();
-        String type = ammo.cycleSelected(player, li.ammoType());
-        plugin.getUpgrades().refreshLaunchers(player);
-        plugin.send(player, "ball-selected", "%ball%", plugin.tiny(type),
-                "%ammo%", String.valueOf(ammo.getAmmo(player, type)),
-                "%max%", String.valueOf(ammo.getAmmoMax(player, type)));
-        plugin.playConfiguredSound(player.getLocation(), "ball-switch");
-    }
-
     // ---------- mira: shift = modello 2, rilasciato = modello 1 ----------
 
     /** Mette il modello giusto al lanciapalle in questo slot. */
@@ -359,14 +337,29 @@ public final class LauncherListener implements Listener {
         }
     }
 
+    /**
+     * Tasto Q con il lanciapalle in mano: non lo butta, cambia il tipo di palla.
+     * (Il lanciapalle non si puo' droppare.)
+     */
     @EventHandler
     public void onDrop(PlayerDropItemEvent event) {
-        ItemStack dropped = event.getItemDrop().getItemStack();
-        LauncherItem li = plugin.getLauncher(dropped);
-        if (li != null) {
-            plugin.applyModel(dropped, li, false);
-            event.getItemDrop().setItemStack(dropped);
+        LauncherItem li = plugin.getLauncher(event.getItemDrop().getItemStack());
+        if (li == null) {
+            return;
         }
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        if (!player.hasPermission("blockmania.use")) {
+            return;
+        }
+        AmmoManager ammo = plugin.getAmmo();
+        String type = ammo.cycleSelected(player, li.ammoType());
+        // il lanciapalle viene rifatto un attimo dopo, quando il drop annullato e' finito
+        plugin.getServer().getScheduler().runTask(plugin, () -> plugin.getUpgrades().refreshLaunchers(player));
+        plugin.send(player, "ball-selected", "%ball%", plugin.tiny(type),
+                "%ammo%", String.valueOf(ammo.getAmmo(player, type)),
+                "%max%", String.valueOf(ammo.getAmmoMax(player, type)));
+        plugin.playConfiguredSound(player.getLocation(), "ball-switch");
     }
 
     @EventHandler

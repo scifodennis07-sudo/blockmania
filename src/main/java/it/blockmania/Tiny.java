@@ -72,6 +72,10 @@ public final class Tiny {
             }
 
             char lower = Character.toLowerCase(c);
+            int accent = "\u00e0\u00e8\u00e9\u00ec\u00f2\u00f9".indexOf(lower); // a e e i o u con l'accento
+            if (accent >= 0) {
+                lower = "aeeiou".charAt(accent); // le piccole maiuscole non hanno accenti: usa la lettera semplice
+            }
             if (lower >= 'a' && lower <= 'z') {
                 out.append(TO.charAt(lower - 'a'));
             } else {

@@ -128,8 +128,14 @@ public final class AmmoManager {
 
     // ---------- blockshell (con massimo, divise per livello) ----------
 
+    /** Massimo di base (dal config), senza potenziamenti. */
     public int getShellMax() {
         return Math.max(1, plugin.getConfig().getInt("blockshell.max", 10));
+    }
+
+    /** Massimo di questo giocatore: base + potenziamento "capienza shell". */
+    public int getShellMax(Player player) {
+        return getShellMax() + plugin.getUpgrades().shellBonus(player);
     }
 
     /** Le shell del giocatore: livello -> quantita', in ordine di livello crescente. */
@@ -192,7 +198,7 @@ public final class AmmoManager {
         if (amount <= 0) {
             return;
         }
-        int add = Math.min(amount, getShellMax() - getShell(player));
+        int add = Math.min(amount, getShellMax(player) - getShell(player));
         if (add <= 0) {
             return;
         }
@@ -222,7 +228,7 @@ public final class AmmoManager {
 
     /** Usato dai comandi: porta il totale a un valore. Quelle aggiunte hanno il livello command-level. */
     public void setShell(Player player, int value) {
-        int target = Math.max(0, Math.min(value, getShellMax()));
+        int target = Math.max(0, Math.min(value, getShellMax(player)));
         int current = getShell(player);
         if (target > current) {
             int level = Math.max(1, plugin.getConfig().getInt("shells.command-level", 1));
@@ -327,6 +333,18 @@ public final class AmmoManager {
         }
     }
 
+    /**
+     * Se un riquadro scrive il nome della palla a mano (es. "standardball:") lo trasforma in %ball%,
+     * cosi' mostra sempre la palla scelta dal giocatore.
+     */
+    private List<String> ballTemplates(List<String> templates, String defaultType) {
+        List<String> out = new java.util.ArrayList<>();
+        for (String t : templates) {
+            out.add(!t.contains("%ball%") && t.contains(defaultType) ? t.replace(defaultType, "%ball%") : t);
+        }
+        return out;
+    }
+
     private void tick() {
         FileConfiguration c = plugin.getConfig();
         boolean enabled = c.getBoolean("bossbar.enabled", true);
@@ -340,7 +358,6 @@ public final class AmmoManager {
         }
         BossBar.Color color = parseColor(c.getString("bossbar.color", "BLUE"));
         BossBar.Overlay overlay = parseOverlay(c.getString("bossbar.style", "PROGRESS"));
-        int shellMax = getShellMax();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             UUID id = player.getUniqueId();
@@ -356,7 +373,8 @@ public final class AmmoManager {
             }
 
             String type = getSelected(player, defaultType);
-            Component title = plugin.bossSegments(templates, -1,
+            int shellMax = getShellMax(player);
+            Component title = plugin.bossSegments(ballTemplates(templates, defaultType), -1,
                     "%ball%", plugin.tiny(type),
                     "%ammo%", String.valueOf(getAmmo(player, type)),
                     "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
