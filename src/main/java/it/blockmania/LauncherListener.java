@@ -67,11 +67,23 @@ public final class LauncherListener implements Listener {
         double keep = c.getDouble("bounce.speed-keep", 0.8);
         Vector reflected = v.clone().subtract(normal.clone().multiply(2 * v.dot(normal))).multiply(keep);
 
-        event.setCancelled(true);
-        pdc.set(bouncesKey, PersistentDataType.INTEGER, done + 1);
-        // un filo fuori dal blocco, cosi' non lo ritocca subito
-        ball.teleport(ball.getLocation().add(normal.clone().multiply(0.1)));
-        ball.setVelocity(reflected);
+        // La palla originale sparisce come sempre; al suo posto ne nasce una nuova, uguale,
+        // che parte dal punto dell'urto con la direzione riflessa (funziona su ogni versione).
+        Location spawn = ball.getLocation().add(normal.clone().multiply(0.15));
+        Integer damage = pdc.get(plugin.getDamageKey(), PersistentDataType.INTEGER);
+        String ammoType = pdc.get(plugin.getAmmoKey(), PersistentDataType.STRING);
+        var shooter = ball.getShooter();
+        ItemStack model = ball.getItem();
+        ball.getWorld().spawn(spawn, Snowball.class, next -> {
+            next.setShooter(shooter);
+            next.setItem(model);
+            next.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, ammoType);
+            if (damage != null) {
+                next.getPersistentDataContainer().set(plugin.getDamageKey(), PersistentDataType.INTEGER, damage);
+            }
+            next.getPersistentDataContainer().set(bouncesKey, PersistentDataType.INTEGER, done + 1);
+            next.setVelocity(reflected);
+        });
         plugin.playConfiguredSound(ball.getLocation(), "bounce");
     }
 
