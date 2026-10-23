@@ -1,6 +1,10 @@
 package it.blockmania;
 
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.block.BlockFace;
+import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.util.Vector;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Snowball;
 import org.bukkit.event.EventHandler;
@@ -29,8 +33,46 @@ public final class LauncherListener implements Listener {
     /** Ultimo sparo di ogni giocatore, per ogni oggetto (in millisecondi). */
     private final Map<UUID, Map<String, Long>> lastUse = new HashMap<>();
 
+    private final NamespacedKey bouncesKey;
+
     public LauncherListener(BlockMania plugin) {
         this.plugin = plugin;
+        this.bouncesKey = new NamespacedKey(plugin, "bounces");
+    }
+
+    /** La palla colpisce un blocco: se ha ancora rimbalzi, rimbalza invece di sparire. */
+    @EventHandler
+    public void onBounce(ProjectileHitEvent event) {
+        var c = plugin.getConfig();
+        if (!c.getBoolean("bounce.enabled", true)) {
+            return;
+        }
+        if (!(event.getEntity() instanceof Snowball ball) || event.getHitBlock() == null) {
+            return;
+        }
+        var pdc = ball.getPersistentDataContainer();
+        if (!pdc.has(plugin.getAmmoKey(), PersistentDataType.STRING)) {
+            return; // non e' una nostra palla
+        }
+        int done = pdc.getOrDefault(bouncesKey, PersistentDataType.INTEGER, 0);
+        if (done >= c.getInt("bounce.max", 3)) {
+            return; // rimbalzi finiti: la palla sparisce come al solito
+        }
+        BlockFace face = event.getHitBlockFace();
+        if (face == null) {
+            return;
+        }
+        Vector normal = face.getDirection();
+        Vector v = ball.getVelocity();
+        double keep = c.getDouble("bounce.speed-keep", 0.8);
+        Vector reflected = v.clone().subtract(normal.clone().multiply(2 * v.dot(normal))).multiply(keep);
+
+        event.setCancelled(true);
+        pdc.set(bouncesKey, PersistentDataType.INTEGER, done + 1);
+        // un filo fuori dal blocco, cosi' non lo ritocca subito
+        ball.teleport(ball.getLocation().add(normal.clone().multiply(0.1)));
+        ball.setVelocity(reflected);
+        plugin.playConfiguredSound(ball.getLocation(), "bounce");
     }
 
     @EventHandler

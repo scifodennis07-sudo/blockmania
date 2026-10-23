@@ -400,6 +400,18 @@ items:
     pitch: 0.4
 
 # ----------------------------------------------------------------------
+#  RIMBALZO: le palle del lanciapalle rimbalzano contro i blocchi
+#  e dopo "max" rimbalzi spariscono.
+# ----------------------------------------------------------------------
+bounce:
+  enabled: true
+  max: 3                       # quanti rimbalzi prima di sparire
+  speed-keep: 0.8              # velocita' mantenuta a ogni rimbalzo (1 = nessuna perdita)
+  sound: "entity.slime.squish_small"   # suono del rimbalzo (vuoto = nessuno)
+  volume: 0.4
+  pitch: 1.5
+
+# ----------------------------------------------------------------------
 #  PALLE (virtuali: sono un numero per giocatore, non oggetti)
 #    /blockmania ball get standardball 20
 # ----------------------------------------------------------------------
