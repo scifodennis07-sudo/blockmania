@@ -166,12 +166,16 @@ public final class MinesGui implements Listener {
         }
     }
 
-    /** Modello del pannello: offset + miniera * step + fase (fase 1 = mai rifatta ... fino a "stages"). */
-    private int modelOf(int mine, int runs) {
+    /**
+     * Modello del pannello. Ogni miniera ha stages+1 modelli di fila: prima il grigio (bloccata),
+     * poi le fasi 1..stages (la fase sale a ogni volta che rifai la miniera).
+     * Con cmd-start 101 e 10 fasi: miniera 1 = 101 grigio, 102 = 1-1 ... 111 = 1-10; miniera 2 = 112 ...
+     */
+    private int modelOf(int mine, int runs, boolean locked) {
         var c = plugin.getConfig();
         int stages = Math.max(1, c.getInt(GUI + "stages", 10));
-        int stage = Math.min(stages, runs + 1);
-        return c.getInt(GUI + "cmd-offset", 0) + mine * c.getInt(GUI + "cmd-step", 100) + stage;
+        int grey = c.getInt(GUI + "cmd-start", 101) + (mine - 1) * (stages + 1);
+        return locked ? grey : grey + Math.min(stages, runs + 1);
     }
 
     private String[] general(Player player, int page, int pages) {
@@ -218,10 +222,18 @@ public final class MinesGui implements Listener {
         int max = maxRuns();
         for (int i = 0; i < positions.size(); i++) {
             int mine = holder.page * positions.size() + i + 1;
-            if (mine > mineCount()) {
-                break; // quadrati in piu' nell'ultima pagina: restano vuoti
-            }
             Position pos = positions.get(i);
+            if (mine > mineCount()) {
+                // quadrato senza miniera: modello "non disponibile"
+                String ep = GUI + "states.empty";
+                String ename = c.getString(ep + ".name", "&8miniera non disponibile");
+                List<String> elore = c.getStringList(ep + ".lore");
+                put(inv, holder, pos.icon(), pane(ep, c.getInt(GUI + "empty-cmd", 332), ename, elore, general, false), null);
+                for (int slot : pos.extra()) {
+                    put(inv, holder, slot, invisible(ename, elore, general, false), null);
+                }
+                continue;
+            }
             int runs = Math.min(max, runs(player, mine));
             int blocks = blocksOf(mine);
             int progress = Math.min(blocks, progress(player, mine));
@@ -245,7 +257,7 @@ public final class MinesGui implements Listener {
 
             String name = c.getString(bp + ".name", "&fminiera %number%");
             List<String> lore = c.getStringList(bp + ".lore");
-            put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs), name, lore, r, false), null);
+            put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs, key.equals("locked")), name, lore, r, false), null);
             for (int slot : pos.extra()) {
                 put(inv, holder, slot, invisible(name, lore, r, false), null);
             }

@@ -957,42 +957,42 @@ upgrade-gui:
   icons:
     damage:
       material: GLASS_PANE
-      cmd: 101
+      cmd: 401
       name: "&f%label%"
       description: "aumenta il danno delle tue palle"
     cooldown:
       material: GLASS_PANE
-      cmd: 102
+      cmd: 402
       name: "&f%label%"
       description: "riduce l'attesa tra uno sparo e l'altro"
     speed:
       material: GLASS_PANE
-      cmd: 103
+      cmd: 403
       name: "&f%label%"
       description: "le palle viaggiano piu veloci"
     capacity:
       material: GLASS_PANE
-      cmd: 104
+      cmd: 404
       name: "&f%label%"
       description: "puoi portare piu blockshell"
     capacity_standardball:
       material: GLASS_PANE
-      cmd: 108
+      cmd: 408
       name: "&f%label%"
       description: "puoi portare piu standardball"
     capacity_doubleball:
       material: GLASS_PANE
-      cmd: 105
+      cmd: 405
       name: "&f%label%"
       description: "puoi portare piu doubleball"
     capacity_ghostball:
       material: GLASS_PANE
-      cmd: 106
+      cmd: 406
       name: "&f%label%"
       description: "puoi portare piu ghostball"
     capacity_explosionball:
       material: GLASS_PANE
-      cmd: 107
+      cmd: 407
       name: "&f%label%"
       description: "puoi portare piu explosionball"
 
@@ -1019,8 +1019,9 @@ upgrade-gui:
 #  GUI DELLE MINIERE  (/mines)
 #  Ogni miniera e' un quadrato 2x2: il pannello col modello sta nello slot "icon", gli altri 3
 #  slot ("extra") mostrano lo stesso nome e la stessa lore.
-#  Modello del pannello = cmd-offset + numero miniera * cmd-step + fase
-#  (miniera 1: 101, 102, 103 ... 110; miniera 2: 201 ... ; la fase sale a ogni volta che la rifai).
+#  Modelli (cmd): ogni miniera ne ha 11 di fila: il grigio (non sbloccata) e le fasi 1..10.
+#  cmd-start 101: miniera 1 = 101 grigio, 102 = 1-1 ... 111 = 1-10; miniera 2 = 112 grigio, 113 = 2-1 ...
+#  L'ultimo della miniera 21 (21-10) e' il 331. I quadrati senza miniera usano empty-cmd (332).
 #  Segnaposto: %number% %blocks% (da scavare) %broken% (scavati ora) %left% %total% (scavati in tutto)
 #              %runs% (volte rifatta) %max_runs% %price% %redo_price% %coin% %blockcoin% %mine% %page% %pages%
 # ----------------------------------------------------------------------
@@ -1028,8 +1029,8 @@ mines-gui:
   count: 21                    # quante miniere esistono
   max-runs: 10                 # dopo tante volte la miniera e' platino e non si rifa piu
   stages: 10                   # quanti modelli ha ogni miniera (uno per volta rifatta)
-  cmd-step: 100
-  cmd-offset: 0                # se i modelli 101.. sono gia' usati dai potenziamenti metti 1000 (1101, 1102 ...)
+  cmd-start: 101               # modello grigio della miniera 1
+  empty-cmd: 332               # modello dei quadrati senza miniera
   blocks:
     default: 3000              # blocchi da scavare in ogni miniera (puoi mettere "5: 4500" per cambiarne una)
   prices: {}                   # prezzo in blockcoin per comprare la miniera (default = i suoi blocchi)
@@ -1076,29 +1077,42 @@ mines-gui:
   states:
     owned:
       material: GLASS_PANE
-      name: "&fminiera %number%"
+      name: "&aminiera %number%"
       lore:
         - ""
-        - "&8• &7blocchi da scavare &f%blocks%"
-        - "&8• &7scavati ora &f%broken%&8/&f%blocks%"
-        - "&8• &7scavati in tutto &f%total%"
-        - "&8• &7rifatta &f%runs%&8/&f%max_runs%"
+        - "&8• &7blocchi da scavare &a%blocks%"
+        - "&8• &7scavati ora &e%broken%&8/&e%blocks%"
+        - "&8• &7scavati in tutto &b%total%"
+        - "&8• &7rifatta &d%runs%&8/&d%max_runs%"
+        - ""
+        - "&eclicca per ..."
     locked:
       material: GLASS_PANE
       name: "&cminiera %number%"
       lore:
         - ""
         - "&7devi aver finito la miniera prima"
+        - ""
         - "&8• &7prezzo &e%price% &7blockcoin"
-        - "&8• &7blocchi da scavare &f%blocks%"
+        - "&8• &7blocchi da scavare &a%blocks%"
+        - ""
+        - "&eclicca per ..."
     platinum:
       material: GLASS_PANE
       name: "&bminiera %number% &8(platino)"
       lore:
         - ""
-        - "&8• &7blocchi da scavare &f%blocks%"
-        - "&8• &7scavati in tutto &f%total%"
-        - "&7miniera platinata, non si rifa piu"
+        - "&8• &7blocchi da scavare &a%blocks%"
+        - "&8• &7scavati in tutto &b%total%"
+        - "&8• &7rifatta &d%runs%&8/&d%max_runs%"
+        - ""
+        - "&bminiera platinata, non si rifa piu"
+    empty:
+      material: GLASS_PANE
+      name: "&8miniera non disponibile"
+      lore:
+        - ""
+        - "&7presto arrivera una nuova miniera"
 
   sounds:
     open:
@@ -1111,10 +1125,10 @@ mines-gui:
       pitch: 1.2
 
   title:
-    text: "&f{shift:-15}\u3c06"
+    text: "&f{shift:-15}\u3c05"
     font: ""
     widths:
-      "\u3c06": 179
+      "\u3c05": 179
     advance: 0
     page:
       text: "%page%/%pages%"
