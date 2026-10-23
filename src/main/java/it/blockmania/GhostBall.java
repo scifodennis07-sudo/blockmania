@@ -26,6 +26,7 @@ public final class GhostBall {
     private final Vector step;       // di quanto avanza a ogni tick
     private final double maxDistance;
     private final int damage;
+    private final boolean power;
     private final Set<Long> alreadyHit = new HashSet<>();
     private final ItemDisplay display;
     private Location position;
@@ -33,8 +34,9 @@ public final class GhostBall {
     private BukkitTask task;
 
     private GhostBall(BlockMania plugin, Player shooter, Location start, Vector direction, double speed,
-                      double maxDistance, int damage, ItemStack model) {
+                      double maxDistance, int damage, ItemStack model, boolean power) {
         this.plugin = plugin;
+        this.power = power;
         this.shooter = shooter.getUniqueId();
         this.world = start.getWorld();
         this.step = direction.clone().normalize().multiply(speed);
@@ -54,7 +56,13 @@ public final class GhostBall {
     /** Lancia una palla fantasma. */
     public static void launch(BlockMania plugin, Player shooter, Location start, Vector direction, double speed,
                               double maxDistance, int damage, ItemStack model) {
-        GhostBall ball = new GhostBall(plugin, shooter, start, direction, speed, maxDistance, damage, model);
+        launch(plugin, shooter, start, direction, speed, maxDistance, damage, model, false);
+    }
+
+    /** Con power = true e' un colpo dell'attacco potenziato: scia di fuoco ed esplosione dove finisce. */
+    public static void launch(BlockMania plugin, Player shooter, Location start, Vector direction, double speed,
+                              double maxDistance, int damage, ItemStack model, boolean power) {
+        GhostBall ball = new GhostBall(plugin, shooter, start, direction, speed, maxDistance, damage, model, power);
         ball.task = plugin.getServer().getScheduler().runTaskTimer(plugin, ball::tick, 1L, 1L);
     }
 
@@ -71,10 +79,14 @@ public final class GhostBall {
                 finish();
                 return;
             }
+            if (power) {
+                world.spawnParticle(org.bukkit.Particle.FLAME, position, 3, 0.1, 0.1, 0.1, 0.01);
+                world.spawnParticle(org.bukkit.Particle.SMOKE, position, 1, 0.05, 0.05, 0.05, 0.01);
+            }
             Block block = position.getBlock();
             if (alreadyHit.add(block.getBlockKey())) {
                 // damage() ignora da solo i blocchi che non sono custom
-                plugin.getBlocks().damage(block, damage, owner);
+                plugin.getBlocks().damage(block, damage, owner, BlockManager.HitStyle.GHOST);
             }
             if (travelled >= maxDistance) {
                 finish();
@@ -87,6 +99,10 @@ public final class GhostBall {
     }
 
     private void finish() {
+        if (power) {
+            Player owner = plugin.getServer().getPlayer(shooter);
+            plugin.getBlocks().powerBlast(position.getBlock(), damage, owner);
+        }
         if (task != null) {
             task.cancel();
         }

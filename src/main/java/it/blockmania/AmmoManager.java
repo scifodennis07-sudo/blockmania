@@ -284,6 +284,20 @@ public final class AmmoManager {
 
     public void setMine(Player player, int value) {
         setValue(player, "mine", value);
+        // la miniera piu alta mai raggiunta resta anche se poi si torna indietro (serve ai prezzi)
+        if (value > getValue(player, "mine_max")) {
+            setValue(player, "mine_max", value);
+        }
+    }
+
+    /** La miniera piu alta che il giocatore ha mai sbloccato (non scende mai). */
+    public int getMaxMine(Player player) {
+        return Math.max(getMine(player), getValue(player, "mine_max"));
+    }
+
+    /** Vero se la bossbar principale e' mostrata a questo giocatore. */
+    public boolean hasBossBar(Player player) {
+        return bars.containsKey(player.getUniqueId());
     }
 
     /** Saldo di una valuta per nome: coin, blockcoin oppure blockshell. */
@@ -397,6 +411,10 @@ public final class AmmoManager {
                 bar = BossBar.bossBar(title, 1.0f, color, overlay);
                 bars.put(id, bar);
                 player.showBossBar(bar);
+                // la stamina deve stare sempre sotto la bossbar principale
+                if (plugin.getPower() != null) {
+                    plugin.getPower().reattach(player);
+                }
             } else {
                 bar.name(title);
                 bar.progress(1.0f);

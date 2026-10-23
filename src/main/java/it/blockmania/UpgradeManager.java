@@ -202,6 +202,9 @@ public final class UpgradeManager implements Listener {
 
     /** Livello massimo raggiungibile con la miniera attuale del giocatore (upgrades.mines). */
     private int levelCap(Player player) {
+        if (plugin.getPower() != null && !plugin.getPower().isLimited(player)) {
+            return Integer.MAX_VALUE; // limitazioni tolte (/bm limits off): si puo' arrivare al massimo
+        }
         ConfigurationSection mines = plugin.getConfig().getConfigurationSection("upgrades.mines");
         if (mines == null || mines.getKeys(false).isEmpty()) {
             return Integer.MAX_VALUE;

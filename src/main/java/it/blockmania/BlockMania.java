@@ -45,6 +45,7 @@ public final class BlockMania extends JavaPlugin {
     private Background background;
     private ItemsGui itemsGui;
     private MinesGui minesGui;
+    private Power power;
     private BlockEdit blockEdit;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
@@ -61,6 +62,7 @@ public final class BlockMania extends JavaPlugin {
 
         migrateConfig();
         saveDefaultConfig();
+        applyTuning();
         // aggiunge al config eventuali voci nuove senza toccare quelle che hai cambiato
         getConfig().options().copyDefaults(true);
         saveConfig();
@@ -105,6 +107,9 @@ public final class BlockMania extends JavaPlugin {
                 return true;
             });
         }
+        power = new Power(this);
+        getServer().getPluginManager().registerEvents(power, this);
+        power.start();
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
 
@@ -116,6 +121,55 @@ public final class BlockMania extends JavaPlugin {
     private static final int CONFIG_VERSION = 2;
 
     /** Se il config e' vecchio lo salva come copia di backup e ne crea uno nuovo. */
+    /**
+     * Aggiorna da solo i valori che nei vecchi config erano ancora quelli di default (prezzi delle palle,
+     * capienze, numeri delle icone), senza toccare quelli che hai cambiato tu. Si fa una volta sola.
+     */
+    private void applyTuning() {
+        var c = getConfig();
+        int done = c.getInt("tuning-version", 0);
+        if (done < 2) {
+            // l'attacco potenziato ora fa danno x10 (prima x3)
+            if (c.isDouble("power-attack.damage-multiplier") && c.getDouble("power-attack.damage-multiplier") == 3.0) {
+                c.set("power-attack.damage-multiplier", 10.0);
+            }
+        }
+        if (done >= 1) {
+            c.set("tuning-version", 2);
+            saveConfig();
+            return;
+        }
+        retune("shops.doubleball.price", 150, 60);
+        retune("shops.ghostball.price", 2500, 250);
+        retune("shops.explosionball.price", 40000, 800);
+        retune("ammo.doubleball.max", 20, 15);
+        retune("ammo.ghostball.max", 20, 10);
+        retune("ammo.explosionball.max", 20, 6);
+        retune("upgrades.capacity_doubleball.per-level", 5, 4);
+        retune("upgrades.capacity_ghostball.per-level", 5, 3);
+        retune("upgrades.capacity_explosionball.per-level", 5, 2);
+        // le icone dei potenziamenti lasciano il posto ai modelli delle miniere (101-331)
+        String[] ids = {"damage", "cooldown", "speed", "capacity", "capacity_doubleball", "capacity_ghostball",
+                "capacity_explosionball", "capacity_standardball"};
+        int[] oldCmd = {101, 102, 103, 104, 105, 106, 107, 108};
+        for (int i = 0; i < ids.length; i++) {
+            retune("upgrade-gui.icons." + ids[i] + ".cmd", oldCmd[i], 401 + i);
+        }
+        // testi delle miniere senza colori (versione precedente): si rimettono quelli nuovi
+        if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
+            c.set("mines-gui.states", null);
+        }
+        c.set("tuning-version", 2);
+        saveConfig();
+    }
+
+    private void retune(String path, int oldValue, int newValue) {
+        var c = getConfig();
+        if (c.isInt(path) && c.getInt(path) == oldValue) {
+            c.set(path, newValue);
+        }
+    }
+
     private void migrateConfig() {
         java.io.File file = new java.io.File(getDataFolder(), "config.yml");
         if (!file.exists()) {
@@ -134,6 +188,9 @@ public final class BlockMania extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (power != null) {
+            power.stop();
+        }
         if (shops != null) {
             shops.stop();
         }
@@ -220,6 +277,10 @@ public final class BlockMania extends JavaPlugin {
         return blockEdit;
     }
 
+    public Power getPower() {
+        return power;
+    }
+
     public MinesGui getMinesGui() {
         return minesGui;
     }
@@ -287,6 +348,10 @@ public final class BlockMania extends JavaPlugin {
 
     /** Piu' testi, ognuno nel suo sfondo, messi in fila e centrati. progress >= 0 aggiunge la barra sotto tutti. */
     public Component withBackgrounds(List<String> segments, double progress) {
+        return withBackgrounds(segments, progress, null, null);
+    }
+
+    public Component withBackgrounds(List<String> segments, double progress, String fillChar, String emptyChar) {
         boolean noShadow = background.removeShadow();
         Component out = Component.empty();
         int totalAll = 0;
@@ -312,7 +377,7 @@ public final class BlockMania extends JavaPlugin {
             any = true;
         }
         if (any && progress >= 0) {
-            String bar = background.bar(totalAll, progress);
+            String bar = background.bar(totalAll, progress, fillChar, emptyChar);
             if (!bar.isEmpty()) {
                 Component b = color("&f" + bar);
                 out = out.append(noShadow ? b.shadowColor(ShadowColor.none()) : b);
@@ -333,6 +398,12 @@ public final class BlockMania extends JavaPlugin {
 
     /** Bossbar fatta di piu' pezzi, ognuno con il suo sfondo. */
     public Component bossSegments(List<String> templates, double progress, String... replacements) {
+        return bossSegmentsBar(templates, progress, null, null, replacements);
+    }
+
+    /** Come bossSegments, con la barra disegnata con altri pezzi (fill/empty): vedi la stamina gialla. */
+    public Component bossSegmentsBar(List<String> templates, double progress, String fillChar, String emptyChar,
+                                     String... replacements) {
         List<String> legacies = new ArrayList<>();
         for (String template : templates) {
             String t = tiny(template);
@@ -343,7 +414,7 @@ public final class BlockMania extends JavaPlugin {
         }
         Component result;
         if (background != null && background.forBossbar()) {
-            result = withBackgrounds(legacies, progress);
+            result = withBackgrounds(legacies, progress, fillChar, emptyChar);
         } else {
             result = color(String.join(" ", legacies));
         }

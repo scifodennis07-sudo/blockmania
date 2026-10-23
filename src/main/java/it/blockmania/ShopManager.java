@@ -351,10 +351,15 @@ public final class ShopManager implements Listener {
      * Prezzo del rifornimento: "price" e' il prezzo per riempire la capienza base (ammo.<tipo>.max).
      * Con la capienza potenziata si paga in proporzione alle palle che mancano.
      */
-    private int priceFor(String shop, String ballType, int missing) {
+    private int priceFor(Player player, String shop, String ballType, int missing) {
         int price = cfg().getInt("shops." + shop + ".price", 10);
         int base = Math.max(1, plugin.getAmmo().getAmmoBaseMax(ballType));
-        return Math.max(1, (int) Math.ceil(price * (double) missing / base));
+        // il prezzo sale a ogni miniera sbloccata (resta alto anche se si torna indietro)
+        double growth = cfg().getDouble("shops." + shop + ".mine-growth",
+                shop.equals("ammo") ? 1.0 : cfg().getDouble("shops.mine-price-growth", 1.35));
+        double factor = Math.pow(Math.max(1.0, growth), Math.max(0, plugin.getAmmo().getMaxMine(player) - 1));
+        double total = price * (double) missing / base * factor;
+        return (int) Math.max(1, Math.min(2_000_000_000d, Math.ceil(total)));
     }
 
     private void buyAmmo(Player player, String shop) {
@@ -371,7 +376,7 @@ public final class ShopManager implements Listener {
             plugin.send(player, "ammo-full", "%ammo%", current + "/" + max);
             return;
         }
-        int price = priceFor(shop, type, max - current);
+        int price = priceFor(player, shop, type, max - current);
         int balance = ammo.getBalance(player, currency);
         if (balance < price) {
             plugin.send(player, "shop-no-funds",
@@ -632,7 +637,7 @@ public final class ShopManager implements Listener {
         List<Component> parts = new ArrayList<>();
         for (String line : lines) {
             parts.add(plugin.text(line,
-                    "%price%", String.valueOf(priceFor(type, ammoType, missing == 0
+                    "%price%", String.valueOf(priceFor(player, type, ammoType, missing == 0
                             ? ammo.getAmmoMax(player, ammoType) : missing)),
                     "%ball%", plugin.tiny(ammoType),
                     "%currency%", plugin.tiny(currency),

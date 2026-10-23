@@ -16,6 +16,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.Material;
 import org.bukkit.inventory.PlayerInventory;
@@ -42,10 +43,12 @@ public final class LauncherListener implements Listener {
     private final Map<UUID, Integer> lastDrop = new HashMap<>();
 
     private final NamespacedKey bouncesKey;
+    private final NamespacedKey powerKey;
 
     public LauncherListener(BlockMania plugin) {
         this.plugin = plugin;
         this.bouncesKey = new NamespacedKey(plugin, "bounces");
+        this.powerKey = new NamespacedKey(plugin, "power_shot");
         plugin.getServer().getScheduler().runTaskTimer(plugin, this::autoFire, 1L, 1L);
     }
 
@@ -85,6 +88,7 @@ public final class LauncherListener implements Listener {
         Location spawn = ball.getLocation().add(normal.clone().multiply(0.15));
         Integer damage = pdc.get(plugin.getDamageKey(), PersistentDataType.INTEGER);
         String ammoType = pdc.get(plugin.getAmmoKey(), PersistentDataType.STRING);
+        boolean powerShot = pdc.has(powerKey, PersistentDataType.BYTE);
         var shooter = ball.getShooter();
         ItemStack model = ball.getItem();
         ball.getWorld().spawn(spawn, Snowball.class, next -> {
@@ -96,6 +100,12 @@ public final class LauncherListener implements Listener {
             }
             next.getPersistentDataContainer().set(bouncesKey, PersistentDataType.INTEGER, done + 1);
             next.setVelocity(reflected);
+            if (powerShot) {
+                // il colpo potenziato resta tale ai rimbalzi: stesso danno, fuoco e scia
+                next.getPersistentDataContainer().set(powerKey, PersistentDataType.BYTE, (byte) 1);
+                next.setVisualFire(true);
+                fireTrail(next);
+            }
         });
         plugin.playConfiguredSound(ball.getLocation(), "bounce");
     }
@@ -227,6 +237,14 @@ public final class LauncherListener implements Listener {
 
     /** Lancia una "raffica" di una palla: una sola, oppure una griglia (es. 3x3) di palle parallele. */
     private void launchOnce(Player player, LauncherItem li, String type) {
+        launchOnce(player, li, type, 1.0);
+    }
+
+    private void launchOnce(Player player, LauncherItem li, String type, double damageMultiplier) {
+        launchOnce(player, li, type, damageMultiplier, false);
+    }
+
+    private void launchOnce(Player player, LauncherItem li, String type, double damageMultiplier, boolean power) {
         if (!player.isOnline() || player.isDead()) {
             return;
         }
@@ -237,7 +255,7 @@ public final class LauncherListener implements Listener {
         int grid = Math.max(1, c.getInt(path + "grid", 1));
         double spacing = c.getDouble(path + "grid-spacing", 1.0);
         double speed = up.speed(player, li.speed());
-        int damage = up.damage(player, type);
+        int damage = (int) Math.max(1, Math.round(up.damage(player, type) * damageMultiplier));
         ItemStack model = projectileModel(type, li);
 
         Location eye = player.getEyeLocation();
@@ -260,7 +278,7 @@ public final class LauncherListener implements Listener {
                 }
                 if (ghost) {
                     GhostBall.launch(plugin, player, from, dir, speed,
-                            c.getDouble(path + "range", 40), damage, model);
+                            c.getDouble(path + "range", 40), damage, model, power);
                     continue;
                 }
                 Snowball ball;
@@ -278,8 +296,30 @@ public final class LauncherListener implements Listener {
                 // segniamo la palla con il suo tipo e il suo danno (potenziamenti compresi)
                 ball.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, type);
                 ball.getPersistentDataContainer().set(plugin.getDamageKey(), PersistentDataType.INTEGER, damage);
+                if (power) {
+                    ball.getPersistentDataContainer().set(powerKey, PersistentDataType.BYTE, (byte) 1);
+                    ball.setVisualFire(true);
+                    fireTrail(ball);
+                }
             }
         }
+    }
+
+    /** Scia di fuoco dietro un colpo potenziato, finche' la palla vola. */
+    private void fireTrail(Snowball ball) {
+        int amount = Math.max(1, plugin.getConfig().getInt("power-attack.trail-particles", 4));
+        plugin.getServer().getScheduler().runTaskTimer(plugin, task -> {
+            if (!ball.isValid() || ball.isDead()) {
+                task.cancel();
+                return;
+            }
+            Location at = ball.getLocation();
+            ball.getWorld().spawnParticle(org.bukkit.Particle.FLAME, at, amount, 0.12, 0.12, 0.12, 0.01);
+            ball.getWorld().spawnParticle(org.bukkit.Particle.SMOKE, at, 1, 0.05, 0.05, 0.05, 0.01);
+            if (Math.random() < 0.3) {
+                ball.getWorld().spawnParticle(org.bukkit.Particle.LAVA, at, 1, 0.1, 0.1, 0.1, 0);
+            }
+        }, 1L, 1L);
     }
 
     /**
@@ -310,6 +350,48 @@ public final class LauncherListener implements Listener {
         meta.setCustomModelData(c.getInt(path + "projectile-custom-model-data"));
         stack.setItemMeta(meta);
         return stack;
+    }
+
+    // ---------- attacco potenziato: shift + F con il lanciapalle in mano ----------
+
+    @EventHandler
+    public void onSwap(PlayerSwapHandItemsEvent event) {
+        Player player = event.getPlayer();
+        LauncherItem li = plugin.getLauncher(event.getOffHandItem()); // e' il lanciapalle che era in mano
+        if (li == null || !player.isSneaking()) {
+            return;
+        }
+        event.setCancelled(true);
+        if (!player.hasPermission("blockmania.use")) {
+            return;
+        }
+        firePower(player, li);
+    }
+
+    /** Attacco potenziato: una lunga raffica della palla scelta, piu forte del normale, senza consumare palle. */
+    private void firePower(Player player, LauncherItem li) {
+        if (plugin.getPower() == null || !plugin.getPower().tryUse(player)) {
+            return;
+        }
+        var c = plugin.getConfig();
+        String type = plugin.getAmmo().getSelected(player, li.ammoType());
+        int shots = Math.max(1, c.getInt("power-attack.shots", 30));
+        int interval = Math.max(1, c.getInt("power-attack.interval-ticks", 2));
+        double multiplier = Math.max(0.1, c.getDouble("power-attack.damage-multiplier", 3.0));
+        plugin.send(player, "power-used");
+        plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.use");
+        for (int i = 0; i < shots; i++) {
+            final int n = i;
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (!player.isOnline() || player.isDead()) {
+                    return;
+                }
+                launchOnce(player, li, type, multiplier, true);
+                if (n % 3 == 0) {
+                    plugin.playConfiguredSound(player.getEyeLocation(), "items." + li.id());
+                }
+            }, (long) interval * i);
+        }
     }
 
     // ---------- mira: shift = modello 2, rilasciato = modello 1 ----------

@@ -1,5 +1,5 @@
 name: BlockMania
-version: '1.16.1'
+version: '1.17.3'
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom
@@ -27,6 +27,9 @@ permissions:
     default: op
   blockmania.build:
     description: Permette di usare la bacchetta e i comandi set, replace, remove e undo dei blocchi
+    default: op
+  blockmania.limits:
+    description: Permette di togliere o rimettere le limitazioni (potenziamenti e attacco potenziato)
     default: op
   blockmania.break:
     description: Permette di rompere a mano i blocchi custom

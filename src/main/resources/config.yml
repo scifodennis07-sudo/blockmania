@@ -236,6 +236,38 @@ messages:
     type: error
     channel: actionbar
     text: "non c'e niente da annullare"
+  limits-usage:
+    type: error
+    channel: chat
+    text: "uso: /bm limits <on|off|see> [player]  (off = nessuna limitazione, per lo staff)"
+  power-usage:
+    type: error
+    channel: chat
+    text: "uso: /bm power <give|see|reset> [player]"
+  power-state:
+    type: success
+    channel: chat
+    text: "%player%: attacchi pronti %charges%, colpi %hits%/%target%, stamina %stamina%%"
+  limits-state:
+    type: success
+    channel: chat
+    text: "limitazioni di %player%: %state%"
+  power-unlocked:
+    type: success
+    channel: actionbar
+    text: "attacco potenziato sbloccato! premi shift + f con il lanciapalle"
+  power-locked:
+    type: error
+    channel: actionbar
+    text: "non hai ancora sbloccato l'attacco potenziato"
+  power-no-stamina:
+    type: error
+    channel: actionbar
+    text: "la stamina non e piena, aspetta che si ricarichi"
+  power-used:
+    type: info
+    channel: actionbar
+    text: "attacco potenziato!"
   ball-selected:
     type: info
     channel: actionbar
@@ -379,6 +411,16 @@ help:
       usage: "/bm blockcoin <get|remove|see|reset> [numero] [player]"
       description: "gestisce i blockcoin (nessun limite). get ne aggiunge, remove ne toglie, see li mostra, reset li azzera"
       example: "/bm blockcoin see doppiax"
+    power:
+      permission: blockmania.stats
+      usage: "/bm power <give|see|reset> [player]"
+      description: "give = regala l'attacco potenziato (per provarlo), see = mostra i colpi e la stamina, reset = azzera tutto"
+      example: "/bm power give"
+    limits:
+      permission: blockmania.limits
+      usage: "/bm limits <on|off|see> [player]"
+      description: "off = togli le limitazioni (livelli senza tetto di miniera, attacco potenziato sempre pronto), on = rimetti"
+      example: "/bm limits off"
     mine:
       permission: blockmania.stats
       usage: "/bm mine <get|remove|see|reset> [numero] [player]"
@@ -492,22 +534,23 @@ ammo:
     projectile-custom-model-data: 1
   doubleball:
     damage: 75
-    max: 20
+    max: 15
     projectile-custom-model-data: 2
     shots: 2                   # lancia 2 palle una dopo l'altra
     shot-delay-ticks: 2        # con 2 tick di distanza
   ghostball:
     damage: 100
-    max: 20
+    max: 10
     projectile-custom-model-data: 3
     ghost: true                # attraversa i blocchi e li danneggia tutti (non rimbalza)
     range: 40                  # distanza massima in blocchi
   explosionball:
     damage: 150
-    max: 20
+    max: 6
     projectile-custom-model-data: 4
     grid: 3                    # 3x3 = 9 palle parallele, colpiscono 3x3 blocchi
     grid-spacing: 1.0          # distanza tra le palle in blocchi
+    explosion: true            # il primo urto di ogni palla esplode (i rimbalzi no)
 
 # suono del cambio palla (tasto F)
 ball-switch:
@@ -576,6 +619,10 @@ shells:
 #  Segnaposto ologramma: %price% %currency% %balance% %ammo% %ammo_max% %shells% %coins%
 # ----------------------------------------------------------------------
 shops:
+  # a ogni miniera sbloccata il prezzo delle palle (tranne la standardball) viene moltiplicato per questo numero.
+  # Resta alto anche se il giocatore torna indietro di miniera. 1.35 = +35% a miniera. Si puo' cambiare un negozio
+  # solo con shops.<nome>.mine-growth (1.0 = il prezzo non sale)
+  mine-price-growth: 1.35
   ammo:
     material: FEATHER
     custom-model-data: 1
@@ -612,7 +659,7 @@ shops:
         - "&8shift + destro a mano vuota per toglierlo"
     ammo-type: doubleball
     currency: coin
-    price: 150
+    price: 60
     hologram:
       - "&b&lnegozio doubleball"
       - "&7clicca per acquistare per &e%price% %currency%"
@@ -637,7 +684,7 @@ shops:
         - "&8shift + destro a mano vuota per toglierlo"
     ammo-type: ghostball
     currency: coin
-    price: 2500
+    price: 250
     hologram:
       - "&d&lnegozio ghostball"
       - "&7clicca per acquistare per &e%price% %currency%"
@@ -662,7 +709,7 @@ shops:
         - "&8shift + destro a mano vuota per toglierlo"
     ammo-type: explosionball
     currency: coin
-    price: 40000
+    price: 800
     hologram:
       - "&c&lnegozio explosionball"
       - "&7clicca per acquistare per &e%price% %currency%"
@@ -836,21 +883,21 @@ upgrades:
     label: "capacità doubleball"
     short: "capacità"
     max-level: 210
-    per-level: 5
+    per-level: 4
     cost-base: 20
     cost-growth: 1.055
   capacity_ghostball:
     label: "capacità ghostball"
     short: "capacità"
     max-level: 210
-    per-level: 5
+    per-level: 3
     cost-base: 40
     cost-growth: 1.06
   capacity_explosionball:
     label: "capacità explosionball"
     short: "capacità"
     max-level: 210
-    per-level: 5
+    per-level: 2
     cost-base: 80
     cost-growth: 1.065
 
@@ -1016,6 +1063,49 @@ upgrade-gui:
       center: 73               # centro dei numeri, in pixel dall'inizio del titolo (piu' alto = piu' a destra)
 
 # ----------------------------------------------------------------------
+#  STAMINA (bossbar gialla sotto quella principale, sempre piena)
+#  Si svuota solo con l'attacco potenziato. Serve il pack aggiornato (barra gialla in bossbar.json)
+# ----------------------------------------------------------------------
+stamina:
+  enabled: true
+  text: "&estamina"            # segnaposto: %percent%
+  color: YELLOW
+  bar-fill: "\u3c14"           # pezzo pieno giallo (bossbar.json)
+  bar-empty: "\u3c15"          # pezzo vuoto giallo
+
+# ----------------------------------------------------------------------
+#  ATTACCO POTENZIATO: dopo un numero a caso di colpi ai blocchi (da unlock-hits-min a unlock-hits-max) se ne sblocca uno.
+#  Si usa con shift + F tenendo il lanciapalle in mano, usa la palla scelta e consuma TUTTA la stamina
+#  (da 0 a piena in regen-seconds). I colpi (anche ai rimbalzi) hanno una scia di fuoco ed esplodono a ogni impatto. /bm limits off toglie questi limiti (per lo staff)
+# ----------------------------------------------------------------------
+power-attack:
+  enabled: true
+  unlock-hits-min: 500         # ogni blocco colpito da una palla (anche ai rimbalzi) conta 1.
+  unlock-hits-max: 3000        # Per sbloccarne uno servono un numero a caso di colpi tra min e max
+  max-charges: 1               # quanti se ne possono tenere
+  regen-seconds: 180           # tempo per ricaricare la stamina da 0 (180 = 3 minuti)
+  shots: 30                    # quante raffiche spara
+  interval-ticks: 2            # ogni quanti tick (20 = 1 secondo)
+  damage-multiplier: 10.0      # danno rispetto al normale
+  explosion-radius: 2          # raggio dell'esplosione all'impatto (in blocchi)
+  explosion-damage-percent: 3  # danno dell'esplosione ai blocchi vicini, in % del danno della palla (scenica, minimo)
+  blast-flames: 40             # fiamme dell'esplosione
+  trail-particles: 4           # fiamme della scia a ogni tick
+  bossbar:
+    color: PURPLE
+    ready: "&dattacco potenziato sbloccato &8| &fpremi &eshift + f &fper usarlo"
+    waiting: "&dattacco potenziato sbloccato &8| &7aspetta che la stamina si ricarichi"
+  sounds:
+    unlock:
+      sound: "ui.toast.challenge_complete"
+      volume: 0.8
+      pitch: 1.0
+    use:
+      sound: "entity.wither.shoot"
+      volume: 0.7
+      pitch: 1.4
+
+# ----------------------------------------------------------------------
 #  GUI DELLE MINIERE  (/mines)
 #  Ogni miniera e' un quadrato 2x2: il pannello col modello sta nello slot "icon", gli altri 3
 #  slot ("extra") mostrano lo stesso nome e la stessa lore.
@@ -1031,6 +1121,10 @@ mines-gui:
   stages: 10                   # quanti modelli ha ogni miniera (uno per volta rifatta)
   cmd-start: 101               # modello grigio della miniera 1
   empty-cmd: 332               # modello dei quadrati senza miniera
+  # sfondo della GUI per numero di collegamenti verdi (0 verdi, 1 verde ... 5 verdi). Il carattere di
+  # title.text viene sostituito da solo con quello giusto. I collegamenti verdi di una pagina sono
+  # le miniere sbloccate in quella pagina meno 1.
+  backgrounds: ["\u3c05", "\u3c07", "\u3c08", "\u3c09", "\u3c10", "\u3c11"]
   blocks:
     default: 3000              # blocchi da scavare in ogni miniera (puoi mettere "5: 4500" per cambiarne una)
   prices: {}                   # prezzo in blockcoin per comprare la miniera (default = i suoi blocchi)
@@ -1374,3 +1468,15 @@ effects:
     sound: "block.stone.break"
     volume: 1.0
     pitch: 1.0
+  explosion:                   # explosionball: il primo urto di ogni palla esplode (scenico)
+    radius: 1                  # raggio dell'esplosione in blocchi (1 = i 26 blocchi vicini)
+    damage-percent: 25         # danno ai blocchi vicini, in % del danno della palla (0 = nessun danno)
+    shake-multiplier: 3.0      # quanto vibra di piu del normale il blocco colpito
+    particles: 1
+    sound: "entity.generic.explode"
+    volume: 0.6
+    pitch: 1.5
+  ghost:                       # ghostball: suono del colpo fantasma (i blocchi sfarfallano con il contorno azzurro)
+    sound: "particle.soul_escape"
+    volume: 0.5
+    pitch: 1.6

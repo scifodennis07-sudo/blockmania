@@ -47,6 +47,11 @@ public final class GuiTitle {
      * "widths" (larghezza dei caratteri disegnati) e, se vuoi, "advance" (avanzamento fisso).
      */
     public GuiTitle text(String raw, String font, String path) {
+        return text(raw, font, path, raw);
+    }
+
+    /** Come text(), ma l'avanzamento del cursore si misura su advanceRaw (testo con gli stessi pezzi di larghezza nota). */
+    public GuiTitle text(String raw, String font, String path, String advanceRaw) {
         var c = plugin.getConfig();
         Matcher m = SHIFT.matcher(raw);
         StringBuilder shifted = new StringBuilder();
@@ -57,7 +62,7 @@ public final class GuiTitle {
         m.appendTail(shifted);
         result = result.append(withFont(plugin.color(plugin.tiny(shifted.toString())), font));
         int manual = c.getInt(path + ".advance", 0);
-        cursor += manual > 0 ? manual : advanceOf(raw, path + ".widths");
+        cursor += manual > 0 ? manual : advanceOf(advanceRaw, path + ".widths");
         return this;
     }
 

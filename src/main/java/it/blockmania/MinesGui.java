@@ -266,10 +266,29 @@ public final class MinesGui implements Listener {
 
     // ---------- titolo ----------
 
-    private Component title(int page, int pages) {
+    /**
+     * Lo sfondo cambia in base alle miniere sbloccate: a ogni collegamento verde in piu' si usa
+     * il carattere dopo nella lista "backgrounds" (0 verdi = il primo, 5 verdi = l'ultimo).
+     * I collegamenti verdi di una pagina sono (miniere sbloccate in quella pagina) - 1.
+     */
+    private Component title(Player player, int page, int pages) {
         var c = plugin.getConfig();
+        int perPage = Math.max(1, positions().size());
+        int onPage = Math.max(0, Math.min(perPage, plugin.getAmmo().getMine(player) - page * perPage));
+        int greens = Math.max(0, onPage - 1);
+        String raw = c.getString(GUI + "title.text", "&8miniere");
+        String shown = raw;
+        List<String> backgrounds = c.getStringList(GUI + "backgrounds");
+        if (greens < backgrounds.size()) {
+            String target = backgrounds.get(greens);
+            for (String bg : backgrounds) {
+                if (!bg.isEmpty() && !bg.equals(target)) {
+                    shown = shown.replace(bg, target);
+                }
+            }
+        }
         GuiTitle t = new GuiTitle(plugin);
-        t.text(c.getString(GUI + "title.text", "&8miniere"), c.getString(GUI + "title.font", ""), GUI + "title");
+        t.text(shown, c.getString(GUI + "title.font", ""), GUI + "title", raw);
         String pageRaw = c.getString(GUI + "title.page.text", "");
         if (pageRaw != null && !pageRaw.isBlank()) {
             String plain = BlockMania.stripCodes(pageRaw)
@@ -296,7 +315,7 @@ public final class MinesGui implements Listener {
         Holder holder = new Holder(page);
         int pages = pageCount();
         holder.page = Math.max(0, Math.min(page, pages - 1));
-        Inventory inv = Bukkit.createInventory(holder, SIZE, title(holder.page, pages));
+        Inventory inv = Bukkit.createInventory(holder, SIZE, title(player, holder.page, pages));
         holder.inventory = inv;
         fill(inv, holder, player);
         player.openInventory(inv);

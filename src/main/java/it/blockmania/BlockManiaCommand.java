@@ -113,6 +113,8 @@ public final class BlockManiaCommand implements TabExecutor {
             case "shop" -> shop(sender, args);
             case "items" -> items(sender, args);
             case "bgtest" -> bgTest(sender, args);
+            case "limits" -> limits(sender, args);
+            case "power" -> power(sender, args);
             case "guidebug" -> {
                 if (!sender.hasPermission("blockmania.reload")) {
                     plugin.sendCommand(sender, "no-permission");
@@ -157,6 +159,64 @@ public final class BlockManiaCommand implements TabExecutor {
         if (!footer.isEmpty()) {
             sender.sendMessage(plugin.text(footer));
         }
+    }
+
+    // ---------- /blockmania limits <on|off|see> [giocatore] ----------
+
+    /**
+     * on = limitazioni normali (default), off = per lo staff: livelli dei potenziamenti senza il
+     * tetto delle miniere e attacco potenziato sempre disponibile.
+     */
+    private void limits(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.limits")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        if (args.length < 2 || !List.of("on", "off", "see").contains(args[1].toLowerCase(Locale.ROOT))) {
+            plugin.sendCommand(sender, "limits-usage");
+            return;
+        }
+        Player target = resolveTarget(sender, args, 2, "limits");
+        if (target == null) {
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        Power power = plugin.getPower();
+        if (!action.equals("see")) {
+            power.setLimited(target, action.equals("on"));
+            plugin.getUpgrades().refreshLaunchers(target);
+        }
+        plugin.sendCommand(sender, "limits-state", "%player%", target.getName(),
+                "%state%", power.isLimited(target) ? "attive" : "tolte");
+    }
+
+    // ---------- /blockmania power <give|see|reset> [giocatore] ----------
+
+    private void power(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.stats")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        if (args.length < 2 || !List.of("give", "see", "reset").contains(args[1].toLowerCase(Locale.ROOT))) {
+            plugin.sendCommand(sender, "power-usage");
+            return;
+        }
+        Player target = resolveTarget(sender, args, 2, "power");
+        if (target == null) {
+            return;
+        }
+        Power power = plugin.getPower();
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "give" -> power.giveCharge(target);
+            case "reset" -> power.resetAll(target);
+            default -> {
+            }
+        }
+        plugin.sendCommand(sender, "power-state", "%player%", target.getName(),
+                "%charges%", String.valueOf(power.charges(target)),
+                "%hits%", String.valueOf(power.progress(target)),
+                "%target%", String.valueOf(power.target(target)),
+                "%stamina%", String.valueOf((int) Math.round(power.stamina(target) * 100)));
     }
 
     // ---------- /blockmania reload ----------
@@ -678,6 +738,7 @@ public final class BlockManiaCommand implements TabExecutor {
                 result.add("items");
             }
             if (canStats) {
+                result.add("power");
                 result.add("ball");
                 result.add("blockcoin");
                 result.add("blockshell");
@@ -688,6 +749,9 @@ public final class BlockManiaCommand implements TabExecutor {
             }
             if (sender.hasPermission("blockmania.shop.edit")) {
                 result.add("shop");
+            }
+            if (sender.hasPermission("blockmania.limits")) {
+                result.add("limits");
             }
             if (sender.hasPermission("blockmania.reload")) {
                 result.add("bgtest");
@@ -710,6 +774,18 @@ public final class BlockManiaCommand implements TabExecutor {
                 }
             } else if (sub.equals("items") && canGet) {
                 if (args.length == 2) {
+                    addPlayers(result);
+                }
+            } else if (sub.equals("power") && canStats) {
+                if (args.length == 2) {
+                    result.addAll(List.of("give", "see", "reset"));
+                } else if (args.length == 3) {
+                    addPlayers(result);
+                }
+            } else if (sub.equals("limits") && sender.hasPermission("blockmania.limits")) {
+                if (args.length == 2) {
+                    result.addAll(List.of("on", "off", "see"));
+                } else if (args.length == 3) {
                     addPlayers(result);
                 }
             } else if (sub.equals("block")) {

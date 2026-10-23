@@ -265,9 +265,82 @@ public final class BlockManager {
      * blockshell, il colpo che avrebbe distrutto il blocco non fa danno.
      */
     public void damage(Block block, int amount, Player shooter) {
+        damage(block, amount, shooter, HitStyle.NORMAL);
+    }
+
+    /** Com'e' fatto il colpo: cambia l'animazione del blocco (normale, esplosione, fantasma). */
+    public enum HitStyle { NORMAL, EXPLOSION, GHOST }
+
+    /**
+     * Esplosione scenica della explosionball: fa un po' di danno ai blocchi vicini a quello colpito
+     * (explosion.damage-percent del danno della palla, in un raggio di explosion.radius blocchi).
+     * Il blocco colpito prende il danno normale dalla palla, qui si trattano solo i vicini.
+     */
+    public void explode(Block center, int damage, Player shooter) {
+        explode(center, damage, shooter, plugin.getConfig().getInt("effects.explosion.radius", 1));
+    }
+
+    /** Esplosione dell'attacco potenziato: piu grande, con fiamme e fumo. */
+    public void powerBlast(Block center, int damage, Player shooter) {
+        FileConfiguration c = plugin.getConfig();
+        Location at = center.getLocation().add(0.5, 0.5, 0.5);
+        World world = center.getWorld();
+        world.spawnParticle(Particle.EXPLOSION_EMITTER, at, 1, 0, 0, 0, 0);
+        world.spawnParticle(Particle.FLAME, at, c.getInt("power-attack.blast-flames", 40), 0.6, 0.6, 0.6, 0.08);
+        world.spawnParticle(Particle.LAVA, at, 8, 0.5, 0.5, 0.5, 0);
+        world.spawnParticle(Particle.LARGE_SMOKE, at, 10, 0.5, 0.5, 0.5, 0.03);
+        // l'esplosione e' scenica: il danno forte lo fa la palla, qui solo una piccola parte
+        explode(center, damage, shooter, c.getInt("power-attack.explosion-radius", 2),
+                c.getDouble("power-attack.explosion-damage-percent", 3));
+    }
+
+    public void explode(Block center, int damage, Player shooter, int blastRadius) {
+        explode(center, damage, shooter, blastRadius,
+                plugin.getConfig().getDouble("effects.explosion.damage-percent", 25));
+    }
+
+    public void explode(Block center, int damage, Player shooter, int blastRadius, double damagePercent) {
+        FileConfiguration c = plugin.getConfig();
+        int radius = Math.max(0, Math.min(4, blastRadius));
+        double percent = Math.max(0, damagePercent) / 100.0;
+        int splash = (int) Math.round(damage * percent);
+        Location at = center.getLocation().add(0.5, 0.5, 0.5);
+        World world = center.getWorld();
+        int particles = c.getInt("effects.explosion.particles", 1);
+        if (particles > 0) {
+            world.spawnParticle(Particle.EXPLOSION, at, particles, 0.2, 0.2, 0.2, 0);
+        }
+        plugin.playConfiguredSound(at, "effects.explosion");
+        if (splash <= 0 || radius <= 0) {
+            return;
+        }
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+                    Block near = center.getRelative(dx, dy, dz);
+                    if (near.getType() == Material.NOTE_BLOCK || near.getType() == Material.BARRIER) {
+                        damage(near, splash, shooter, HitStyle.EXPLOSION, false);
+                    }
+                }
+            }
+        }
+    }
+
+    public void damage(Block block, int amount, Player shooter, HitStyle style) {
+        damage(block, amount, shooter, style, true);
+    }
+
+    /** countHit = false per i danni dell'esplosione ai vicini: non contano come colpi di palla. */
+    private void damage(Block block, int amount, Player shooter, HitStyle style, boolean countHit) {
         Tracked t = get(block);
         if (t == null || amount <= 0) {
             return;
+        }
+        if (countHit && shooter != null && plugin.getPower() != null) {
+            plugin.getPower().onHit(shooter);
         }
         int max = maxHealth(t.number);
         int newHp = t.hp - amount;
@@ -292,7 +365,7 @@ public final class BlockManager {
             blocks.remove(key(block));
             dirty = true;
             if (shake && c.getBoolean("effects.shake.on-break", true)) {
-                startShake(block, t.number, stageBefore, true);
+                startShake(block, t.number, stageBefore, true, style);
             } else {
                 Shake running = shakes.remove(key(block));
                 if (running != null) {
@@ -305,6 +378,9 @@ public final class BlockManager {
                 world.spawnParticle(Particle.BLOCK, center, breakParticles, 0.3, 0.3, 0.3, before);
             }
             plugin.playConfiguredSound(center, "effects.destroy");
+            if (style == HitStyle.GHOST) {
+                world.spawnParticle(Particle.SOUL, center, 6, 0.3, 0.3, 0.3, 0.02);
+            }
             if (c.getBoolean("blocks.drop-on-destroy", false)) {
                 world.dropItemNaturally(center, plugin.createBlockItem(t.number));
             }
@@ -315,15 +391,21 @@ public final class BlockManager {
         dirty = true;
         int stage = stageFor(t.hp, max);
         if (shake && c.getBoolean("effects.shake.on-hit", true)) {
-            startShake(block, t.number, stage, false);
+            startShake(block, t.number, stage, false, style);
         } else {
             block.setBlockData(dataFor(t.number, stage), false);
         }
-        int hitParticles = c.getInt("effects.hit.particles", 8);
-        if (hitParticles > 0) {
-            world.spawnParticle(Particle.BLOCK, center, hitParticles, 0.25, 0.25, 0.25, before);
+        if (style == HitStyle.GHOST) {
+            // colpo fantasma: anime che salgono invece dei pezzetti di blocco
+            world.spawnParticle(Particle.SOUL, center, 2, 0.25, 0.25, 0.25, 0.01);
+            plugin.playConfiguredSound(center, "effects.ghost");
+        } else {
+            int hitParticles = c.getInt("effects.hit.particles", 8);
+            if (hitParticles > 0) {
+                world.spawnParticle(Particle.BLOCK, center, hitParticles, 0.25, 0.25, 0.25, before);
+            }
+            plugin.playConfiguredSound(center, style == HitStyle.EXPLOSION ? "effects.explosion-hit" : "effects.hit");
         }
-        plugin.playConfiguredSound(center, "effects.hit");
     }
 
     // ------------------------------------------------------------------
@@ -339,6 +421,7 @@ public final class BlockManager {
         int age;
         int duration;
         boolean breaking;
+        HitStyle style = HitStyle.NORMAL;
 
         Shake(Block block, String key) {
             this.block = block;
@@ -366,7 +449,7 @@ public final class BlockManager {
         return stack;
     }
 
-    private void startShake(Block block, int number, int stage, boolean breaking) {
+    private void startShake(Block block, int number, int stage, boolean breaking, HitStyle style) {
         FileConfiguration c = plugin.getConfig();
         String k = key(block);
         int ticks = Math.max(2, breaking ? c.getInt("effects.shake.break-ticks", 10)
@@ -391,8 +474,18 @@ public final class BlockManager {
             s.display.setItemStack(modelItem(number, stage));
         }
         s.age = 0;
-        s.duration = ticks;
+        s.duration = style == HitStyle.NORMAL ? ticks : (int) Math.round(ticks * 1.5);
         s.breaking = s.breaking || breaking;
+        s.style = style;
+        if (s.display != null) {
+            if (style == HitStyle.GHOST) {
+                // contorno azzurro: l'aspetto del fantasma
+                s.display.setGlowColorOverride(org.bukkit.Color.fromRGB(150, 210, 255));
+                s.display.setGlowing(true);
+            } else {
+                s.display.setGlowing(false);
+            }
+        }
     }
 
     private void tickShake(Shake s) {
@@ -403,6 +496,9 @@ public final class BlockManager {
         }
         double p = s.age / (double) s.duration;
         float strength = (float) plugin.getConfig().getDouble("effects.shake.strength", 0.06);
+        if (s.style == HitStyle.EXPLOSION) {
+            strength *= (float) plugin.getConfig().getDouble("effects.explosion.shake-multiplier", 3.0);
+        }
         float damp = (float) (1 - p);
         ThreadLocalRandom r = ThreadLocalRandom.current();
         Vector3f move = new Vector3f(
@@ -411,6 +507,16 @@ public final class BlockManager {
                 (float) (r.nextDouble() - 0.5) * 2 * strength * damp);
         float scale = s.breaking && plugin.getConfig().getBoolean("effects.shake.break-shrink", true)
                 ? (float) Math.max(0.05, 1 - p) : 1f;
+        if (s.style == HitStyle.EXPLOSION && !s.breaking) {
+            // il blocco "si gonfia" per l'urto e poi torna normale
+            scale *= 1f + (float) (0.3 * Math.sin(Math.PI * p));
+        } else if (s.style == HitStyle.GHOST) {
+            // sfarfalla (quasi invisibile a tratti) e sale un po' come un'anima
+            move = new Vector3f(move.x * 0.3f, move.y * 0.3f + (float) (0.12 * p), move.z * 0.3f);
+            if ((s.age / 2) % 2 == 1) {
+                scale *= 0.02f;
+            }
+        }
         s.display.setTransformation(new Transformation(move, new AxisAngle4f(),
                 new Vector3f(scale, scale, scale), new AxisAngle4f()));
         s.display.setInterpolationDelay(0);

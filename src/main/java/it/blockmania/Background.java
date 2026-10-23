@@ -268,6 +268,13 @@ public final class Background {
      * torna all'inizio, disegna la barra e si rimette alla fine.
      */
     public String bar(int total, double progress) {
+        return bar(total, progress, null, null);
+    }
+
+    /** Come bar(), ma con altri pezzi "pieno" e "vuoto" (per esempio quelli gialli della stamina). */
+    public String bar(int total, double progress, String fillChar, String emptyChar) {
+        String barFill = fillChar == null || fillChar.isEmpty() ? this.barFill : fillChar;
+        String barEmpty = emptyChar == null || emptyChar.isEmpty() ? this.barEmpty : emptyChar;
         if (barFill.isEmpty() || barEmpty.isEmpty() || total < 3 || negative.isEmpty() || positive.isEmpty()) {
             return "";
         }
