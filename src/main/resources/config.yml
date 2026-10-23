@@ -284,6 +284,14 @@ messages:
     type: success
     channel: actionbar
     text: "hai ottenuto %coins% coin"
+  sell-hold-still:
+    type: info
+    channel: actionbar
+    text: "resta fermo fino alla fine della vendita"
+  sell-moved:
+    type: error
+    channel: actionbar
+    text: "ti sei mosso: vendita annullata, non hai perso niente. Riprova stando fermo"
   sell-cancelled:
     type: error
     channel: actionbar
@@ -678,7 +686,8 @@ shops:
         - "&7piazzala per creare il negozio di vendita"
         - "&8shift + destro a mano vuota per toglierlo"
     seconds-per-shell: 0.2     # tempo per vendere ogni shell
-    max-distance: 6            # se ti allontani di piu la vendita si ferma
+    move-tolerance: 0.15       # se ti muovi di piu di cosi (in blocchi) la vendita si annulla: devi stare fermo
+    max-distance: 6            # non piu usato
     hologram:
       - "&6&lvendita blockshell"
       - "&7tasto destro per vendere le tue blockshell"
@@ -1005,6 +1014,115 @@ upgrade-gui:
       shadow-set: main-shadow
       font: ""
       center: 73               # centro dei numeri, in pixel dall'inizio del titolo (piu' alto = piu' a destra)
+
+# ----------------------------------------------------------------------
+#  GUI DELLE MINIERE  (/mines)
+#  Ogni miniera e' un quadrato 2x2: il pannello col modello sta nello slot "icon", gli altri 3
+#  slot ("extra") mostrano lo stesso nome e la stessa lore.
+#  Modello del pannello = cmd-offset + numero miniera * cmd-step + fase
+#  (miniera 1: 101, 102, 103 ... 110; miniera 2: 201 ... ; la fase sale a ogni volta che la rifai).
+#  Segnaposto: %number% %blocks% (da scavare) %broken% (scavati ora) %left% %total% (scavati in tutto)
+#              %runs% (volte rifatta) %max_runs% %price% %redo_price% %coin% %blockcoin% %mine% %page% %pages%
+# ----------------------------------------------------------------------
+mines-gui:
+  count: 21                    # quante miniere esistono
+  max-runs: 10                 # dopo tante volte la miniera e' platino e non si rifa piu
+  stages: 10                   # quanti modelli ha ogni miniera (uno per volta rifatta)
+  cmd-step: 100
+  cmd-offset: 0                # se i modelli 101.. sono gia' usati dai potenziamenti metti 1000 (1101, 1102 ...)
+  blocks:
+    default: 3000              # blocchi da scavare in ogni miniera (puoi mettere "5: 4500" per cambiarne una)
+  prices: {}                   # prezzo in blockcoin per comprare la miniera (default = i suoi blocchi)
+  redo-prices: {}              # prezzo per rifarla
+
+  invisible:
+    material: GLASS_PANE
+    cmd: 999
+
+  slots:
+    close: [0, 1]
+    previous: [2]
+    next: [6]
+    info: [7, 8]
+    # i 6 quadrati di ogni pagina, nell'ordine del percorso
+    positions:
+      - {icon: 19, extra: [9, 10, 18]}
+      - {icon: 46, extra: [36, 37, 45]}
+      - {icon: 49, extra: [39, 40, 48]}
+      - {icon: 22, extra: [12, 13, 21]}
+      - {icon: 25, extra: [15, 16, 24]}
+      - {icon: 52, extra: [42, 43, 51]}
+
+  close:
+    name: "&cchiudi"
+    lore: []
+  previous:
+    name: "&7pagina precedente"
+    lore:
+      - "&8pagina &f%page%&8/&f%pages%"
+  next:
+    name: "&7pagina successiva"
+    lore:
+      - "&8pagina &f%page%&8/&f%pages%"
+  info:
+    name: "&6informazioni"
+    lore:
+      - ""
+      - "&7le miniere si comprano con i blockcoin"
+      - ""
+      - "&8• &7blockcoin &e%blockcoin%"
+      - "&8• &7miniera &f%mine%"
+
+  states:
+    owned:
+      material: GLASS_PANE
+      name: "&fminiera %number%"
+      lore:
+        - ""
+        - "&8• &7blocchi da scavare &f%blocks%"
+        - "&8• &7scavati ora &f%broken%&8/&f%blocks%"
+        - "&8• &7scavati in tutto &f%total%"
+        - "&8• &7rifatta &f%runs%&8/&f%max_runs%"
+    locked:
+      material: GLASS_PANE
+      name: "&cminiera %number%"
+      lore:
+        - ""
+        - "&7devi aver finito la miniera prima"
+        - "&8• &7prezzo &e%price% &7blockcoin"
+        - "&8• &7blocchi da scavare &f%blocks%"
+    platinum:
+      material: GLASS_PANE
+      name: "&bminiera %number% &8(platino)"
+      lore:
+        - ""
+        - "&8• &7blocchi da scavare &f%blocks%"
+        - "&8• &7scavati in tutto &f%total%"
+        - "&7miniera platinata, non si rifa piu"
+
+  sounds:
+    open:
+      sound: "block.chest.open"
+      volume: 0.6
+      pitch: 1.2
+    page:
+      sound: "ui.button.click"
+      volume: 0.6
+      pitch: 1.2
+
+  title:
+    text: "&f{shift:-15}\u3c06"
+    font: ""
+    widths:
+      "\u3c06": 179
+    advance: 0
+    page:
+      text: "%page%/%pages%"
+      set: main
+      shadow: true
+      shadow-set: main-shadow
+      font: ""
+      center: 73
 
 # ----------------------------------------------------------------------
 #  GUI DEGLI OGGETTI  (/bm items)

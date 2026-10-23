@@ -80,6 +80,7 @@ public final class ShopManager implements Listener {
         BossBar bar;
         BukkitTask task;
         Location where;
+        Location startPos;
         Deque<Integer> queue = new ArrayDeque<>();
         Map<Integer, Integer> groups = new TreeMap<>();
         int total;
@@ -111,7 +112,7 @@ public final class ShopManager implements Listener {
         }
         holos.clear();
         for (UUID id : new ArrayList<>(sales.keySet())) {
-            endSale(id, false);
+            endSale(id, true);
         }
     }
 
@@ -431,6 +432,7 @@ public final class ShopManager implements Listener {
             return;
         }
         sale.where = stand.getLocation();
+        sale.startPos = player.getLocation().clone();
 
         BossBar.Color color = BossBar.Color.GREEN;
         BossBar.Overlay overlay = BossBar.Overlay.PROGRESS;
@@ -446,6 +448,7 @@ public final class ShopManager implements Listener {
         }
         sale.bar = BossBar.bossBar(saleText(sale), 0f, color, overlay);
         player.showBossBar(sale.bar);
+        plugin.send(player, "sell-hold-still");
         sales.put(player.getUniqueId(), sale);
 
         double seconds = Math.max(0.05, cfg().getDouble("shops.sell.seconds-per-shell", 0.2));
@@ -479,36 +482,65 @@ public final class ShopManager implements Listener {
         return plugin.bossSegments(segments, progress);
     }
 
+    /** True se il giocatore si e' mosso dal punto in cui ha iniziato la vendita (guardarsi intorno si puo'). */
+    private boolean moved(Player player, Sale sale) {
+        Location now = player.getLocation();
+        if (!now.getWorld().equals(sale.startPos.getWorld())) {
+            return true;
+        }
+        double tolerance = Math.max(0.01, cfg().getDouble("shops.sell.move-tolerance", 0.15));
+        return now.distanceSquared(sale.startPos) > tolerance * tolerance;
+    }
+
     private void tickSale(UUID id) {
         Sale sale = sales.get(id);
         Player player = plugin.getServer().getPlayer(id);
         if (sale == null) {
             return;
         }
-        if (player == null || !player.isOnline()
-                || !player.getWorld().equals(sale.where.getWorld())
-                || player.getLocation().distance(sale.where) > cfg().getDouble("shops.sell.max-distance", 6)) {
-            endSale(id, true);
+        if (player == null || !player.isOnline() || moved(player, sale)) {
+            endSale(id, true); // ti sei mosso: non si vende niente e non si perde niente
             return;
         }
 
-        AmmoManager ammo = plugin.getAmmo();
         Integer level = sale.queue.poll();
-        if (level == null || ammo.removeShells(player, 1) <= 0) {
-            endSale(id, false);
+        if (level == null) {
+            finishSale(id, player, sale);
             return;
         }
-        int value = ammo.shellValue(level);
-        ammo.setCoin(player, ammo.getCoin(player) + value);
-        sale.coins += value;
+        sale.coins += plugin.getAmmo().shellValue(level);
         sale.done++;
         sale.bar.progress(Math.min(1f, (float) sale.done / sale.total));
         sale.bar.name(saleText(sale));
         plugin.playConfiguredSound(player.getLocation(), "shops.sell.sounds.tick");
 
         if (sale.queue.isEmpty()) {
-            endSale(id, false);
+            finishSale(id, player, sale);
         }
+    }
+
+    /** Fine vendita: solo adesso le shell vengono tolte e i coin dati (dal livello piu' basso). */
+    private void finishSale(UUID id, Player player, Sale sale) {
+        AmmoManager ammo = plugin.getAmmo();
+        int left = sale.total;
+        int coins = 0;
+        int taken = 0;
+        for (Map.Entry<Integer, Integer> e : ammo.getShells(player).entrySet()) {
+            if (left <= 0) {
+                break;
+            }
+            int take = Math.min(left, e.getValue());
+            coins += take * ammo.shellValue(e.getKey());
+            taken += take;
+            left -= take;
+        }
+        if (taken > 0) {
+            ammo.removeShells(player, taken);
+            ammo.setCoin(player, ammo.getCoin(player) + coins);
+        }
+        sale.done = taken;
+        sale.coins = coins;
+        endSale(id, false);
     }
 
     /** Chiude la vendita. cancelled = interrotta prima della fine. */
@@ -523,14 +555,12 @@ public final class ShopManager implements Listener {
         Player player = plugin.getServer().getPlayer(id);
         if (player != null) {
             player.hideBossBar(sale.bar);
-            if (sale.done > 0 || !cancelled) {
-                plugin.send(player, cancelled ? "sell-cancelled" : "sell-done",
+            if (cancelled) {
+                plugin.send(player, "sell-moved");
+            } else {
+                plugin.send(player, "sell-done",
                         "%shells%", String.valueOf(sale.done),
                         "%coins%", String.valueOf(sale.coins));
-            } else {
-                plugin.send(player, "sell-cancelled", "%shells%", "0", "%coins%", "0");
-            }
-            if (!cancelled) {
                 plugin.playConfiguredSound(player.getLocation(), "shops.sell.sounds.done");
             }
         }

@@ -59,6 +59,15 @@ public final class AmmoManager {
                 .set(key(name), PersistentDataType.INTEGER, Math.max(0, value));
     }
 
+    /** Contatori liberi del giocatore (usati dalle miniere). */
+    public int getCounter(Player player, String name) {
+        return getValue(player, name);
+    }
+
+    public void setCounter(Player player, String name, int value) {
+        setValue(player, name, value);
+    }
+
     // ---------- palle (con massimo) ----------
 
     /** Massimo di base per questo tipo di palla, dal config (ammo.<tipo>.max). */

@@ -38,6 +38,8 @@ public final class LauncherListener implements Listener {
     private final Map<UUID, Integer> holdUntil = new HashMap<>();
     /** Ultimo messaggio "senza palle", per non ripeterlo a ogni sparo automatico. */
     private final Map<UUID, Integer> lastNoAmmo = new HashMap<>();
+    /** Tick dell'ultimo drop (tasto Q) di ogni giocatore: il drop fa partire anche un finto clic sinistro. */
+    private final Map<UUID, Integer> lastDrop = new HashMap<>();
 
     private final NamespacedKey bouncesKey;
 
@@ -125,7 +127,18 @@ public final class LauncherListener implements Listener {
         if (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK) {
             event.setCancelled(true);
             if (!player.isSneaking() && player.hasPermission("blockmania.use")) {
-                plugin.getUpgrades().open(player, li);
+                // si apre un tick dopo: se nel frattempo c'e' stato un drop (Q) era un finto clic, non si apre
+                int clickTick = Bukkit.getCurrentTick();
+                UUID who = player.getUniqueId();
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    Integer dropped = lastDrop.get(who);
+                    if (dropped != null && Math.abs(dropped - clickTick) <= 2) {
+                        return;
+                    }
+                    if (player.isOnline()) {
+                        plugin.getUpgrades().open(player, li);
+                    }
+                });
             }
             return;
         }
@@ -349,6 +362,7 @@ public final class LauncherListener implements Listener {
         }
         event.setCancelled(true);
         Player player = event.getPlayer();
+        lastDrop.put(player.getUniqueId(), Bukkit.getCurrentTick());
         if (!player.hasPermission("blockmania.use")) {
             return;
         }
@@ -373,5 +387,6 @@ public final class LauncherListener implements Listener {
         lastUse.remove(event.getPlayer().getUniqueId());
         holdUntil.remove(event.getPlayer().getUniqueId());
         lastNoAmmo.remove(event.getPlayer().getUniqueId());
+        lastDrop.remove(event.getPlayer().getUniqueId());
     }
 }

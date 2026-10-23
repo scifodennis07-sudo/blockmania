@@ -44,6 +44,7 @@ public final class BlockMania extends JavaPlugin {
     private BlockManager blocks;
     private Background background;
     private ItemsGui itemsGui;
+    private MinesGui minesGui;
     private BlockEdit blockEdit;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
@@ -88,6 +89,22 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(blockEdit, this);
         itemsGui = new ItemsGui(this);
         getServer().getPluginManager().registerEvents(itemsGui, this);
+        minesGui = new MinesGui(this);
+        getServer().getPluginManager().registerEvents(minesGui, this);
+        PluginCommand minesCommand = getCommand("mines");
+        if (minesCommand != null) {
+            minesCommand.setExecutor((sender, cmd, label, args) -> {
+                if (!(sender instanceof org.bukkit.entity.Player player)) {
+                    sender.sendMessage("solo i giocatori possono aprire le miniere");
+                    return true;
+                }
+                if (!player.hasPermission("blockmania.use")) {
+                    return true;
+                }
+                minesGui.open(player);
+                return true;
+            });
+        }
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
 
@@ -201,6 +218,10 @@ public final class BlockMania extends JavaPlugin {
 
     public BlockEdit getBlockEdit() {
         return blockEdit;
+    }
+
+    public MinesGui getMinesGui() {
+        return minesGui;
     }
 
     public ItemsGui getItemsGui() {

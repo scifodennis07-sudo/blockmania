@@ -320,10 +320,21 @@ public final class UpgradeManager implements Listener {
             }
         }
         // i potenziamenti nuovi che non sono nella lista compaiono in fondo, da soli
-        for (String id : all) {
-            if (!out.contains(id)) {
-                out.add(id);
+        for (int i = 0; i < all.size(); i++) {
+            String id = all.get(i);
+            if (out.contains(id)) {
+                continue;
             }
+            // lo metto dopo il potenziamento che lo precede nell'ordine normale
+            int at = out.size();
+            for (int j = i - 1; j >= 0; j--) {
+                int found = out.indexOf(all.get(j));
+                if (found >= 0) {
+                    at = found + 1;
+                    break;
+                }
+            }
+            out.add(at, id);
         }
         return out;
     }
