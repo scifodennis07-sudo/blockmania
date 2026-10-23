@@ -310,7 +310,7 @@ public final class BlockManager {
         if (particles > 0) {
             world.spawnParticle(Particle.EXPLOSION, at, particles, 0.2, 0.2, 0.2, 0);
         }
-        plugin.playConfiguredSound(at, "effects.explosion");
+        plugin.playLayers(at, "effects.explosion-sounds");
         if (splash <= 0 || radius <= 0) {
             return;
         }
@@ -380,6 +380,7 @@ public final class BlockManager {
             plugin.playConfiguredSound(center, "effects.destroy");
             if (style == HitStyle.GHOST) {
                 world.spawnParticle(Particle.SOUL, center, 6, 0.3, 0.3, 0.3, 0.02);
+                plugin.playLayers(center, "effects.ghost-sounds");
             }
             if (c.getBoolean("blocks.drop-on-destroy", false)) {
                 world.dropItemNaturally(center, plugin.createBlockItem(t.number));
@@ -398,7 +399,7 @@ public final class BlockManager {
         if (style == HitStyle.GHOST) {
             // colpo fantasma: anime che salgono invece dei pezzetti di blocco
             world.spawnParticle(Particle.SOUL, center, 2, 0.25, 0.25, 0.25, 0.01);
-            plugin.playConfiguredSound(center, "effects.ghost");
+            plugin.playLayers(center, "effects.ghost-sounds");
         } else {
             int hitParticles = c.getInt("effects.hit.particles", 8);
             if (hitParticles > 0) {

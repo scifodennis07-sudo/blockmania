@@ -273,16 +273,26 @@ public final class Background {
 
     /** Come bar(), ma con altri pezzi "pieno" e "vuoto" (per esempio quelli gialli della stamina). */
     public String bar(int total, double progress, String fillChar, String emptyChar) {
+        return bar(total, progress, fillChar, emptyChar, 0);
+    }
+
+    /**
+     * Come sopra, ma la barra e' larga barWidth pixel (0 = larga quanto il testo) e resta centrata sotto il testo.
+     * Per avere la stessa lunghezza di una bossbar normale si usa 182.
+     */
+    public String bar(int total, double progress, String fillChar, String emptyChar, int barWidth) {
         String barFill = fillChar == null || fillChar.isEmpty() ? this.barFill : fillChar;
         String barEmpty = emptyChar == null || emptyChar.isEmpty() ? this.barEmpty : emptyChar;
         if (barFill.isEmpty() || barEmpty.isEmpty() || total < 3 || negative.isEmpty() || positive.isEmpty()) {
             return "";
         }
-        int width = total - 1;
-        boolean caps = !barLeft.isEmpty() && !barRight.isEmpty() && width > 2 * barCap;
+        int width = barWidth > 0 ? barWidth : total - 1;
+        int offset = barWidth > 0 ? (total - 1 - width) / 2 : 0; // barra centrata sotto il testo
+        boolean custom = fillChar != null && !fillChar.isEmpty();
+        boolean caps = !custom && !barLeft.isEmpty() && !barRight.isEmpty() && width > 2 * barCap;
         int inner = caps ? width - 2 * barCap : width;
         int filled = (int) Math.round(Math.max(0.0, Math.min(1.0, progress)) * inner);
-        StringBuilder sb = new StringBuilder(move(-total));
+        StringBuilder sb = new StringBuilder(move(offset - total));
         String back = move(-1);
         if (caps) {
             sb.append(barLeft).append(back);
@@ -293,7 +303,7 @@ public final class Background {
         if (caps) {
             sb.append(barRight).append(back);
         }
-        sb.append(move(total - width));
+        sb.append(move(total - (offset + width)));
         return sb.toString();
     }
 

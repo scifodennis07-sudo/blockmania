@@ -115,6 +115,7 @@ public final class BlockManiaCommand implements TabExecutor {
             case "bgtest" -> bgTest(sender, args);
             case "limits" -> limits(sender, args);
             case "power" -> power(sender, args);
+            case "stamina" -> stamina(sender, args);
             case "guidebug" -> {
                 if (!sender.hasPermission("blockmania.reload")) {
                     plugin.sendCommand(sender, "no-permission");
@@ -217,6 +218,58 @@ public final class BlockManiaCommand implements TabExecutor {
                 "%hits%", String.valueOf(power.progress(target)),
                 "%target%", String.valueOf(power.target(target)),
                 "%stamina%", String.valueOf((int) Math.round(power.stamina(target) * 100)));
+    }
+
+    // ---------- /blockmania stamina <see|refill|empty|set|infinite|locked|normal> [giocatore] ----------
+
+    private void stamina(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.stats")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        List<String> actions = List.of("see", "refill", "empty", "set", "infinite", "locked", "normal");
+        if (args.length < 2 || !actions.contains(args[1].toLowerCase(Locale.ROOT))) {
+            plugin.sendCommand(sender, "stamina-usage");
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        int playerIndex = action.equals("set") ? 3 : 2;
+        double percent = 100;
+        if (action.equals("set")) {
+            try {
+                percent = Double.parseDouble(args.length > 2 ? args[2].replace("%", "") : "");
+            } catch (NumberFormatException ex) {
+                plugin.sendCommand(sender, "stamina-usage");
+                return;
+            }
+        }
+        Player target = resolveTarget(sender, args, playerIndex, "stamina");
+        if (target == null) {
+            return;
+        }
+        Power power = plugin.getPower();
+        switch (action) {
+            case "refill" -> power.refill(target);
+            case "empty" -> {
+                power.setMode(target, "normal");
+                power.drain(target, 1.0);
+            }
+            case "set" -> power.setPercent(target, percent);
+            case "infinite" -> power.setMode(target, "infinite");
+            case "locked" -> power.setMode(target, "empty");
+            case "normal" -> power.setMode(target, "normal");
+            default -> {
+            }
+        }
+        plugin.getAmmo().refreshMain(target);
+        String mode = switch (power.mode(target)) {
+            case "infinite" -> "infinita";
+            case "empty" -> "sempre vuota";
+            default -> "normale";
+        };
+        plugin.sendCommand(sender, "stamina-state", "%player%", target.getName(),
+                "%stamina%", String.valueOf((int) Math.round(power.stamina(target) * 100)),
+                "%mode%", mode);
     }
 
     // ---------- /blockmania reload ----------
@@ -739,6 +792,7 @@ public final class BlockManiaCommand implements TabExecutor {
             }
             if (canStats) {
                 result.add("power");
+                result.add("stamina");
                 result.add("ball");
                 result.add("blockcoin");
                 result.add("blockshell");
@@ -780,6 +834,16 @@ public final class BlockManiaCommand implements TabExecutor {
                 if (args.length == 2) {
                     result.addAll(List.of("give", "see", "reset"));
                 } else if (args.length == 3) {
+                    addPlayers(result);
+                }
+            } else if (sub.equals("stamina") && canStats) {
+                if (args.length == 2) {
+                    result.addAll(List.of("see", "refill", "empty", "set", "infinite", "locked", "normal"));
+                } else if (args.length == 3 && !args[1].equalsIgnoreCase("set")) {
+                    addPlayers(result);
+                } else if (args.length == 3) {
+                    result.addAll(List.of("0", "25", "50", "75", "100"));
+                } else if (args.length == 4 && args[1].equalsIgnoreCase("set")) {
                     addPlayers(result);
                 }
             } else if (sub.equals("limits") && sender.hasPermission("blockmania.limits")) {

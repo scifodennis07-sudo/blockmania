@@ -30,13 +30,13 @@ import java.util.UUID;
 public final class Power implements Listener {
 
     private final BlockMania plugin;
-    private final Map<UUID, BossBar> staminaBars = new HashMap<>();
     private final Map<UUID, BossBar> powerBars = new HashMap<>();
     private final NamespacedKey fullAtKey;
     private final NamespacedKey progressKey;
     private final NamespacedKey chargesKey;
     private final NamespacedKey targetKey;
     private final NamespacedKey noLimitsKey;
+    private final NamespacedKey modeKey;
     private BukkitTask task;
 
     public Power(BlockMania plugin) {
@@ -46,6 +46,7 @@ public final class Power implements Listener {
         this.chargesKey = new NamespacedKey(plugin, "power_charges");
         this.targetKey = new NamespacedKey(plugin, "power_target");
         this.noLimitsKey = new NamespacedKey(plugin, "limits_off");
+        this.modeKey = new NamespacedKey(plugin, "stamina_mode");
     }
 
     public void start() {
@@ -84,8 +85,47 @@ public final class Power implements Listener {
         return Math.max(1000L, (long) (plugin.getConfig().getDouble("power-attack.regen-seconds", 180) * 1000));
     }
 
+    /** Modalita' della stamina: normal, infinite (sempre piena) o empty (sempre vuota). */
+    public String mode(Player player) {
+        String m = player.getPersistentDataContainer().get(modeKey, PersistentDataType.STRING);
+        return m == null ? "normal" : m;
+    }
+
+    public void setMode(Player player, String mode) {
+        if (mode.equals("normal")) {
+            player.getPersistentDataContainer().remove(modeKey);
+        } else {
+            player.getPersistentDataContainer().set(modeKey, PersistentDataType.STRING, mode);
+        }
+    }
+
+    /** Mette la stamina a una percentuale (0-100) e la fa ricaricare da li'. */
+    public void setPercent(Player player, double percent) {
+        double level = Math.max(0.0, Math.min(1.0, percent / 100.0));
+        setMode(player, "normal");
+        long fullAt = System.currentTimeMillis() + (long) ((1.0 - level) * regenMillis());
+        if (level >= 1.0) {
+            player.getPersistentDataContainer().remove(fullAtKey);
+        } else {
+            player.getPersistentDataContainer().set(fullAtKey, PersistentDataType.LONG, fullAt);
+        }
+    }
+
+    /** Vero se la stamina va mostrata sotto la bossbar principale. */
+    public boolean staminaVisible(Player player) {
+        var c = plugin.getConfig();
+        return c.getBoolean("stamina.enabled", true) && c.getBoolean("power-attack.enabled", true);
+    }
+
     /** Stamina da 0 a 1. */
     public double stamina(Player player) {
+        String mode = mode(player);
+        if (mode.equals("infinite")) {
+            return 1.0;
+        }
+        if (mode.equals("empty")) {
+            return 0.0;
+        }
         Long fullAt = player.getPersistentDataContainer().get(fullAtKey, PersistentDataType.LONG);
         if (fullAt == null) {
             return 1.0;
@@ -99,6 +139,9 @@ public final class Power implements Listener {
 
     /** Toglie una parte di stamina (0.25 = un quarto). Per i casi particolari che aggiungeremo. */
     public void drain(Player player, double fraction) {
+        if (!mode(player).equals("normal")) {
+            return;
+        }
         double level = Math.max(0.0, stamina(player) - Math.max(0.0, fraction));
         long fullAt = System.currentTimeMillis() + (long) ((1.0 - level) * regenMillis());
         player.getPersistentDataContainer().set(fullAtKey, PersistentDataType.LONG, fullAt);
@@ -106,6 +149,7 @@ public final class Power implements Listener {
 
     /** Rimette la stamina al massimo subito. */
     public void refill(Player player) {
+        setMode(player, "normal");
         player.getPersistentDataContainer().remove(fullAtKey);
     }
 
@@ -175,6 +219,17 @@ public final class Power implements Listener {
         refill(player);
     }
 
+    /** Vero se l'attacco potenziato si puo' usare adesso (senza messaggi e senza consumare). */
+    public boolean canUse(Player player) {
+        if (!plugin.getConfig().getBoolean("power-attack.enabled", true)) {
+            return false;
+        }
+        if (!isLimited(player)) {
+            return true;
+        }
+        return charges(player) > 0 && stamina(player) >= 0.999;
+    }
+
     /**
      * Prova a usare l'attacco potenziato: controlla lo sblocco e la stamina e li consuma.
      * Ritorna vero se l'attacco puo' partire.
@@ -211,92 +266,46 @@ public final class Power implements Listener {
 
     private void tick() {
         var c = plugin.getConfig();
-        boolean staminaOn = c.getBoolean("stamina.enabled", true) && c.getBoolean("power-attack.enabled", true);
         boolean powerOn = c.getBoolean("power-attack.enabled", true);
-        String fill = c.getString("stamina.bar-fill", "㰔");
-        String empty = c.getString("stamina.bar-empty", "㰕");
-        String staminaText = c.getString("stamina.text", "&estamina");
+        BarStack stack = plugin.getBars();
         for (Player player : Bukkit.getOnlinePlayers()) {
             UUID id = player.getUniqueId();
             double level = stamina(player);
-
-            // stamina: sempre sotto la bossbar principale
             boolean mainReady = plugin.getAmmo().hasBossBar(player) || !c.getBoolean("bossbar.enabled", true);
-            BossBar bar = staminaBars.get(id);
-            if (!staminaOn || !mainReady) {
-                if (bar != null) {
-                    player.hideBossBar(bar);
-                    staminaBars.remove(id);
-                }
-            } else {
-                Component name = plugin.bossSegmentsBar(List.of(staminaText), level, fill, empty,
-                        "%percent%", String.valueOf((int) Math.round(level * 100)));
-                if (bar == null) {
-                    bar = BossBar.bossBar(name, 0f, color("stamina.color", BossBar.Color.YELLOW), BossBar.Overlay.PROGRESS);
-                    staminaBars.put(id, bar);
-                    player.showBossBar(bar);
-                } else {
-                    bar.name(name);
-                }
-            }
-
-            // attacco potenziato sbloccato
             BossBar pbar = powerBars.get(id);
             boolean show = powerOn && mainReady && charges(player) > 0;
             if (!show) {
                 if (pbar != null) {
-                    player.hideBossBar(pbar);
                     powerBars.remove(id);
+                    stack.remove(player, "power");
                 }
+                continue;
+            }
+            String key = level >= 0.999 ? "power-attack.bossbar.ready" : "power-attack.bossbar.waiting";
+            String text = c.getString(key, level >= 0.999
+                    ? "&dattacco potenziato sbloccato &8| &fpremi &eshift + click destro &fper usarlo"
+                    : "&dattacco potenziato sbloccato &8| &7aspetta la stamina");
+            Component name = plugin.bossSegments(List.of(text), -1);
+            if (pbar == null) {
+                pbar = BossBar.bossBar(name, 1f, color("power-attack.bossbar.color", BossBar.Color.PURPLE),
+                        BossBar.Overlay.PROGRESS);
+                powerBars.put(id, pbar);
+                stack.set(player, "power", pbar, 50, false);
             } else {
-                String key = level >= 0.999 ? "power-attack.bossbar.ready" : "power-attack.bossbar.waiting";
-                String text = c.getString(key, level >= 0.999
-                        ? "&dattacco potenziato sbloccato &8| &fpremi &eshift + f &fper usarlo"
-                        : "&dattacco potenziato sbloccato &8| &7aspetta la stamina");
-                Component name = plugin.bossSegments(List.of(text), -1);
-                if (pbar == null) {
-                    pbar = BossBar.bossBar(name, 1f, color("power-attack.bossbar.color", BossBar.Color.PURPLE),
-                            BossBar.Overlay.PROGRESS);
-                    powerBars.put(id, pbar);
-                    player.showBossBar(pbar);
-                } else {
-                    pbar.name(name);
-                }
+                pbar.name(name);
             }
         }
     }
 
-    /** Rimette le barre una dopo l'altra: la stamina (e l'attacco) devono stare sotto la principale. */
-    public void reattach(Player player) {
-        UUID id = player.getUniqueId();
-        BossBar s = staminaBars.get(id);
-        BossBar p = powerBars.get(id);
-        if (s != null) {
-            player.hideBossBar(s);
-            player.showBossBar(s);
-        }
-        if (p != null) {
-            player.hideBossBar(p);
-            player.showBossBar(p);
-        }
-    }
-
     private void hideBars(Player player) {
-        UUID id = player.getUniqueId();
-        BossBar s = staminaBars.remove(id);
-        if (s != null) {
-            player.hideBossBar(s);
-        }
-        BossBar p = powerBars.remove(id);
-        if (p != null) {
-            player.hideBossBar(p);
-        }
+        powerBars.remove(player.getUniqueId());
+        plugin.getBars().remove(player, "power");
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        staminaBars.remove(id);
         powerBars.remove(id);
+        plugin.getBars().forget(id);
     }
 }

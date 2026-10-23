@@ -327,11 +327,8 @@ public final class AmmoManager {
         if (task != null) {
             task.cancel();
         }
-        for (Map.Entry<UUID, BossBar> entry : bars.entrySet()) {
-            Player p = Bukkit.getPlayer(entry.getKey());
-            if (p != null) {
-                p.hideBossBar(entry.getValue());
-            }
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            plugin.getBars().clear(p);
         }
         bars.clear();
     }
@@ -369,6 +366,14 @@ public final class AmmoManager {
     }
 
     private void tick() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            refreshMain(player);
+        }
+        bars.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
+    }
+
+    /** Aggiorna (o crea) subito la bossbar principale di un giocatore. */
+    public void refreshMain(Player player) {
         FileConfiguration c = plugin.getConfig();
         boolean enabled = c.getBoolean("bossbar.enabled", true);
         boolean always = c.getBoolean("bossbar.always-visible", true);
@@ -381,47 +386,46 @@ public final class AmmoManager {
         }
         BossBar.Color color = parseColor(c.getString("bossbar.color", "BLUE"));
         BossBar.Overlay overlay = parseOverlay(c.getString("bossbar.style", "PROGRESS"));
+        UUID id = player.getUniqueId();
+        BossBar bar = bars.get(id);
+        boolean visible = enabled && (always || isHoldingLauncher(player));
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            UUID id = player.getUniqueId();
-            BossBar bar = bars.get(id);
-            boolean visible = enabled && (always || isHoldingLauncher(player));
-
-            if (!visible) {
-                if (bar != null) {
-                    player.hideBossBar(bar);
-                    bars.remove(id);
-                }
-                continue;
+        if (!visible) {
+            if (bar != null) {
+                bars.remove(id);
+                plugin.getBars().remove(player, BarStack.MAIN);
             }
-
-            String type = getSelected(player, defaultType);
-            int shellMax = getShellMax(player);
-            Component title = plugin.bossSegments(ballTemplates(templates, defaultType), -1,
-                    "%ball%", plugin.tiny(type),
-                    "%ammo%", String.valueOf(getAmmo(player, type)),
-                    "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
-                    "%shell%", String.valueOf(getShell(player)),
-                    "%shell_max%", String.valueOf(shellMax),
-                    "%blockcoin%", String.valueOf(getBlockCoin(player)),
-                    "%coin%", String.valueOf(getCoin(player)));
-
-            // la barra resta sempre piena: conta solo il testo
-            if (bar == null) {
-                bar = BossBar.bossBar(title, 1.0f, color, overlay);
-                bars.put(id, bar);
-                player.showBossBar(bar);
-                // la stamina deve stare sempre sotto la bossbar principale
-                if (plugin.getPower() != null) {
-                    plugin.getPower().reattach(player);
-                }
-            } else {
-                bar.name(title);
-                bar.progress(1.0f);
-                bar.color(color);
-                bar.overlay(overlay);
-            }
+            return;
         }
-        bars.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
+
+        String type = getSelected(player, defaultType);
+        int shellMax = getShellMax(player);
+        // la stamina e' la barra gialla sotto il testo della principale (non c'e' mentre un messaggio urgente e' in alto)
+        Power power = plugin.getPower();
+        boolean staminaOn = power != null && power.staminaVisible(player)
+                && !plugin.getBars().has(player, "message");
+        double progress = staminaOn ? power.stamina(player) : -1;
+        Component title = plugin.bossSegmentsBar(ballTemplates(templates, defaultType), progress,
+                c.getString("stamina.bar-fill", "\u3c14"), c.getString("stamina.bar-empty", "\u3c15"),
+                c.getInt("stamina.bar-width", 182),
+                "%ball%", plugin.tiny(type),
+                "%ammo%", String.valueOf(getAmmo(player, type)),
+                "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
+                "%shell%", String.valueOf(getShell(player)),
+                "%shell_max%", String.valueOf(shellMax),
+                "%blockcoin%", String.valueOf(getBlockCoin(player)),
+                "%coin%", String.valueOf(getCoin(player)));
+
+        // la barra resta sempre piena: conta solo il testo
+        if (bar == null) {
+            bar = BossBar.bossBar(title, 1.0f, color, overlay);
+            bars.put(id, bar);
+        } else {
+            bar.name(title);
+            bar.progress(1.0f);
+            bar.color(color);
+            bar.overlay(overlay);
+        }
+        plugin.getBars().set(player, BarStack.MAIN, bar, Integer.MAX_VALUE, staminaOn);
     }
 }

@@ -256,10 +256,23 @@ public final class MinesGui implements Listener {
             r = java.util.Arrays.copyOf(r, general.length + extra.length);
 
             String name = c.getString(bp + ".name", "&fminiera %number%");
-            List<String> lore = c.getStringList(bp + ".lore");
-            put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs, key.equals("locked")), name, lore, r, false), null);
+            String actionKey = key.equals("locked") ? (mine == owned + 1 ? "buy" : "far") : key.equals("owned") ? "owned" : "";
+            String actionText = actionKey.isEmpty() ? ""
+                    : c.getString(GUI + "actions." + actionKey, actionKey.equals("buy") ? "&eclicca per acquistare" : "");
+            List<String> lore = new ArrayList<>();
+            for (String line : c.getStringList(bp + ".lore")) {
+                if (line.contains("%action%")) {
+                    if (actionText.isEmpty()) {
+                        continue; // nessuna azione: la riga sparisce
+                    }
+                    line = line.replace("%action%", actionText);
+                }
+                lore.add(line);
+            }
+            String click = actionKey.equals("buy") ? "buy:" + mine : actionKey.equals("far") ? "far:" + mine : null;
+            put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs, key.equals("locked")), name, lore, r, false), click);
             for (int slot : pos.extra()) {
-                put(inv, holder, slot, invisible(name, lore, r, false), null);
+                put(inv, holder, slot, invisible(name, lore, r, false), click);
             }
         }
     }
@@ -312,6 +325,10 @@ public final class MinesGui implements Listener {
     }
 
     private void open(Player player, int page) {
+        open(player, page, true);
+    }
+
+    private void open(Player player, int page, boolean sound) {
         Holder holder = new Holder(page);
         int pages = pageCount();
         holder.page = Math.max(0, Math.min(page, pages - 1));
@@ -319,7 +336,9 @@ public final class MinesGui implements Listener {
         holder.inventory = inv;
         fill(inv, holder, player);
         player.openInventory(inv);
-        plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.open");
+        if (sound) {
+            plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.open");
+        }
     }
 
     @EventHandler
@@ -355,9 +374,44 @@ public final class MinesGui implements Listener {
                 }
             }
             default -> {
-                // le miniere per ora non fanno niente al clic
+                if (action.startsWith("buy:") || action.startsWith("far:")) {
+                    int mine;
+                    try {
+                        mine = Integer.parseInt(action.substring(4));
+                    } catch (NumberFormatException ex) {
+                        return;
+                    }
+                    buy(player, holder, mine);
+                }
             }
         }
+    }
+
+    /** Compra la miniera successiva a quella che hai, pagando in blockcoin. */
+    private void buy(Player player, Holder holder, int mine) {
+        AmmoManager ammo = plugin.getAmmo();
+        int owned = ammo.getMine(player);
+        if (mine != owned + 1) {
+            plugin.send(player, "mine-far", "%mine%", String.valueOf(mine));
+            plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.error");
+            return;
+        }
+        var c = plugin.getConfig();
+        int price = c.getInt(GUI + "prices." + mine, blocksOf(mine));
+        int have = ammo.getBlockCoin(player);
+        if (have < price) {
+            plugin.send(player, "mine-no-funds", "%mine%", String.valueOf(mine),
+                    "%price%", String.valueOf(price), "%blockcoin%", String.valueOf(have));
+            plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.error");
+            return;
+        }
+        ammo.setBlockCoin(player, have - price);
+        ammo.setMine(player, mine);
+        plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.buy");
+        plugin.send(player, "mine-bought", "%mine%", String.valueOf(mine), "%price%", String.valueOf(price));
+        ammo.refreshMain(player);
+        // riapre la stessa pagina: cosi' il titolo (i collegamenti verdi) si aggiorna
+        open(player, holder.page, false);
     }
 
     @EventHandler

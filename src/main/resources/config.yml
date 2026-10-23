@@ -244,6 +244,26 @@ messages:
     type: error
     channel: chat
     text: "uso: /bm power <give|see|reset> [player]"
+  stamina-usage:
+    type: error
+    channel: chat
+    text: "uso: /bm stamina <see|refill|empty|set <0-100>|infinite|locked|normal> [player]"
+  stamina-state:
+    type: success
+    channel: chat
+    text: "stamina di %player%: %stamina%% (%mode%)"
+  mine-bought:
+    type: success
+    channel: actionbar
+    text: "hai comprato la miniera %mine% per %price% blockcoin!"
+  mine-no-funds:
+    type: error
+    channel: actionbar
+    text: "ti servono %price% blockcoin per la miniera %mine% (ne hai %blockcoin%)"
+  mine-far:
+    type: error
+    channel: actionbar
+    text: "devi prima sbloccare la miniera precedente"
   power-state:
     type: success
     channel: chat
@@ -255,7 +275,7 @@ messages:
   power-unlocked:
     type: success
     channel: actionbar
-    text: "attacco potenziato sbloccato! premi shift + f con il lanciapalle"
+    text: "attacco potenziato sbloccato! premi shift + click destro con il lanciapalle"
   power-locked:
     type: error
     channel: actionbar
@@ -416,6 +436,11 @@ help:
       usage: "/bm power <give|see|reset> [player]"
       description: "give = regala l'attacco potenziato (per provarlo), see = mostra i colpi e la stamina, reset = azzera tutto"
       example: "/bm power give"
+    stamina:
+      permission: blockmania.stats
+      usage: "/bm stamina <see|refill|empty|set <0-100>|infinite|locked|normal> [player]"
+      description: "see = mostra, refill = piena subito, empty = svuotata (si ricarica), set = percentuale, infinite = sempre piena, locked = sempre vuota, normal = torna normale"
+      example: "/bm stamina infinite"
     limits:
       permission: blockmania.limits
       usage: "/bm limits <on|off|see> [player]"
@@ -544,6 +569,15 @@ ammo:
     projectile-custom-model-data: 3
     ghost: true                # attraversa i blocchi e li danneggia tutti (non rimbalza)
     range: 40                  # distanza massima in blocchi
+    fire-sounds:               # suoni quando la spari (ognuno con sound / volume / pitch, ne puoi aggiungere o togliere)
+      whoosh:
+        sound: "entity.vex.charge"
+        volume: 1.2
+        pitch: 1.5
+      shimmer:
+        sound: "block.amethyst_block.resonate"
+        volume: 1.0
+        pitch: 0.7
   explosionball:
     damage: 150
     max: 6
@@ -551,6 +585,15 @@ ammo:
     grid: 3                    # 3x3 = 9 palle parallele, colpiscono 3x3 blocchi
     grid-spacing: 1.0          # distanza tra le palle in blocchi
     explosion: true            # il primo urto di ogni palla esplode (i rimbalzi no)
+    fire-sounds:
+      launch:
+        sound: "entity.firework_rocket.launch"
+        volume: 1.2
+        pitch: 0.8
+      thump:
+        sound: "entity.blaze.shoot"
+        volume: 0.8
+        pitch: 0.7
 
 # suono del cambio palla (tasto F)
 ball-switch:
@@ -748,6 +791,7 @@ shops:
       color: GREEN
       style: PROGRESS
       progress-bar: true       # true = disegna la barra sotto lo sfondo (serve bossbar.json aggiornato)
+      bar-width: 182           # larghezza della barra in pixel (182 = come una bossbar normale)
     sounds:
       tick:
         sound: "block.note_block.hat"
@@ -1063,19 +1107,18 @@ upgrade-gui:
       center: 73               # centro dei numeri, in pixel dall'inizio del titolo (piu' alto = piu' a destra)
 
 # ----------------------------------------------------------------------
-#  STAMINA (bossbar gialla sotto quella principale, sempre piena)
+#  STAMINA (barra gialla dentro la bossbar principale, sempre piena)
 #  Si svuota solo con l'attacco potenziato. Serve il pack aggiornato (barra gialla in bossbar.json)
 # ----------------------------------------------------------------------
 stamina:
   enabled: true
-  text: "&estamina"            # segnaposto: %percent%
-  color: YELLOW
+  bar-width: 182               # larghezza in pixel (182 = come una bossbar normale), disegnata sotto la bossbar principale
   bar-fill: "\u3c14"           # pezzo pieno giallo (bossbar.json)
   bar-empty: "\u3c15"          # pezzo vuoto giallo
 
 # ----------------------------------------------------------------------
 #  ATTACCO POTENZIATO: dopo un numero a caso di colpi ai blocchi (da unlock-hits-min a unlock-hits-max) se ne sblocca uno.
-#  Si usa con shift + F tenendo il lanciapalle in mano, usa la palla scelta e consuma TUTTA la stamina
+#  Si usa con shift + click destro tenendo il lanciapalle in mano: spara UN colpo potenziato con la palla scelta e consuma TUTTA la stamina
 #  (da 0 a piena in regen-seconds). I colpi (anche ai rimbalzi) hanno una scia di fuoco ed esplodono a ogni impatto. /bm limits off toglie questi limiti (per lo staff)
 # ----------------------------------------------------------------------
 power-attack:
@@ -1084,8 +1127,7 @@ power-attack:
   unlock-hits-max: 3000        # Per sbloccarne uno servono un numero a caso di colpi tra min e max
   max-charges: 1               # quanti se ne possono tenere
   regen-seconds: 180           # tempo per ricaricare la stamina da 0 (180 = 3 minuti)
-  shots: 30                    # quante raffiche spara
-  interval-ticks: 2            # ogni quanti tick (20 = 1 secondo)
+  cooldown-ticks: 12           # dopo il colpo potenziato non parte subito uno normale
   damage-multiplier: 10.0      # danno rispetto al normale
   explosion-radius: 2          # raggio dell'esplosione all'impatto (in blocchi)
   explosion-damage-percent: 3  # danno dell'esplosione ai blocchi vicini, in % del danno della palla (scenica, minimo)
@@ -1093,7 +1135,7 @@ power-attack:
   trail-particles: 4           # fiamme della scia a ogni tick
   bossbar:
     color: PURPLE
-    ready: "&dattacco potenziato sbloccato &8| &fpremi &eshift + f &fper usarlo"
+    ready: "&dattacco potenziato sbloccato &8| &fpremi &eshift + click destro &fper usarlo"
     waiting: "&dattacco potenziato sbloccato &8| &7aspetta che la stamina si ricarichi"
   sounds:
     unlock:
@@ -1178,19 +1220,15 @@ mines-gui:
         - "&8• &7scavati ora &e%broken%&8/&e%blocks%"
         - "&8• &7scavati in tutto &b%total%"
         - "&8• &7rifatta &d%runs%&8/&d%max_runs%"
-        - ""
-        - "&eclicca per ..."
     locked:
       material: GLASS_PANE
       name: "&cminiera %number%"
       lore:
         - ""
-        - "&7devi aver finito la miniera prima"
-        - ""
         - "&8• &7prezzo &e%price% &7blockcoin"
         - "&8• &7blocchi da scavare &a%blocks%"
         - ""
-        - "&eclicca per ..."
+        - "%action%"
     platinum:
       material: GLASS_PANE
       name: "&bminiera %number% &8(platino)"
@@ -1208,7 +1246,21 @@ mines-gui:
         - ""
         - "&7presto arrivera una nuova miniera"
 
+  # riga "%action%" della lore delle miniere bloccate: buy = e' la prossima e si puo comprare, far = ce ne sono altre prima
+  actions:
+    buy: "&eclicca per acquistare"
+    far: "&7sblocca prima la miniera precedente"
+    owned: ""
+
   sounds:
+    buy:
+      sound: "entity.player.levelup"
+      volume: 0.8
+      pitch: 1.2
+    error:
+      sound: "entity.villager.no"
+      volume: 0.8
+      pitch: 1.0
     open:
       sound: "block.chest.open"
       volume: 0.6
@@ -1473,10 +1525,22 @@ effects:
     damage-percent: 25         # danno ai blocchi vicini, in % del danno della palla (0 = nessun danno)
     shake-multiplier: 3.0      # quanto vibra di piu del normale il blocco colpito
     particles: 1
-    sound: "entity.generic.explode"
-    volume: 0.6
-    pitch: 1.5
-  ghost:                       # ghostball: suono del colpo fantasma (i blocchi sfarfallano con il contorno azzurro)
-    sound: "particle.soul_escape"
-    volume: 0.5
-    pitch: 1.6
+  # i suoni usano volume alto di proposito: con volume 1 si sentono solo entro 16 blocchi, e le palle colpiscono da lontano
+  explosion-sounds:            # esplosione (explosionball e colpo potenziato): ogni voce = un suono, si sentono insieme
+    boom:
+      sound: "entity.generic.explode"
+      volume: 2.5
+      pitch: 1.0
+    crackle:
+      sound: "entity.firework_rocket.blast"
+      volume: 2.0
+      pitch: 0.8
+  ghost-sounds:                # ghostball: ogni blocco attraversato (i blocchi sfarfallano con il contorno azzurro)
+    whisper:
+      sound: "particle.soul_escape"
+      volume: 2.0
+      pitch: 0.9
+    wail:
+      sound: "entity.vex.ambient"
+      volume: 1.0
+      pitch: 1.6

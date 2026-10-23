@@ -16,7 +16,6 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.Material;
 import org.bukkit.inventory.PlayerInventory;
@@ -165,6 +164,19 @@ public final class LauncherListener implements Listener {
             return;
         }
 
+        // shift + tasto destro: attacco potenziato (se sbloccato e con la stamina piena), un solo colpo
+        if (player.isSneaking() && plugin.getPower() != null) {
+            int now = Bukkit.getCurrentTick();
+            Integer last = lastPower.get(player.getUniqueId());
+            if (last != null && now - last < Math.max(1, plugin.getConfig().getInt("power-attack.cooldown-ticks", 12))) {
+                return; // appena sparato: niente raffica normale subito dopo
+            }
+            if (plugin.getPower().canUse(player)) {
+                firePower(player, li);
+                return;
+            }
+        }
+
         // tenendo premuto spara da solo, alla velocita' del potenziamento
         if (plugin.getConfig().getBoolean("autofire.enabled", true)) {
             holdUntil.put(player.getUniqueId(), Bukkit.getCurrentTick()
@@ -233,6 +245,7 @@ public final class LauncherListener implements Listener {
             }
         }
         plugin.playConfiguredSound(player.getEyeLocation(), "items." + li.id());
+        plugin.playLayers(player.getEyeLocation(), path + "fire-sounds");
     }
 
     /** Lancia una "raffica" di una palla: una sola, oppure una griglia (es. 3x3) di palle parallele. */
@@ -252,7 +265,7 @@ public final class LauncherListener implements Listener {
         String path = "ammo." + type + ".";
         UpgradeManager up = plugin.getUpgrades();
         boolean ghost = c.getBoolean(path + "ghost", false);
-        int grid = Math.max(1, c.getInt(path + "grid", 1));
+        int grid = power ? 1 : Math.max(1, c.getInt(path + "grid", 1));
         double spacing = c.getDouble(path + "grid-spacing", 1.0);
         double speed = up.speed(player, li.speed());
         int damage = (int) Math.max(1, Math.round(up.damage(player, type) * damageMultiplier));
@@ -352,46 +365,22 @@ public final class LauncherListener implements Listener {
         return stack;
     }
 
-    // ---------- attacco potenziato: shift + F con il lanciapalle in mano ----------
+    // ---------- attacco potenziato: shift + click destro con il lanciapalle in mano ----------
 
-    @EventHandler
-    public void onSwap(PlayerSwapHandItemsEvent event) {
-        Player player = event.getPlayer();
-        LauncherItem li = plugin.getLauncher(event.getOffHandItem()); // e' il lanciapalle che era in mano
-        if (li == null || !player.isSneaking()) {
-            return;
-        }
-        event.setCancelled(true);
-        if (!player.hasPermission("blockmania.use")) {
-            return;
-        }
-        firePower(player, li);
-    }
+    private final Map<UUID, Integer> lastPower = new HashMap<>();
 
-    /** Attacco potenziato: una lunga raffica della palla scelta, piu forte del normale, senza consumare palle. */
+    /** Attacco potenziato: UN solo colpo della palla scelta, molto piu forte, senza consumare palle. */
     private void firePower(Player player, LauncherItem li) {
         if (plugin.getPower() == null || !plugin.getPower().tryUse(player)) {
             return;
         }
+        lastPower.put(player.getUniqueId(), Bukkit.getCurrentTick());
         var c = plugin.getConfig();
         String type = plugin.getAmmo().getSelected(player, li.ammoType());
-        int shots = Math.max(1, c.getInt("power-attack.shots", 30));
-        int interval = Math.max(1, c.getInt("power-attack.interval-ticks", 2));
-        double multiplier = Math.max(0.1, c.getDouble("power-attack.damage-multiplier", 3.0));
+        double multiplier = Math.max(0.1, c.getDouble("power-attack.damage-multiplier", 10.0));
         plugin.send(player, "power-used");
         plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.use");
-        for (int i = 0; i < shots; i++) {
-            final int n = i;
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (!player.isOnline() || player.isDead()) {
-                    return;
-                }
-                launchOnce(player, li, type, multiplier, true);
-                if (n % 3 == 0) {
-                    plugin.playConfiguredSound(player.getEyeLocation(), "items." + li.id());
-                }
-            }, (long) interval * i);
-        }
+        launchOnce(player, li, type, multiplier, true);
     }
 
     // ---------- mira: shift = modello 2, rilasciato = modello 1 ----------

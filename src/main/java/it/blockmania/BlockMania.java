@@ -46,6 +46,7 @@ public final class BlockMania extends JavaPlugin {
     private ItemsGui itemsGui;
     private MinesGui minesGui;
     private Power power;
+    private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
@@ -134,11 +135,39 @@ public final class BlockMania extends JavaPlugin {
                 c.set("power-attack.damage-multiplier", 10.0);
             }
         }
+        if (done < 3) {
+            // il colpo potenziato ora e' shift + click destro (prima shift + f): aggiorno i testi ancora di default
+            for (String path : new String[]{"power-attack.bossbar.ready", "messages.power-unlocked.text"}) {
+                String old = c.getString(path, "");
+                if (old.contains("shift + f")) {
+                    c.set(path, old.replace("shift + f", "shift + click destro"));
+                }
+            }
+            // "clicca per ..." nelle miniere: ora la riga dice cosa succede davvero (%action%)
+            for (String st : new String[]{"owned", "locked"}) {
+                List<String> lore = new ArrayList<>(c.getStringList("mines-gui.states." + st + ".lore"));
+                boolean changed = false;
+                for (int i = 0; i < lore.size(); i++) {
+                    String line = lore.get(i);
+                    if (line.contains("clicca per ...")) {
+                        lore.set(i, "%action%");
+                        changed = true;
+                    } else if (line.contains("devi aver finito la miniera prima")) {
+                        lore.remove(i--);
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    c.set("mines-gui.states." + st + ".lore", lore);
+                }
+            }
+        }
         if (done >= 1) {
-            c.set("tuning-version", 2);
+            c.set("tuning-version", 3);
             saveConfig();
             return;
         }
+        c.set("tuning-version", 3);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -159,7 +188,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 2);
+        c.set("tuning-version", 3);
         saveConfig();
     }
 
@@ -277,6 +306,10 @@ public final class BlockMania extends JavaPlugin {
         return blockEdit;
     }
 
+    public BarStack getBars() {
+        return bars;
+    }
+
     public Power getPower() {
         return power;
     }
@@ -348,10 +381,11 @@ public final class BlockMania extends JavaPlugin {
 
     /** Piu' testi, ognuno nel suo sfondo, messi in fila e centrati. progress >= 0 aggiunge la barra sotto tutti. */
     public Component withBackgrounds(List<String> segments, double progress) {
-        return withBackgrounds(segments, progress, null, null);
+        return withBackgrounds(segments, progress, null, null, 0);
     }
 
-    public Component withBackgrounds(List<String> segments, double progress, String fillChar, String emptyChar) {
+    public Component withBackgrounds(List<String> segments, double progress, String fillChar, String emptyChar,
+                                     int barWidth) {
         boolean noShadow = background.removeShadow();
         Component out = Component.empty();
         int totalAll = 0;
@@ -377,7 +411,7 @@ public final class BlockMania extends JavaPlugin {
             any = true;
         }
         if (any && progress >= 0) {
-            String bar = background.bar(totalAll, progress, fillChar, emptyChar);
+            String bar = background.bar(totalAll, progress, fillChar, emptyChar, barWidth);
             if (!bar.isEmpty()) {
                 Component b = color("&f" + bar);
                 out = out.append(noShadow ? b.shadowColor(ShadowColor.none()) : b);
@@ -398,12 +432,12 @@ public final class BlockMania extends JavaPlugin {
 
     /** Bossbar fatta di piu' pezzi, ognuno con il suo sfondo. */
     public Component bossSegments(List<String> templates, double progress, String... replacements) {
-        return bossSegmentsBar(templates, progress, null, null, replacements);
+        return bossSegmentsBar(templates, progress, null, null, 0, replacements);
     }
 
     /** Come bossSegments, con la barra disegnata con altri pezzi (fill/empty): vedi la stamina gialla. */
     public Component bossSegmentsBar(List<String> templates, double progress, String fillChar, String emptyChar,
-                                     String... replacements) {
+                                     int barWidth, String... replacements) {
         List<String> legacies = new ArrayList<>();
         for (String template : templates) {
             String t = tiny(template);
@@ -414,7 +448,7 @@ public final class BlockMania extends JavaPlugin {
         }
         Component result;
         if (background != null && background.forBossbar()) {
-            result = withBackgrounds(legacies, progress, fillChar, emptyChar);
+            result = withBackgrounds(legacies, progress, fillChar, emptyChar, barWidth);
         } else {
             result = color(String.join(" ", legacies));
         }
@@ -650,10 +684,6 @@ public final class BlockMania extends JavaPlugin {
     /** Mostra un messaggio in una bossbar per qualche secondo (si vede anche con una GUI aperta). */
     public void showBossMessage(Player player, String legacy) {
         UUID id = player.getUniqueId();
-        BossBar old = messageBars.remove(id);
-        if (old != null) {
-            player.hideBossBar(old);
-        }
         BukkitTask oldTask = messageTasks.remove(id);
         if (oldTask != null) {
             oldTask.cancel();
@@ -661,15 +691,22 @@ public final class BlockMania extends JavaPlugin {
         BossBar bar = BossBar.bossBar(bossSegments(List.of(legacy), -1), 1f,
                 BossBar.Color.WHITE, BossBar.Overlay.PROGRESS);
         messageBars.put(id, bar);
-        player.showBossBar(bar);
+        // priorita' massima dopo la principale; la principale perde la barra sotto cosi' il messaggio sta in 2a riga
+        bars.set(player, "message", bar, 100, false);
+        if (ammo != null) {
+            ammo.refreshMain(player);
+        }
         long ticks = Math.max(1, (long) (getConfig().getDouble("gui-messages.seconds", 3.0) * 20));
         messageTasks.put(id, Bukkit.getScheduler().runTaskLater(this, () -> {
             Player online = Bukkit.getPlayer(id);
-            if (online != null) {
-                online.hideBossBar(bar);
-            }
             if (messageBars.get(id) == bar) {
                 messageBars.remove(id);
+                if (online != null) {
+                    bars.remove(online, "message");
+                    if (ammo != null) {
+                        ammo.refreshMain(online);
+                    }
+                }
             }
             messageTasks.remove(id);
         }, ticks));
@@ -747,6 +784,17 @@ public final class BlockMania extends JavaPlugin {
         float volume = (float) getConfig().getDouble(path + ".volume", 1.0);
         float pitch = (float) getConfig().getDouble(path + ".pitch", 1.0);
         location.getWorld().playSound(location, name, volume, pitch);
+    }
+
+    /** Suona tutti i suoni di una sezione del config (ogni voce ha sound / volume / pitch). */
+    public void playLayers(Location location, String path) {
+        var section = getConfig().getConfigurationSection(path);
+        if (section == null) {
+            return;
+        }
+        for (String key : section.getKeys(false)) {
+            playConfiguredSound(location, path + "." + key);
+        }
     }
 
     /** 1.5 -> "1.5", 2.0 -> "2". */

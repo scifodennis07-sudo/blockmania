@@ -452,7 +452,8 @@ public final class ShopManager implements Listener {
             // stile non valido: resta PROGRESS
         }
         sale.bar = BossBar.bossBar(saleText(sale), 0f, color, overlay);
-        player.showBossBar(sale.bar);
+        plugin.getBars().set(player, "sale", sale.bar, 80, sale.total > 0
+                && cfg().getBoolean("shops.sell.bossbar.progress-bar", true));
         plugin.send(player, "sell-hold-still");
         sales.put(player.getUniqueId(), sale);
 
@@ -484,7 +485,8 @@ public final class ShopManager implements Listener {
         }
         double progress = cfg().getBoolean("shops.sell.bossbar.progress-bar", true) && sale.total > 0
                 ? (double) sale.done / sale.total : -1;
-        return plugin.bossSegments(segments, progress);
+        return plugin.bossSegmentsBar(segments, progress, null, null,
+                cfg().getInt("shops.sell.bossbar.bar-width", 182));
     }
 
     /** True se il giocatore si e' mosso dal punto in cui ha iniziato la vendita (guardarsi intorno si puo'). */
@@ -559,7 +561,7 @@ public final class ShopManager implements Listener {
         }
         Player player = plugin.getServer().getPlayer(id);
         if (player != null) {
-            player.hideBossBar(sale.bar);
+            plugin.getBars().remove(player, "sale");
             if (cancelled) {
                 plugin.send(player, "sell-moved");
             } else {
