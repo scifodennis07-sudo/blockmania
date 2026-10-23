@@ -1,5 +1,5 @@
 name: BlockMania
-version: '1.13.0'
+version: '1.14.0'
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom
@@ -20,6 +20,9 @@ permissions:
     default: op
   blockmania.shop.edit:
     description: Permette di creare e rompere i negozi
+    default: op
+  blockmania.build:
+    description: Permette di usare la bacchetta e i comandi set, replace, remove e undo dei blocchi
     default: op
   blockmania.break:
     description: Permette di rompere a mano i blocchi custom

@@ -44,6 +44,7 @@ public final class BlockMania extends JavaPlugin {
     private BlockManager blocks;
     private Background background;
     private ItemsGui itemsGui;
+    private BlockEdit blockEdit;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
     private final Map<Character, int[]> palette = new HashMap<>();
@@ -83,6 +84,8 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new CustomBlockListener(this), this);
         getServer().getPluginManager().registerEvents(upgrades, this);
         getServer().getPluginManager().registerEvents(shops, this);
+        blockEdit = new BlockEdit(this);
+        getServer().getPluginManager().registerEvents(blockEdit, this);
         itemsGui = new ItemsGui(this);
         getServer().getPluginManager().registerEvents(itemsGui, this);
         shops.start();
@@ -194,6 +197,10 @@ public final class BlockMania extends JavaPlugin {
 
     public UpgradeManager getUpgrades() {
         return upgrades;
+    }
+
+    public BlockEdit getBlockEdit() {
+        return blockEdit;
     }
 
     public ItemsGui getItemsGui() {
@@ -668,14 +675,15 @@ public final class BlockMania extends JavaPlugin {
      * mostrati nella lore (danno, velocita', ricarica) tengono conto dei suoi potenziamenti.
      */
     public ItemStack createItem(LauncherItem li, Player owner) {
-        int damage = owner == null ? ammo.getDamage(li.ammoType()) : upgrades.damage(owner, li.ammoType());
+        String ball = owner == null ? li.ammoType() : ammo.getSelected(owner, li.ammoType());
+        int damage = owner == null ? ammo.getDamage(ball) : upgrades.damage(owner, ball);
         double speed = owner == null ? li.speed() : upgrades.speed(owner, li.speed());
         double cooldown = owner == null ? li.cooldownSeconds() : upgrades.cooldown(owner, li.cooldownSeconds());
         String[] r = {
                 "%damage%", String.valueOf(damage),
                 "%speed%", fmt(Math.round(speed * 100) / 100.0),
                 "%cooldown%", fmt(Math.round(cooldown * 100) / 100.0),
-                "%ammo%", tiny(li.ammoType())
+                "%ammo%", tiny(ball)
         };
 
         ItemStack stack = new ItemStack(li.material());

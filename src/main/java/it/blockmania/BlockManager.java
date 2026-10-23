@@ -203,6 +203,30 @@ public final class BlockManager {
                 + ",note=" + note + ",powered=" + powered + "]");
     }
 
+    /** Lo stato che il blocco deve avere in questo momento (anche durante una vibrazione). */
+    public BlockData visibleData(Block block, Tracked t) {
+        if (t == null) {
+            return block.getBlockData();
+        }
+        return dataFor(t.number, stageFor(t.hp, maxHealth(t.number)));
+    }
+
+    /** Rimette un blocco com'era prima (usato da "undo"): number 0 = blocco normale, non custom. */
+    public void restore(Block block, BlockData data, int number, int hp) {
+        String k = key(block);
+        Shake running = shakes.remove(k);
+        if (running != null) {
+            running.stop();
+        }
+        if (number > 0) {
+            blocks.put(k, new Tracked(number, hp));
+        } else {
+            blocks.remove(k);
+        }
+        dirty = true;
+        block.setBlockData(data, false);
+    }
+
     /** Piazza un nuovo blocco custom con vita piena. */
     public void place(Block block, int number) {
         int max = maxHealth(number);

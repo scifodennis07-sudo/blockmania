@@ -1,5 +1,6 @@
 package it.blockmania;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.BlockFace;
@@ -15,6 +16,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.Material;
 import org.bukkit.inventory.PlayerInventory;
@@ -24,20 +26,26 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
 
 public final class LauncherListener implements Listener {
 
     private final BlockMania plugin;
-    /** Ultimo sparo di ogni giocatore, per ogni oggetto (in millisecondi). */
-    private final Map<UUID, Map<String, Long>> lastUse = new HashMap<>();
+    /** Ultimo sparo di ogni giocatore, per ogni oggetto (in tick del server). */
+    private final Map<UUID, Map<String, Integer>> lastUse = new HashMap<>();
+    /** Giocatori che tengono premuto il tasto destro: fino a che tick continuano a sparare da soli. */
+    private final Map<UUID, Integer> holdUntil = new HashMap<>();
+    /** Ultimo messaggio "senza palle", per non ripeterlo a ogni sparo automatico. */
+    private final Map<UUID, Integer> lastNoAmmo = new HashMap<>();
 
     private final NamespacedKey bouncesKey;
 
     public LauncherListener(BlockMania plugin) {
         this.plugin = plugin;
         this.bouncesKey = new NamespacedKey(plugin, "bounces");
+        plugin.getServer().getScheduler().runTaskTimer(plugin, this::autoFire, 1L, 1L);
     }
 
     /** La palla colpisce un blocco: se ha ancora rimbalzi, rimbalza invece di sparire. */
@@ -53,6 +61,10 @@ public final class LauncherListener implements Listener {
         var pdc = ball.getPersistentDataContainer();
         if (!pdc.has(plugin.getAmmoKey(), PersistentDataType.STRING)) {
             return; // non e' una nostra palla
+        }
+        String ballType = pdc.get(plugin.getAmmoKey(), PersistentDataType.STRING);
+        if (!c.getBoolean("ammo." + ballType + ".bounce", true)) {
+            return; // questo tipo di palla non rimbalza
         }
         int done = pdc.getOrDefault(bouncesKey, PersistentDataType.INTEGER, 0);
         if (done >= c.getInt("bounce.max", 3)) {
@@ -131,40 +143,148 @@ public final class LauncherListener implements Listener {
             return;
         }
 
+        // tenendo premuto spara da solo, alla velocita' del potenziamento
+        if (plugin.getConfig().getBoolean("autofire.enabled", true)) {
+            holdUntil.put(player.getUniqueId(), Bukkit.getCurrentTick()
+                    + Math.max(1, plugin.getConfig().getInt("autofire.grace-ticks", 5)));
+        }
+        tryFire(player, li);
+    }
+
+    /** Sparo automatico: ogni tick, per chi tiene premuto il tasto destro con il lanciapalle in mano. */
+    private void autoFire() {
+        if (holdUntil.isEmpty()) {
+            return;
+        }
+        int now = Bukkit.getCurrentTick();
+        Iterator<Map.Entry<UUID, Integer>> it = holdUntil.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, Integer> entry = it.next();
+            Player player = Bukkit.getPlayer(entry.getKey());
+            if (player == null || now > entry.getValue()) {
+                it.remove();
+                continue;
+            }
+            LauncherItem li = plugin.getLauncher(player.getInventory().getItemInMainHand());
+            if (li == null || plugin.hasOpenGui(player) || !player.hasPermission("blockmania.use")) {
+                it.remove();
+                continue;
+            }
+            tryFire(player, li);
+        }
+    }
+
+    /** Spara se la ricarica e' finita e ci sono palle del tipo scelto. */
+    private void tryFire(Player player, LauncherItem li) {
         UpgradeManager up = plugin.getUpgrades();
-        long now = System.currentTimeMillis();
-        long cooldownMs = (long) (up.cooldown(player, li.cooldownSeconds()) * 1000);
-        Map<String, Long> uses = lastUse.computeIfAbsent(player.getUniqueId(), k -> new HashMap<>());
-        Long last = uses.get(li.id());
-        if (last != null && now - last < cooldownMs) {
+        int now = Bukkit.getCurrentTick();
+        int cooldownTicks = Math.max(1, (int) Math.round(up.cooldown(player, li.cooldownSeconds()) * 20));
+        Map<String, Integer> uses = lastUse.computeIfAbsent(player.getUniqueId(), k -> new HashMap<>());
+        Integer last = uses.get(li.id());
+        if (last != null && now - last < cooldownTicks) {
             return; // in ricarica: nessun messaggio, il giocatore non deve sapere il tempo
         }
 
         AmmoManager ammo = plugin.getAmmo();
-        if (ammo.getAmmo(player, li.ammoType()) <= 0) {
-            plugin.send(player, "no-ammo");
+        String type = ammo.getSelected(player, li.ammoType());
+        if (ammo.getAmmo(player, type) <= 0) {
+            Integer lastMsg = lastNoAmmo.get(player.getUniqueId());
+            if (lastMsg == null || now - lastMsg >= 20) {
+                lastNoAmmo.put(player.getUniqueId(), now);
+                plugin.send(player, "no-ammo");
+            }
             return;
         }
-        ammo.addAmmo(player, li.ammoType(), -1);
+        ammo.addAmmo(player, type, -1);
         uses.put(li.id(), now);
 
-        Location eye = player.getEyeLocation();
-        Snowball ball = player.launchProjectile(Snowball.class,
-                eye.getDirection().multiply(up.speed(player, li.speed())));
-        applyProjectileModel(ball, li);
-        // segniamo la palla con il suo tipo e il suo danno (potenziamenti compresi)
-        ball.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, li.ammoType());
-        ball.getPersistentDataContainer().set(plugin.getDamageKey(), PersistentDataType.INTEGER,
-                up.damage(player, li.ammoType()));
-        plugin.playConfiguredSound(eye, "items." + li.id());
+        var c = plugin.getConfig();
+        String path = "ammo." + type + ".";
+        int shots = Math.max(1, c.getInt(path + "shots", 1));
+        int delay = Math.max(1, c.getInt(path + "shot-delay-ticks", 2));
+        for (int i = 0; i < shots; i++) {
+            if (i == 0) {
+                launchOnce(player, li, type);
+            } else {
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> launchOnce(player, li, type),
+                        (long) delay * i);
+            }
+        }
+        plugin.playConfiguredSound(player.getEyeLocation(), "items." + li.id());
     }
 
-    /** La palla lanciata mostra il custom-model-data scelto nel config (items.<id>.projectile-...). */
-    private void applyProjectileModel(Snowball ball, LauncherItem li) {
-        var c = plugin.getConfig();
-        String path = "items." + li.id() + ".";
-        if (!c.contains(path + "projectile-custom-model-data")) {
+    /** Lancia una "raffica" di una palla: una sola, oppure una griglia (es. 3x3) di palle parallele. */
+    private void launchOnce(Player player, LauncherItem li, String type) {
+        if (!player.isOnline() || player.isDead()) {
             return;
+        }
+        var c = plugin.getConfig();
+        String path = "ammo." + type + ".";
+        UpgradeManager up = plugin.getUpgrades();
+        boolean ghost = c.getBoolean(path + "ghost", false);
+        int grid = Math.max(1, c.getInt(path + "grid", 1));
+        double spacing = c.getDouble(path + "grid-spacing", 1.0);
+        double speed = up.speed(player, li.speed());
+        int damage = up.damage(player, type);
+        ItemStack model = projectileModel(type, li);
+
+        Location eye = player.getEyeLocation();
+        Vector dir = eye.getDirection();
+        Vector right = dir.clone().crossProduct(new Vector(0, 1, 0));
+        if (right.lengthSquared() < 1.0e-6) {
+            right = new Vector(1, 0, 0);
+        }
+        right.normalize();
+        Vector upward = right.clone().crossProduct(dir).normalize();
+
+        for (int ix = 0; ix < grid; ix++) {
+            for (int iy = 0; iy < grid; iy++) {
+                double ox = (ix - (grid - 1) / 2.0) * spacing;
+                double oy = (iy - (grid - 1) / 2.0) * spacing;
+                boolean center = ox == 0 && oy == 0;
+                Location from = eye.clone().add(right.clone().multiply(ox)).add(upward.clone().multiply(oy));
+                if (!center && !from.getBlock().isPassable()) {
+                    continue; // la palla nascerebbe dentro un muro: la salto
+                }
+                if (ghost) {
+                    GhostBall.launch(plugin, player, from, dir, speed,
+                            c.getDouble(path + "range", 40), damage, model);
+                    continue;
+                }
+                Snowball ball;
+                if (center) {
+                    ball = player.launchProjectile(Snowball.class, dir.clone().multiply(speed));
+                } else {
+                    ball = player.getWorld().spawn(from, Snowball.class, b -> {
+                        b.setShooter(player);
+                        b.setVelocity(dir.clone().multiply(speed));
+                    });
+                }
+                if (model != null) {
+                    ball.setItem(model);
+                }
+                // segniamo la palla con il suo tipo e il suo danno (potenziamenti compresi)
+                ball.getPersistentDataContainer().set(plugin.getAmmoKey(), PersistentDataType.STRING, type);
+                ball.getPersistentDataContainer().set(plugin.getDamageKey(), PersistentDataType.INTEGER, damage);
+            }
+        }
+    }
+
+    /**
+     * L'oggetto che da' il modello alla palla lanciata: ammo.<tipo>.projectile-custom-model-data;
+     * per la palla del lanciapalle vale anche items.<id>.projectile-custom-model-data. Null = palla normale.
+     */
+    private ItemStack projectileModel(String type, LauncherItem li) {
+        var c = plugin.getConfig();
+        String ammoPath = "ammo." + type + ".";
+        String itemPath = "items." + li.id() + ".";
+        String path;
+        if (c.contains(ammoPath + "projectile-custom-model-data")) {
+            path = ammoPath;
+        } else if (type.equals(li.ammoType()) && c.contains(itemPath + "projectile-custom-model-data")) {
+            path = itemPath;
+        } else {
+            return null;
         }
         Material material = Material.matchMaterial(c.getString(path + "projectile-material", "SNOWBALL"));
         if (material == null || !material.isItem()) {
@@ -173,11 +293,32 @@ public final class LauncherListener implements Listener {
         ItemStack stack = new ItemStack(material);
         ItemMeta meta = stack.getItemMeta();
         if (meta == null) {
-            return;
+            return null;
         }
         meta.setCustomModelData(c.getInt(path + "projectile-custom-model-data"));
         stack.setItemMeta(meta);
-        ball.setItem(stack);
+        return stack;
+    }
+
+    /** Tasto F con il lanciapalle in mano: cambia il tipo di palla. */
+    @EventHandler
+    public void onSwap(PlayerSwapHandItemsEvent event) {
+        Player player = event.getPlayer();
+        LauncherItem li = plugin.getLauncher(player.getInventory().getItemInMainHand());
+        if (li == null) {
+            return;
+        }
+        event.setCancelled(true);
+        if (!player.hasPermission("blockmania.use")) {
+            return;
+        }
+        AmmoManager ammo = plugin.getAmmo();
+        String type = ammo.cycleSelected(player, li.ammoType());
+        plugin.getUpgrades().refreshLaunchers(player);
+        plugin.send(player, "ball-selected", "%ball%", plugin.tiny(type),
+                "%ammo%", String.valueOf(ammo.getAmmo(player, type)),
+                "%max%", String.valueOf(ammo.getAmmoMax(player, type)));
+        plugin.playConfiguredSound(player.getLocation(), "ball-switch");
     }
 
     // ---------- mira: shift = modello 2, rilasciato = modello 1 ----------
@@ -237,5 +378,7 @@ public final class LauncherListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         resetAll(event.getPlayer());
         lastUse.remove(event.getPlayer().getUniqueId());
+        holdUntil.remove(event.getPlayer().getUniqueId());
+        lastNoAmmo.remove(event.getPlayer().getUniqueId());
     }
 }

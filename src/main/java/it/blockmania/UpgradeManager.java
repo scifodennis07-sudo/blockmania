@@ -32,7 +32,35 @@ import java.util.regex.Pattern;
  */
 public final class UpgradeManager implements Listener {
 
-    public static final List<String> IDS = List.of("damage", "cooldown", "speed", "capacity");
+    private static final List<String> BASE_IDS = List.of("damage", "cooldown", "speed", "capacity");
+    /** La palla che usa il potenziamento "capacity" senza nome (cosi' i livelli gia' comprati restano). */
+    private static final String STANDARD_BALL = "standardball";
+
+    /** Tutti i potenziamenti: danno, ricarica, velocita' e una capienza per ogni tipo di palla. */
+    public List<String> ids() {
+        List<String> out = new ArrayList<>(BASE_IDS);
+        for (String type : plugin.getAmmo().types()) {
+            String low = type.toLowerCase(Locale.ROOT);
+            if (!low.equals(STANDARD_BALL)) {
+                out.add("capacity_" + low);
+            }
+        }
+        return out;
+    }
+
+    /** Il potenziamento di capienza di questo tipo di palla. */
+    public static String capacityId(String ammoType) {
+        String low = ammoType.toLowerCase(Locale.ROOT);
+        return low.equals(STANDARD_BALL) ? "capacity" : "capacity_" + low;
+    }
+
+    /** Il tipo di palla di un potenziamento di capienza, oppure null se non lo e'. */
+    private static String capacityType(String id) {
+        if (id.equals("capacity")) {
+            return STANDARD_BALL;
+        }
+        return id.startsWith("capacity_") ? id.substring("capacity_".length()) : null;
+    }
     private static final int SIZE = 54;
 
     /** Serve a riconoscere la nostra GUI tra tutti gli inventari. */
@@ -82,7 +110,7 @@ public final class UpgradeManager implements Listener {
 
     /** Per i comandi: riporta tutti i potenziamenti a 0. */
     public void resetLevels(Player player) {
-        for (String id : IDS) {
+        for (String id : ids()) {
             setLevel(player, id, 0);
         }
         refreshLaunchers(player);
@@ -124,9 +152,10 @@ public final class UpgradeManager implements Listener {
         return base + level * perLevel("speed");
     }
 
-    /** Palle in piu' che questo giocatore puo' tenere grazie al potenziamento capienza. */
-    public int capacityBonus(Player player) {
-        return (int) Math.round(getLevel(player, "capacity") * perLevel("capacity"));
+    /** Palle in piu' di questo tipo che il giocatore puo' tenere grazie al suo potenziamento di capienza. */
+    public int capacityBonus(Player player, String ammoType) {
+        String id = capacityId(ammoType);
+        return (int) Math.round(getLevel(player, id) * perLevel(id));
     }
 
     /** Danno reale delle palle di questo giocatore. */
@@ -145,11 +174,14 @@ public final class UpgradeManager implements Listener {
     }
 
     private String valueText(String id, int level, LauncherItem li) {
+        String capacityOf = capacityType(id);
+        if (capacityOf != null) {
+            return String.valueOf(plugin.getAmmo().getAmmoBaseMax(capacityOf)
+                    + (int) Math.round(level * perLevel(id)));
+        }
         return switch (id) {
             case "damage" -> String.valueOf(damageAt(level, li.ammoType()));
             case "cooldown" -> BlockMania.fmt(Math.round(cooldownAt(level, li.cooldownSeconds()) * 100) / 100.0);
-            case "capacity" -> String.valueOf(plugin.getAmmo().getAmmoBaseMax(li.ammoType())
-                    + (int) Math.round(level * perLevel("capacity")));
             default -> BlockMania.fmt(Math.round(speedAt(level, li.speed()) * 100) / 100.0);
         };
     }
@@ -246,14 +278,21 @@ public final class UpgradeManager implements Listener {
     }
 
     private List<String> orderedUpgrades() {
+        List<String> all = ids();
         List<String> out = new ArrayList<>();
         for (String id : plugin.getConfig().getStringList(GUI + "order")) {
             String low = id.toLowerCase(Locale.ROOT);
-            if (IDS.contains(low) && !out.contains(low)) {
+            if (all.contains(low) && !out.contains(low)) {
                 out.add(low);
             }
         }
-        return out.isEmpty() ? new ArrayList<>(IDS) : out;
+        // i potenziamenti nuovi che non sono nella lista compaiono in fondo, da soli
+        for (String id : all) {
+            if (!out.contains(id)) {
+                out.add(id);
+            }
+        }
+        return out;
     }
 
     private record Position(int icon, int button, List<Integer> extra) {

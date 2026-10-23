@@ -17,6 +17,7 @@ tiny-text: true
 # Cosa compare quando si preme TAB al posto di un numero
 tab:
   number: "<numero>"
+  block-codes: ["1-1", "2-1", "3-1"]   # esempi di codici blocco suggeriti con TAB in /bm block ...
 
 # ----------------------------------------------------------------------
 #  STILI DEI MESSAGGI
@@ -187,6 +188,58 @@ messages:
     type: error
     channel: actionbar
     text: "il potenziamento %value% non esiste. Scegli tra: %types%"
+  block-sub-missing:
+    type: error
+    channel: actionbar
+    text: "manca cosa fare, uso: %usage%. Scegli tra: %actions%"
+  block-sub-invalid:
+    type: error
+    channel: actionbar
+    text: "azione non valida: %value%. Scegli tra: %actions%"
+  wand-given:
+    type: success
+    channel: actionbar
+    text: "hai ricevuto la bacchetta: tasto sinistro = pos1, tasto destro = pos2"
+  pos-set:
+    type: success
+    channel: actionbar
+    text: "%pos% impostata a %x% %y% %z% %size%"
+  missing-selection:
+    type: error
+    channel: actionbar
+    text: "scegli prima i due angoli con la bacchetta (pos1 e pos2)"
+  selection-too-big:
+    type: error
+    channel: actionbar
+    text: "zona troppo grande: %count% blocchi, il massimo e %max%"
+  edit-busy:
+    type: error
+    channel: actionbar
+    text: "hai ancora un'operazione in corso, aspetta che finisca"
+  edit-start:
+    type: info
+    channel: actionbar
+    text: "lavoro su %count% blocchi, ci vuole un attimo"
+  edit-done:
+    type: success
+    channel: actionbar
+    text: "fatto: %count% blocchi modificati (annulla con /bm block undo)"
+  edit-nothing:
+    type: info
+    channel: actionbar
+    text: "nessun blocco da modificare in questa zona"
+  undo-done:
+    type: success
+    channel: actionbar
+    text: "annullato: %count% blocchi ripristinati"
+  undo-empty:
+    type: error
+    channel: actionbar
+    text: "non c'e niente da annullare"
+  ball-selected:
+    type: info
+    channel: actionbar
+    text: "palla scelta: %ball% (%ammo%/%max%)"
   see:
     type: info
     channel: chat
@@ -298,11 +351,11 @@ help:
       usage: "/bm get <oggetto> [player]"
       description: "ti da un oggetto, come il lanciapalle. se scrivi un player lo da a lui"
       example: "/bm get lanciapalle"
-    getblock:
+    block:
       permission: blockmania.get
-      usage: "/bm getblock <numero>-1 [player]"
-      description: "ti da un blocco da piazzare. il numero e' il tipo di blocco, il -1 e' sempre uguale"
-      example: "/bm getblock 3-1"
+      usage: "/bm block <get|wand|pos1|pos2|set|replace|remove|undo> ..."
+      description: "blocchi custom. get <codice> [player] ti da un blocco. Con la bacchetta (wand) scegli due angoli (o pos1/pos2), poi set <codice> riempie la zona, replace <da> <a> sostituisce, remove [codice] toglie, undo annulla"
+      example: "/bm block set 3-1"
     ball:
       permission: blockmania.stats
       usage: "/bm ball <get|remove|see|reset> <tipo|all> [numero] [player]"
@@ -330,7 +383,7 @@ help:
       example: "/bm items"
     upgrade:
       permission: blockmania.stats
-      usage: "/bm upgrade <get|remove|see|reset> <damage|cooldown|speed|capacity|all> [numero] [player]"
+      usage: "/bm upgrade <get|remove|see|reset> <potenziamento|all> [numero] [player]"
       description: "cambia il livello dei potenziamenti di un giocatore"
       example: "/bm upgrade get damage 2"
     resetall:
@@ -390,7 +443,7 @@ items:
       - "&8• &7munizioni &f%ammo%"
       - ""
       - "&6tasto destro &7spara"
-      - "&6q &7cambia munizione"
+      - "&6f &7cambia palla"
       - "&6sinistro &7apre i potenziamenti"
     speed: 1.5                 # velocita' base della palla (quella normale e' 1.5)
     cooldown: 0.5              # secondi base tra uno sparo e l'altro
@@ -416,10 +469,70 @@ bounce:
 #    /blockmania ball get standardball 20
 # ----------------------------------------------------------------------
 ammo:
+  # ogni tipo e' una voce. Con il lanciapalle in mano il tasto F passa al tipo dopo (nell'ordine di questa lista).
+  # Per ogni palla:
+  #   damage                          vita che toglie a un blocco (ogni palla successiva fa di piu')
+  #   max                             quante se ne possono avere (il potenziamento di capienza lo aumenta)
+  #   projectile-custom-model-data    modello della palla lanciata (items/snowball.json nel pack)
+  #   bounce                          false = non rimbalza
+  #   shots / shot-delay-ticks        quante palle per sparo e ogni quanti tick (20 tick = 1 secondo)
+  #   grid / grid-spacing             griglia di palle parallele (3 = 3x3 = 9 palle) e distanza tra loro in blocchi
+  #   ghost / range                   passa attraverso i blocchi e fa danno a tutti quelli che attraversa
   standardball:
     damage: 50                 # vita base che toglie a un blocco quando lo colpisce
-    max: 20                    # massimo di palle che si possono avere (0/20). Il potenziamento
-                               # "capacity" lo aumenta. Metti un numero molto alto per togliere il limite
+    max: 20                    # massimo di palle che si possono avere (0/20)
+    projectile-custom-model-data: 1
+  doubleball:
+    damage: 75
+    max: 20
+    projectile-custom-model-data: 2
+    shots: 2                   # lancia 2 palle una dopo l'altra
+    shot-delay-ticks: 2        # con 2 tick di distanza
+  ghostball:
+    damage: 100
+    max: 20
+    projectile-custom-model-data: 3
+    ghost: true                # attraversa i blocchi e li danneggia tutti (non rimbalza)
+    range: 40                  # distanza massima in blocchi
+  explosionball:
+    damage: 150
+    max: 20
+    projectile-custom-model-data: 4
+    grid: 3                    # 3x3 = 9 palle parallele, colpiscono 3x3 blocchi
+    grid-spacing: 1.0          # distanza tra le palle in blocchi
+
+# suono del cambio palla (tasto F)
+ball-switch:
+  sound: "ui.button.click"
+  volume: 0.6
+  pitch: 1.6
+
+# ----------------------------------------------------------------------
+#  SPARO AUTOMATICO: tenendo premuto il tasto destro il lanciapalle spara da solo,
+#  alla velocita' della ricarica (con i potenziamenti). Non serve cliccare a raffica.
+#  grace-ticks: dopo quanti tick senza click smette (5 = un quarto di secondo)
+# ----------------------------------------------------------------------
+autofire:
+  enabled: true
+  grace-ticks: 5
+
+# ----------------------------------------------------------------------
+#  BACCHETTA (/bm block wand): scegli due angoli (sinistro = pos1, destro = pos2)
+#  e poi /bm block set | replace | remove riempie, sostituisce o toglie i blocchi custom.
+#  Si puo' annullare con /bm block undo. Serve il permesso blockmania.build
+# ----------------------------------------------------------------------
+blockwand:
+  material: STICK
+  name: "&6&lbacchetta BlockMania"
+  lore:
+    - ""
+    - "&6sinistro &7sceglie pos1"
+    - "&6destro &7sceglie pos2"
+    - "&7poi /bm block set <codice>"
+  custom-model-data: 0         # 0 = nessuno
+  max-blocks: 200000           # zona piu' grande che si puo' modificare in un colpo
+  blocks-per-tick: 4000        # blocchi fatti ogni tick (piu' basso = meno lag, ma piu' lento)
+  undo-steps: 5                # quante modifiche si possono annullare
 
 # ----------------------------------------------------------------------
 #  BLOCKSHELL: +1 per ogni blocco distrutto. Al massimo non si possono
@@ -527,10 +640,10 @@ hologram:
 bossbar:
   enabled: true
   always-visible: true         # false = visibile solo con il lanciapalle in mano
-  ammo-type: standardball      # di quale tipo di palla mostra il numero
+  ammo-type: standardball      # tipo di palla mostrato se il giocatore non ne ha scelto uno. Scrivi %ball% nel testo per il nome
   # un riquadro (sfondo) per ogni voce della lista. Aggiungi, togli o cambia le righe come vuoi
   segments:
-    - "&bstandardball: &f%ammo%&8/&f%ammo_max%"
+    - "&b%ball%: &f%ammo%&8/&f%ammo_max%"
     - "&6blockshell: &f%shell%/%shell_max%"
     - "&eblockcoin: &f%blockcoin%"
     - "&acoin: &f%coin%"
@@ -598,12 +711,31 @@ upgrades:
     per-level: 0.1             # +0.1 velocita a livello
     cost-base: 5
     cost-increase: 5
+  # capienza: un potenziamento per ogni tipo di palla (capacity = standardball, capacity_<tipo> per le altre)
   capacity:
-    label: "capienza"
+    label: "capienza standardball"
     max-level: 5
     per-level: 10              # +10 palle al massimo a livello
     cost-base: 10
     cost-increase: 10
+  capacity_doubleball:
+    label: "capienza doubleball"
+    max-level: 5
+    per-level: 10
+    cost-base: 15
+    cost-increase: 15
+  capacity_ghostball:
+    label: "capienza ghostball"
+    max-level: 5
+    per-level: 10
+    cost-base: 20
+    cost-increase: 20
+  capacity_explosionball:
+    label: "capienza explosionball"
+    max-level: 5
+    per-level: 10
+    cost-base: 25
+    cost-increase: 25
 
 # ----------------------------------------------------------------------
 #  GUI DEI POTENZIAMENTI (6 righe = 54 slot, si contano da 0: riga 1 = 0-8, riga 2 = 9-17 ...)
@@ -620,7 +752,7 @@ upgrade-gui:
 
   # ordine dei potenziamenti. Ogni pagina ne contiene tanti quante sono le "positions" qui sotto.
   # Se ne aggiungi altri compaiono pagine nuove da sole.
-  order: [damage, cooldown, speed, capacity]
+  order: [damage, cooldown, speed, capacity, capacity_doubleball, capacity_ghostball, capacity_explosionball]
 
   slots:
     close: [0, 1]              # X
@@ -725,7 +857,22 @@ upgrade-gui:
       material: GLASS_PANE
       cmd: 104
       name: "&f%label%"
-      description: "puoi portare piu palle"
+      description: "puoi portare piu standardball"
+    capacity_doubleball:
+      material: GLASS_PANE
+      cmd: 105
+      name: "&f%label%"
+      description: "puoi portare piu doubleball"
+    capacity_ghostball:
+      material: GLASS_PANE
+      cmd: 106
+      name: "&f%label%"
+      description: "puoi portare piu ghostball"
+    capacity_explosionball:
+      material: GLASS_PANE
+      cmd: 107
+      name: "&f%label%"
+      description: "puoi portare piu explosionball"
 
   # TITOLO. title.text e' il testo/sfondo disegnato (i caratteri del tuo font); {shift:N} sposta di N pixel
   # (negativo = indietro). I numeri delle pagine stanno in title.page e restano fermi

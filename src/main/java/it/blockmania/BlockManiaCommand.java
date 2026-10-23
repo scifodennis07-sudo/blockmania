@@ -101,7 +101,8 @@ public final class BlockManiaCommand implements TabExecutor {
             case "help" -> help(sender);
             case "reload" -> reload(sender);
             case "get" -> getItem(sender, args);
-            case "getblock" -> getBlock(sender, args);
+            case "getblock" -> getBlock(sender, args, 1);
+            case "block" -> block(sender, args);
             case "ball" -> ball(sender, args);
             case "blockcoin" -> counter(sender, args, "blockcoin");
             case "blockshell" -> counter(sender, args, "blockshell");
@@ -197,25 +198,133 @@ public final class BlockManiaCommand implements TabExecutor {
         deliver(sender, target, plugin.createItem(li, target), plugin.tiny(li.id()));
     }
 
-    // ---------- /blockmania getblock <N-1> [giocatore] ----------
+    // ---------- /blockmania block <get|wand|pos1|pos2|set|replace|remove|undo> ----------
 
-    private void getBlock(CommandSender sender, String[] args) {
+    private static final List<String> BLOCK_ACTIONS = List.of("get", "wand", "pos1", "pos2", "set", "replace", "remove", "undo");
+
+    private String blockActions() {
+        return String.join(", ", BLOCK_ACTIONS);
+    }
+
+    private void block(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            plugin.sendCommand(sender, "block-sub-missing", "%usage%", usage("block"), "%actions%", blockActions());
+            return;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (!BLOCK_ACTIONS.contains(sub)) {
+            plugin.sendCommand(sender, "block-sub-invalid", "%value%", args[1], "%actions%", blockActions());
+            return;
+        }
+        if (sub.equals("get")) {
+            getBlock(sender, args, 2);
+            return;
+        }
+
+        // tutto il resto e' costruzione: serve il permesso e dev'essere un giocatore
+        if (!sender.hasPermission("blockmania.build")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        BlockEdit edit = plugin.getBlockEdit();
+        switch (sub) {
+            case "wand" -> {
+                Player target = resolveTarget(sender, args, 2, "block");
+                if (target != null) {
+                    give(target, edit.createWand());
+                    plugin.send(target, "wand-given");
+                }
+            }
+            case "pos1", "pos2" -> {
+                if (!(sender instanceof Player player)) {
+                    plugin.sendCommand(sender, "player-only");
+                    return;
+                }
+                edit.setPos(player, sub.equals("pos1") ? 1 : 2, player.getLocation());
+            }
+            case "undo" -> {
+                if (!(sender instanceof Player player)) {
+                    plugin.sendCommand(sender, "player-only");
+                    return;
+                }
+                edit.undo(player);
+            }
+            default -> {
+                if (!(sender instanceof Player player)) {
+                    plugin.sendCommand(sender, "player-only");
+                    return;
+                }
+                blockEdit(player, sub, args);
+            }
+        }
+    }
+
+    /** set <codice> | replace <da> <a> | remove [codice] */
+    private void blockEdit(Player player, String sub, String[] args) {
+        int need = sub.equals("replace") ? 2 : sub.equals("set") ? 1 : 0;
+        // args: [block, sub, codice1, codice2]  quindi servono 2 + need parole
+        if (args.length < 2 + need) {
+            plugin.sendCommand(player, "missing-block", "%usage%", usage("block"),
+                    "%max%", String.valueOf(plugin.getMaxBlock()));
+            return;
+        }
+        Integer first = null;
+        Integer second = null;
+        if (need >= 1 || (sub.equals("remove") && args.length > 2)) {
+            first = parseBlockCode(player, args[2]);
+            if (first == null) {
+                return;
+            }
+        }
+        if (need == 2) {
+            second = parseBlockCode(player, args[3]);
+            if (second == null) {
+                return;
+            }
+        }
+        BlockEdit.Mode mode = switch (sub) {
+            case "set" -> BlockEdit.Mode.SET;
+            case "replace" -> BlockEdit.Mode.REPLACE;
+            default -> BlockEdit.Mode.REMOVE;
+        };
+        plugin.getBlockEdit().run(player, mode, first, second);
+    }
+
+    /** Legge "3-1" oppure "3" e controlla che il blocco esista. Se no manda l'errore e ritorna null. */
+    private Integer parseBlockCode(CommandSender sender, String text) {
+        String t = text.toLowerCase(Locale.ROOT);
+        int dash = t.indexOf('-');
+        String number = dash >= 0 ? t.substring(0, dash) : t;
+        int max = plugin.getMaxBlock();
+        try {
+            int n = Integer.parseInt(number);
+            if (n >= 1 && n <= max) {
+                return n;
+            }
+        } catch (NumberFormatException ignored) {
+            // non e' un numero: errore qui sotto
+        }
+        plugin.sendCommand(sender, "invalid-block", "%value%", text, "%max%", String.valueOf(max));
+        return null;
+    }
+
+    // ---------- /blockmania block get <N-1> [giocatore] ----------
+
+    private void getBlock(CommandSender sender, String[] args, int codeIndex) {
         if (!sender.hasPermission("blockmania.get")) {
             plugin.sendCommand(sender, "no-permission");
             return;
         }
-        if (args.length < 2) {
-            plugin.sendCommand(sender, "missing-block", "%usage%", usage("getblock"),
+        if (args.length <= codeIndex) {
+            plugin.sendCommand(sender, "missing-block", "%usage%", usage("block"),
                     "%max%", String.valueOf(plugin.getMaxBlock()));
             return;
         }
-        Integer number = parseBlockNumber(args[1].toLowerCase(Locale.ROOT));
-        int max = plugin.getMaxBlock();
-        if (number == null || number < 1 || number > max) {
-            plugin.sendCommand(sender, "invalid-block", "%value%", args[1], "%max%", String.valueOf(max));
+        Integer number = parseBlockCode(sender, args[codeIndex]);
+        if (number == null) {
             return;
         }
-        Player target = resolveTarget(sender, args, 2, "getblock");
+        Player target = resolveTarget(sender, args, codeIndex + 1, "block");
         if (target == null) {
             return;
         }
@@ -349,7 +458,7 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         UpgradeManager up = plugin.getUpgrades();
-        String types = String.join(", ", UpgradeManager.IDS);
+        String types = String.join(", ", up.ids());
         if (args.length < 3) {
             plugin.sendCommand(sender, "missing-type", "%usage%", usage("upgrade"), "%types%", types);
             return;
@@ -357,8 +466,8 @@ public final class BlockManiaCommand implements TabExecutor {
         String type = args[2].toLowerCase(Locale.ROOT);
         List<String> chosen = new ArrayList<>();
         if (type.equals("all")) {
-            chosen.addAll(UpgradeManager.IDS);
-        } else if (UpgradeManager.IDS.contains(type)) {
+            chosen.addAll(up.ids());
+        } else if (up.ids().contains(type)) {
             chosen.add(type);
         } else {
             plugin.sendCommand(sender, "unknown-upgrade", "%value%", args[2], "%types%", types);
@@ -506,6 +615,55 @@ public final class BlockManiaCommand implements TabExecutor {
         result.add(plugin.getConfig().getString("tab.number", "<numero>"));
     }
 
+    /** Qualche esempio di codice blocco da suggerire con TAB (config: tab.block-codes). */
+    private List<String> blockCodes() {
+        List<String> codes = plugin.getConfig().getStringList("tab.block-codes");
+        return codes.isEmpty() ? List.of("1-1", "2-1", "3-1") : codes;
+    }
+
+    private void blockTab(CommandSender sender, String[] args, List<String> result) {
+        boolean canGet = sender.hasPermission("blockmania.get");
+        boolean canBuild = sender.hasPermission("blockmania.build");
+        if (args.length == 2) {
+            if (canGet) {
+                result.add("get");
+            }
+            if (canBuild) {
+                result.addAll(List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo"));
+            }
+            return;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        switch (sub) {
+            case "get" -> {
+                if (canGet) {
+                    if (args.length == 3) {
+                        result.addAll(blockCodes());
+                    } else if (args.length == 4) {
+                        addPlayers(result);
+                    }
+                }
+            }
+            case "set", "remove" -> {
+                if (canBuild && args.length == 3) {
+                    result.addAll(blockCodes());
+                }
+            }
+            case "replace" -> {
+                if (canBuild && (args.length == 3 || args.length == 4)) {
+                    result.addAll(blockCodes());
+                }
+            }
+            case "wand" -> {
+                if (canBuild && args.length == 3) {
+                    addPlayers(result);
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> result = new ArrayList<>();
@@ -516,7 +674,7 @@ public final class BlockManiaCommand implements TabExecutor {
             result.add("help");
             if (canGet) {
                 result.add("get");
-                result.add("getblock");
+                result.add("block");
                 result.add("items");
             }
             if (canStats) {
@@ -555,8 +713,12 @@ public final class BlockManiaCommand implements TabExecutor {
                 if (args.length == 2) {
                     addPlayers(result);
                 }
+            } else if (sub.equals("block")) {
+                blockTab(sender, args, result);
             } else if (sub.equals("getblock") && canGet) {
                 if (args.length == 3) {
+                    result.addAll(blockCodes());
+                } else if (args.length == 4) {
                     addPlayers(result);
                 }
             } else if (sub.equals("ball") && canStats) {
@@ -577,7 +739,7 @@ public final class BlockManiaCommand implements TabExecutor {
                 if (args.length == 2) {
                     result.addAll(ACTIONS);
                 } else if (args.length == 3) {
-                    result.addAll(UpgradeManager.IDS);
+                    result.addAll(plugin.getUpgrades().ids());
                     result.add("all");
                 } else {
                     boolean amount = args[1].equalsIgnoreCase("get") || args[1].equalsIgnoreCase("remove");

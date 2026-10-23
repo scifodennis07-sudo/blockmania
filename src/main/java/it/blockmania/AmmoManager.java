@@ -68,7 +68,7 @@ public final class AmmoManager {
 
     /** Massimo reale per questo giocatore: base + potenziamento capienza. */
     public int getAmmoMax(Player player, String type) {
-        return getAmmoBaseMax(type) + plugin.getUpgrades().capacityBonus(player);
+        return getAmmoBaseMax(type) + plugin.getUpgrades().capacityBonus(player, type);
     }
 
     public int getAmmo(Player player, String type) {
@@ -91,6 +91,34 @@ public final class AmmoManager {
     public Set<String> types() {
         ConfigurationSection s = plugin.getConfig().getConfigurationSection("ammo");
         return s == null ? Set.of() : s.getKeys(false);
+    }
+
+    /** Il tipo di palla che il giocatore ha scelto (tasto F). Se non e' valido ritorna "fallback" o il primo del config. */
+    public String getSelected(Player player, String fallback) {
+        String chosen = player.getPersistentDataContainer().get(key("ball_selected"), PersistentDataType.STRING);
+        if (chosen != null && exists(chosen)) {
+            return chosen.toLowerCase(Locale.ROOT);
+        }
+        if (fallback != null && exists(fallback)) {
+            return fallback.toLowerCase(Locale.ROOT);
+        }
+        Set<String> all = types();
+        return all.isEmpty() ? "standardball" : all.iterator().next().toLowerCase(Locale.ROOT);
+    }
+
+    /** Passa al tipo di palla dopo quello scelto (in giro, nell'ordine del config). Ritorna il nuovo tipo. */
+    public String cycleSelected(Player player, String fallback) {
+        List<String> all = new java.util.ArrayList<>();
+        for (String t : types()) {
+            all.add(t.toLowerCase(Locale.ROOT));
+        }
+        if (all.isEmpty()) {
+            return getSelected(player, fallback);
+        }
+        int index = all.indexOf(getSelected(player, fallback));
+        String next = all.get((index + 1) % all.size());
+        player.getPersistentDataContainer().set(key("ball_selected"), PersistentDataType.STRING, next);
+        return next;
     }
 
     /** Danno base che questo tipo di palla fa a un blocco. */
@@ -303,7 +331,7 @@ public final class AmmoManager {
         FileConfiguration c = plugin.getConfig();
         boolean enabled = c.getBoolean("bossbar.enabled", true);
         boolean always = c.getBoolean("bossbar.always-visible", true);
-        String type = c.getString("bossbar.ammo-type", "standardball").toLowerCase(Locale.ROOT);
+        String defaultType = c.getString("bossbar.ammo-type", "standardball").toLowerCase(Locale.ROOT);
         List<String> templates = c.getStringList("bossbar.segments");
         if (templates.isEmpty()) {
             templates = List.of(c.getString("bossbar.text",
@@ -327,7 +355,9 @@ public final class AmmoManager {
                 continue;
             }
 
+            String type = getSelected(player, defaultType);
             Component title = plugin.bossSegments(templates, -1,
+                    "%ball%", plugin.tiny(type),
                     "%ammo%", String.valueOf(getAmmo(player, type)),
                     "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
                     "%shell%", String.valueOf(getShell(player)),
