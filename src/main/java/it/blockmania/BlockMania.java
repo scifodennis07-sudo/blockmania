@@ -120,7 +120,7 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(power, this);
         power.start();
         shops.start();
-        getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirty(), 1200L, 1200L);
+        getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
         getLogger().info("BlockMania attivo. Oggetti: " + items.size()
                 + ", blocchi in gioco: " + blocks.count());
@@ -190,12 +190,27 @@ public final class BlockMania extends JavaPlugin {
                 }
             }
         }
+        if (done < 5) {
+            // i comandi nei testi diventano tasti (riquadro separato): {key:...}
+            String[][] fixes = {
+                    {"power-attack.bossbar.ready", "shift + click destro"},
+                    {"messages.power-unlocked.text", "shift + click destro"},
+                    {"mines.edit.bossbar", "shift + f"},
+                    {"mines.edit.bossbar", "shift + q"}};
+            for (String[] f : fixes) {
+                String old = c.getString(f[0], "");
+                if (old.contains(f[1]) && !old.contains("{key:" + f[1] + "}")) {
+                    c.set(f[0], old.replace("&e" + f[1], f[1]).replace("&f" + f[1], f[1])
+                            .replace(f[1], "{key:" + f[1] + "}"));
+                }
+            }
+        }
         if (done >= 1) {
-            c.set("tuning-version", 4);
+            c.set("tuning-version", 5);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 4);
+        c.set("tuning-version", 5);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -216,7 +231,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 4);
+        c.set("tuning-version", 5);
         saveConfig();
     }
 
@@ -394,8 +409,76 @@ public final class BlockMania extends JavaPlugin {
         return background;
     }
 
+    // ---------- tasti: {key:shift + f} diventa un riquadro separato che sembra un tasto ----------
+
+    private static final char KEY_OPEN = '\uE000';
+    private static final char KEY_CLOSE = '\uE001';
+    /** Davanti a un pezzo di testo lo segna come "tasto" (sfondo diverso). */
+    public static final String KEY_TAG = "\uE002";
+    private static final java.util.regex.Pattern KEY_MARKUP = java.util.regex.Pattern.compile("\\{key:([^}]*)}");
+    private static final java.util.regex.Pattern LEADING_CODES =
+            java.util.regex.Pattern.compile("^(?:&#[0-9a-fA-F]{6}|&[0-9a-fk-orA-FK-OR])+");
+
+    /** Trasforma {key:...} in segnali che il "tiny text" non rovina. Va fatto PRIMA di tiny(). */
+    public String keyMarks(String text) {
+        if (text == null || !text.contains("{key:")) {
+            return text;
+        }
+        return KEY_MARKUP.matcher(text).replaceAll(m ->
+                java.util.regex.Matcher.quoteReplacement(KEY_OPEN + m.group(1) + KEY_CLOSE));
+    }
+
+    /**
+     * Divide un testo in pezzi: il testo normale e i tasti (segnati con KEY_TAG). Il colore iniziale
+     * del testo si ripete dopo ogni tasto. Se non ci sono tasti ritorna il testo cosi' com'e'.
+     */
+    public List<String> splitKeys(String legacy) {
+        if (legacy == null || legacy.indexOf(KEY_OPEN) < 0) {
+            return List.of(legacy);
+        }
+        var m = LEADING_CODES.matcher(legacy);
+        String base = m.find() ? m.group() : "";
+        String keyColor = getConfig().getString("background.key.color", "&f");
+        List<String> out = new ArrayList<>();
+        int i = 0;
+        boolean first = true;
+        while (i < legacy.length()) {
+            int open = legacy.indexOf(KEY_OPEN, i);
+            if (open < 0) {
+                open = legacy.length();
+            }
+            String text = legacy.substring(i, open).strip();
+            if (!text.isEmpty()) {
+                out.add(first || text.startsWith("&") ? text : base + text);
+                first = false;
+            }
+            if (open >= legacy.length()) {
+                break;
+            }
+            int close = legacy.indexOf(KEY_CLOSE, open);
+            if (close < 0) {
+                close = legacy.length();
+            }
+            String label = legacy.substring(open + 1, close).strip();
+            if (!label.isEmpty()) {
+                out.add(KEY_TAG + keyColor + label);
+                first = false;
+            }
+            i = close + 1;
+        }
+        return out.isEmpty() ? List.of("") : out;
+    }
+
+    /** Toglie i segnali dei tasti (per la chat e per quando lo sfondo e' spento). */
+    private static String stripKeyMarks(String text) {
+        return text.replace(KEY_TAG, "").replace(String.valueOf(KEY_OPEN), "").replace(String.valueOf(KEY_CLOSE), "");
+    }
+
     /** Testo con lo sfondo dietro. Lo sfondo non ha l'ombra (se remove-shadow e' attivo), il testo si'. */
     public Component withBackground(String legacy) {
+        if (legacy != null && legacy.indexOf(KEY_OPEN) >= 0) {
+            return withBackgrounds(splitKeys(legacy), -1);
+        }
         return withBackground(legacy, -1);
     }
 
@@ -426,8 +509,13 @@ public final class BlockMania extends JavaPlugin {
         int totalAll = 0;
         boolean any = false;
         for (String seg : segments) {
-            String[] parts = background.parts(seg);
-            int total = background.totalOf(seg);
+            boolean isKey = seg.startsWith(KEY_TAG);
+            boolean ownArt = isKey && getConfig().getBoolean("background.key.own-art", false);
+            if (isKey) {
+                seg = seg.substring(KEY_TAG.length());
+            }
+            String[] parts = background.parts(seg, -1, ownArt);
+            int total = background.totalOf(seg, ownArt);
             if (parts[0].isEmpty() || total <= 0) {
                 out = out.append(color(seg));
                 continue;
@@ -475,17 +563,17 @@ public final class BlockMania extends JavaPlugin {
                                      int barWidth, String... replacements) {
         List<String> legacies = new ArrayList<>();
         for (String template : templates) {
-            String t = tiny(template);
+            String t = tiny(keyMarks(template));
             for (int i = 0; i + 1 < replacements.length; i += 2) {
                 t = t.replace(replacements[i], replacements[i + 1]);
             }
-            legacies.add(t);
+            legacies.addAll(splitKeys(t));
         }
         Component result;
         if (background != null && background.forBossbar()) {
             result = withBackgrounds(legacies, progress, fillChar, emptyChar, barWidth);
         } else {
-            result = color(String.join(" ", legacies));
+            result = color(stripKeyMarks(String.join(" ", legacies)));
         }
         String font = getConfig().getString("bossbar.font", "");
         if (font != null && !font.isBlank()) {
@@ -642,6 +730,7 @@ public final class BlockMania extends JavaPlugin {
         if (legacy == null || legacy.isEmpty()) {
             return Component.empty();
         }
+        legacy = stripKeyMarks(legacy);
         List<Component> out = new ArrayList<>();
         StringBuilder buffer = new StringBuilder();
         TextColor color = null;
@@ -787,7 +876,7 @@ public final class BlockMania extends JavaPlugin {
         boolean actionBar = channel.equalsIgnoreCase("actionbar") && to instanceof Player;
 
         for (String line : lines) {
-            String t = tiny(prefix + line + suffix);
+            String t = tiny(keyMarks(prefix + line + suffix));
             if (uniform) {
                 t = stripCodes(t);
             }

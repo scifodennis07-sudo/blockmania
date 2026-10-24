@@ -324,6 +324,14 @@ messages:
     type: success
     channel: chat
     text: "modifiche alla miniera %mine% salvate: %count% blocchi"
+  mine-world-loading:
+    type: info
+    channel: actionbar
+    text: "il mondo delle miniere si sta preparando, riprova tra poco"
+  mine-queue:
+    type: info
+    channel: actionbar
+    text: "la tua miniera %mine% e in coda (davanti a te: %count%)..."
   mine-bought:
     type: success
     channel: actionbar
@@ -347,7 +355,7 @@ messages:
   power-unlocked:
     type: success
     channel: actionbar
-    text: "attacco potenziato sbloccato! premi shift + click destro con il lanciapalle"
+    text: "attacco potenziato sbloccato! premi {key:shift + click destro} con il lanciapalle"
   power-locked:
     type: error
     channel: actionbar
@@ -1210,7 +1218,7 @@ power-attack:
   trail-particles: 4           # fiamme della scia a ogni tick
   bossbar:
     color: PURPLE
-    ready: "&dattacco potenziato sbloccato &8| &fpremi &eshift + click destro &fper usarlo"
+    ready: "&dattacco potenziato sbloccato &8| &fpremi {key:shift + click destro} &fper usarlo"
     waiting: "&dattacco potenziato sbloccato &8| &7aspetta che la stamina si ricarichi"
   sounds:
     unlock:
@@ -1235,13 +1243,15 @@ power-attack:
 mines:
   max-blocks: 400000           # blocchi massimi di una miniera ufficiale
   blocks-per-tick: 20000       # quanti blocchi legge a ogni tick quando salvi una miniera
-  paste-per-tick: 6000         # quanti blocchi scrive a ogni tick quando crea/aggiorna una miniera personale
+  paste-per-tick: 6000         # massimo di blocchi scritti a ogni tick quando prepara/aggiorna una miniera personale
+  max-ms-per-tick: 6           # ... e comunque non piu' di tanti millisecondi per tick (se il server rallenta scrive meno)
+  unload-after-seconds: 300    # una miniera personale esce dal mondo quando il player non c'e' piu' da tanti secondi
   world: blockmania_mines      # mondo vuoto delle miniere personali (si crea da solo)
   spacing-x: 1024              # distanza tra un giocatore e l'altro (in blocchi): piu grande della miniera piu larga
   spacing-z: 1024              # distanza tra una miniera e l'altra dello stesso giocatore
   base-y: 64                   # altezza a cui parte la miniera personale
   edit:
-    bossbar: "&epremi &fshift + f &eper salvare tutte le modifiche della miniera &f%mine% &8| &fshift + q &eper annullare"
+    bossbar: "&epremi {key:shift + f} &eper salvare tutte le modifiche della miniera &f%mine% &8| &epremi {key:shift + q} &eper annullare"
 
 mines-gui:
   count: 21                    # quante miniere esistono
@@ -1533,6 +1543,20 @@ background:
   right:
     char: "\u3c02"             # bordo destro
     width: 6
+  # Tasti: nei testi (actionbar e bossbar) scrivi {key:shift + f} e il comando esce in un riquadro a parte, come un tasto.
+  # Ha lo stesso sfondo del resto, ma e' staccato dalla frase. Nella chat si legge solo il testo.
+  key:
+    own-art: false             # true = usa un sfondo grafico diverso (servono 3 PNG in piu' nel pack): lascia false
+    color: "&f"                # colore del testo dentro il tasto
+    left:
+      char: "\u3c20"
+      width: 6
+    center:
+      char: "\u3c21"
+      width: 1
+    right:
+      char: "\u3c22"
+      width: 6
   bar:                         # barra di avanzamento sotto lo sfondo (usata dalla vendita shell)
     enabled: true
     fill: "\u3c10"              # pezzo pieno (1 pixel)

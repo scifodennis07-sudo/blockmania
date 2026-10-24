@@ -235,6 +235,11 @@ public final class BlockManager {
         dirty = true;
     }
 
+    /** Dati del blocco registrato, senza controlli ne' correzioni (veloce: per le copie in blocco). */
+    public Tracked raw(Block block) {
+        return blocks.get(key(block));
+    }
+
     /** Toglie il blocco dall'elenco (non lo rimuove dal mondo). */
     public void remove(Block block) {
         String k = key(block);
@@ -572,6 +577,39 @@ public final class BlockManager {
         if (dirty) {
             save();
         }
+    }
+
+    private volatile boolean saving;
+
+    /**
+     * Salvataggio che non blocca il server: l'elenco si copia subito (veloce), la scrittura del file
+     * avviene in un altro thread. Se un salvataggio e' ancora in corso aspetta il prossimo giro.
+     */
+    public void saveIfDirtyAsync() {
+        if (!dirty || saving) {
+            return;
+        }
+        List<String> lines = new ArrayList<>(blocks.size());
+        for (Map.Entry<String, Tracked> e : blocks.entrySet()) {
+            lines.add(e.getKey() + ";" + e.getValue().number + ";" + e.getValue().hp);
+        }
+        dirty = false;
+        saving = true;
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                YamlConfiguration yaml = new YamlConfiguration();
+                yaml.set("blocks", lines);
+                plugin.getDataFolder().mkdirs();
+                File tmp = new File(plugin.getDataFolder(), "blocks.yml.tmp");
+                yaml.save(tmp);
+                java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException ex) {
+                dirty = true; // riprova al prossimo giro
+                plugin.getLogger().severe("Non riesco a salvare blocks.yml: " + ex.getMessage());
+            } finally {
+                saving = false;
+            }
+        });
     }
 
     public void save() {

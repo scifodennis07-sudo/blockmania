@@ -36,6 +36,12 @@ public final class Background {
     private int leftWidth;
     private int centerWidth;
     private int rightWidth;
+    private String keyLeft;
+    private String keyCenter;
+    private String keyRight;
+    private int keyLeftWidth;
+    private int keyCenterWidth;
+    private int keyRightWidth;
 
     /** quantita' -> carattere, dal piu' grande al piu' piccolo. */
     private final TreeMap<Integer, String> negative = new TreeMap<>(java.util.Comparator.reverseOrder());
@@ -61,6 +67,13 @@ public final class Background {
         leftWidth = Math.max(0, c.getInt("background.left.width", 6));
         centerWidth = Math.max(1, c.getInt("background.center.width", 1));
         rightWidth = Math.max(0, c.getInt("background.right.width", 6));
+
+        keyLeft = c.getString("background.key.left.char", "\u3c20");
+        keyCenter = c.getString("background.key.center.char", "\u3c21");
+        keyRight = c.getString("background.key.right.char", "\u3c22");
+        keyLeftWidth = Math.max(0, c.getInt("background.key.left.width", 6));
+        keyCenterWidth = Math.max(1, c.getInt("background.key.center.width", 1));
+        keyRightWidth = Math.max(0, c.getInt("background.key.right.width", 6));
 
         barFill = c.getString("background.bar.fill", "\u3c10");
         barEmpty = c.getString("background.bar.empty", "\u3c11");
@@ -240,6 +253,14 @@ public final class Background {
      */
     /** Larghezza totale (in pixel) che occupa lo sfondo di questo testo. 0 se non si puo' fare. */
     public int totalOf(String legacy) {
+        return totalOf(legacy, false);
+    }
+
+    /** Come totalOf; key = sfondo "tasto" (per i comandi tipo shift + F) invece di quello normale. */
+    public int totalOf(String legacy, boolean key) {
+        int lw = key ? keyLeftWidth : leftWidth;
+        int cw = key ? keyCenterWidth : centerWidth;
+        int rw = key ? keyRightWidth : rightWidth;
         if (negative.isEmpty() || positive.isEmpty()) {
             return 0;
         }
@@ -249,8 +270,8 @@ public final class Background {
         }
         int visible = Math.max(1, textWidth - 1);
         int centerSpan = Math.max(0, visible + 2 * padding + adjust);
-        int pieces = (centerSpan + centerWidth - 1) / centerWidth;
-        return leftWidth + pieces * centerWidth + rightWidth + 1;
+        int pieces = (centerSpan + cw - 1) / cw;
+        return lw + pieces * cw + rw + 1;
     }
 
     /** Spostamento in pixel (positivo = avanti, negativo = indietro). */
@@ -315,6 +336,16 @@ public final class Background {
      * larga quanto lo sfondo (pezzi "pieni" e "vuoti" presi dal font).
      */
     public String[] parts(String legacy, double progress) {
+        return parts(legacy, progress, false);
+    }
+
+    public String[] parts(String legacy, double progress, boolean key) {
+        String left = key ? this.keyLeft : this.left;
+        String center = key ? this.keyCenter : this.center;
+        String right = key ? this.keyRight : this.right;
+        int leftWidth = key ? keyLeftWidth : this.leftWidth;
+        int centerWidth = key ? keyCenterWidth : this.centerWidth;
+        int rightWidth = key ? keyRightWidth : this.rightWidth;
         if (negative.isEmpty() || positive.isEmpty()) {
             return new String[]{"", ""};
         }

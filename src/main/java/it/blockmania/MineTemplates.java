@@ -63,6 +63,7 @@ public final class MineTemplates implements Listener {
     /** Miniera ufficiale caricata in memoria (per copiarla). */
     private static final class Template {
         Info info;
+        List<String> paletteRaw = new ArrayList<>();
         List<BlockData> palette = new ArrayList<>();
         int[] pal;   // per cella: -2 aria, -1 blocco custom, >=0 indice nella palette
         int[] num;   // numero del blocco custom
@@ -75,7 +76,13 @@ public final class MineTemplates implements Listener {
         long applied;           // stamp della miniera ufficiale applicata l'ultima volta (0 = mai creata)
         int adx, ady, adz;      // dimensioni applicate l'ultima volta
         final Set<Long> broken = new HashSet<>();
+        final Map<Long, Integer> hp = new HashMap<>(); // blocchi danneggiati (vita rimasta) mentre la copia e' spenta
         boolean dirty;
+        boolean loaded;         // la copia e' scritta nel mondo
+        boolean loading;        // la sto preparando adesso
+        boolean unloadQueued;   // e' in coda per essere tolta dal mondo
+        boolean unloadStarted;
+        long lastActive;
 
         Instance(UUID owner, int mine) {
             this.owner = owner;
@@ -91,6 +98,7 @@ public final class MineTemplates implements Listener {
         int dx, dy, dz;
         Set<Long> broken;
         Instance instance; // se e' una miniera personale
+        boolean clear;     // true = toglie la copia dal mondo (salvando la vita dei blocchi danneggiati)
         long total;
         long cursor;
         Runnable done;
@@ -119,6 +127,7 @@ public final class MineTemplates implements Listener {
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Map<String, Instance> instances = new HashMap<>();
     private final Deque<Job> jobs = new ArrayDeque<>();
+    private final Map<Integer, Template> templateCache = new HashMap<>();
     private final Map<UUID, Integer> plots = new HashMap<>();
     private final Map<Integer, UUID> plotOwners = new HashMap<>();
     private final NamespacedKey returnKey;
@@ -136,9 +145,11 @@ public final class MineTemplates implements Listener {
 
     public void start() {
         loadPlots();
-        if (plotsFile.isFile()) {
-            Bukkit.getScheduler().runTask(plugin, this::world); // rimette in funzione il mondo delle miniere
-        }
+        // il mondo delle miniere si crea/carica all'avvio (la creazione blocca il server: meglio ora che con un player dentro)
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            world();
+            scanLoaded();
+        }, 40L);
         maintenance = Bukkit.getScheduler().runTaskTimer(plugin, this::maintain, 100L, 100L);
     }
 
@@ -193,7 +204,8 @@ public final class MineTemplates implements Listener {
         double sx = dx / 2.0, sy = dy + 1, sz = dz / 2.0;
         float yaw = 0, pitch = 30;
         if (version >= 2) {
-            stamp = in.readLong();
+            in.readLong(); // momento di scrittura: la versione si riconosce dalla data del file
+            stamp = f.lastModified();
             sx = in.readDouble();
             sy = in.readDouble();
             sz = in.readDouble();
@@ -223,7 +235,56 @@ public final class MineTemplates implements Listener {
         }
     }
 
+    /** Miniera in memoria (la tiene da parte finche' non cambia: si legge il file una volta sola). */
     private Template load(int mine) {
+        File f = file(mine);
+        Template cached = templateCache.get(mine);
+        if (cached != null && cached.info.stamp() == stampOf(f)) {
+            return cached;
+        }
+        Template t = read(mine);
+        if (t != null) {
+            finish(t);
+            templateCache.put(mine, t);
+        }
+        return t;
+    }
+
+    private long stampOf(File f) {
+        return f.lastModified();
+    }
+
+    /** Come load(), ma la lettura del file avviene fuori dal thread principale. */
+    private void loadAsync(int mine, java.util.function.Consumer<Template> then) {
+        Template cached = templateCache.get(mine);
+        File f = file(mine);
+        if (cached != null && cached.info.stamp() == stampOf(f)) {
+            then.accept(cached);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            Template t = read(mine);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (t != null) {
+                    finish(t);
+                    templateCache.put(mine, t);
+                }
+                then.accept(t);
+            });
+        });
+    }
+
+    private void finish(Template t) {
+        if (t.palette.size() == t.paletteRaw.size()) {
+            return;
+        }
+        t.palette.clear();
+        for (String raw : t.paletteRaw) {
+            t.palette.add(Bukkit.createBlockData(raw));
+        }
+    }
+
+    private Template read(int mine) {
         File f = file(mine);
         if (!f.isFile()) {
             return null;
@@ -233,7 +294,7 @@ public final class MineTemplates implements Listener {
             t.info = readInfo(in, f);
             int palette = in.readInt();
             for (int i = 0; i < palette; i++) {
-                t.palette.add(Bukkit.createBlockData(in.readUTF()));
+                t.paletteRaw.add(in.readUTF());
             }
             int count = in.readInt();
             long volume = (long) t.info.dx() * t.info.dy() * t.info.dz();
@@ -297,6 +358,7 @@ public final class MineTemplates implements Listener {
         if (target.exists() && !target.delete()) {
             return false;
         }
+        templateCache.remove(mine);
         return tmp.renameTo(target);
     }
 
@@ -633,11 +695,19 @@ public final class MineTemplates implements Listener {
                 }
             });
             creator.generateStructures(false);
+            try {
+                // niente chunk di spawn tenuti in memoria: il mondo e' vuoto, non servono
+                creator.getClass().getMethod("keepSpawnLoaded", net.kyori.adventure.util.TriState.class)
+                        .invoke(creator, net.kyori.adventure.util.TriState.FALSE);
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // versione senza questa opzione: va bene lo stesso
+            }
             w = creator.createWorld();
         }
         if (w != null) {
             try {
                 w.setSpawnFlags(false, false);
+                w.setGameRuleValue("spawnChunkRadius", "0");
                 w.setGameRuleValue("doDaylightCycle", "false");
                 w.setGameRuleValue("doWeatherCycle", "false");
                 w.setGameRuleValue("doMobSpawning", "false");
@@ -727,25 +797,68 @@ public final class MineTemplates implements Listener {
         if (inst != null) {
             return inst;
         }
-        inst = new Instance(id, mine);
+        inst = readInstance(id, mine);
+        instances.put(key, inst);
+        return inst;
+    }
+
+    private Instance readInstance(UUID id, int mine) {
+        Instance inst = new Instance(id, mine);
         File f = instanceFile(id, mine);
         if (f.isFile()) {
             try (DataInputStream in = open(f)) {
-                in.readInt();
+                int version = in.readInt();
                 inst.applied = in.readLong();
                 inst.adx = in.readInt();
                 inst.ady = in.readInt();
                 inst.adz = in.readInt();
+                if (version >= 2) {
+                    inst.loaded = in.readBoolean();
+                } else {
+                    inst.loaded = inst.applied > 0; // vecchie copie: erano tutte scritte nel mondo
+                }
                 int n = in.readInt();
                 for (int i = 0; i < n; i++) {
                     inst.broken.add(in.readLong());
+                }
+                if (version >= 2) {
+                    int h = in.readInt();
+                    for (int i = 0; i < h; i++) {
+                        long k = in.readLong();
+                        inst.hp.put(k, in.readInt());
+                    }
                 }
             } catch (IOException ex) {
                 plugin.getLogger().warning("Impossibile leggere la copia della miniera " + mine + " di " + id + ": " + ex.getMessage());
             }
         }
-        instances.put(key, inst);
+        inst.lastActive = System.currentTimeMillis();
         return inst;
+    }
+
+    /** All'avvio: ritrova le copie rimaste scritte nel mondo, cosi' vengono tolte quando nessuno le usa. */
+    private void scanLoaded() {
+        File[] files = instancesDir.listFiles((d, name) -> name.endsWith(".dat"));
+        if (files == null) {
+            return;
+        }
+        for (File f : files) {
+            String name = f.getName().substring(0, f.getName().length() - 4);
+            int us = name.lastIndexOf('_');
+            if (us < 0) {
+                continue;
+            }
+            try {
+                UUID id = UUID.fromString(name.substring(0, us));
+                int mine = Integer.parseInt(name.substring(us + 1));
+                Instance inst = instance(id, mine);
+                if (!inst.loaded) {
+                    instances.remove(id + "_" + mine); // non serve tenerla in memoria
+                }
+            } catch (IllegalArgumentException ignored) {
+                // file che non e' una copia
+            }
+        }
     }
 
     private void saveInstances(boolean all) {
@@ -757,7 +870,8 @@ public final class MineTemplates implements Listener {
         if (all) {
             instances.clear();
         } else {
-            instances.values().removeIf(i -> !i.dirty && Bukkit.getPlayer(i.owner) == null);
+            // le copie scritte nel mondo restano in memoria finche' non vengono tolte
+            instances.values().removeIf(i -> !i.dirty && !i.loaded && !i.loading && Bukkit.getPlayer(i.owner) == null);
         }
     }
 
@@ -767,14 +881,20 @@ public final class MineTemplates implements Listener {
         }
         File tmp = new File(instancesDir, inst.owner + "_" + inst.mine + ".tmp");
         try (DataOutputStream out = new DataOutputStream(new GZIPOutputStream(new BufferedOutputStream(new FileOutputStream(tmp))))) {
-            out.writeInt(1);
+            out.writeInt(2);
             out.writeLong(inst.applied);
             out.writeInt(inst.adx);
             out.writeInt(inst.ady);
             out.writeInt(inst.adz);
+            out.writeBoolean(inst.loaded);
             out.writeInt(inst.broken.size());
             for (long k : inst.broken) {
                 out.writeLong(k);
+            }
+            out.writeInt(inst.hp.size());
+            for (Map.Entry<Long, Integer> e : inst.hp.entrySet()) {
+                out.writeLong(e.getKey());
+                out.writeInt(e.getValue());
             }
         } catch (IOException ex) {
             plugin.getLogger().warning("Salvataggio copia miniera fallito: " + ex.getMessage());
@@ -809,7 +929,7 @@ public final class MineTemplates implements Listener {
             return;
         }
         Instance inst = instance(owner, mine);
-        if (inst.applied == 0) {
+        if (!inst.loaded) {
             return;
         }
         int rx = block.getX() - idx * sx;
@@ -824,12 +944,33 @@ public final class MineTemplates implements Listener {
 
     /** Il giocatore clicca una sua miniera in /mines: la prepara se serve e lo porta dentro. */
     public void enter(Player player, int mine) {
-        Template t = load(mine);
-        if (t == null) {
-            plugin.send(player, "mine-unavailable", "%mine%", String.valueOf(mine));
-            plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.error");
+        if (minesWorld == null && Bukkit.getWorld(worldName()) == null) {
+            // il mondo si crea all'avvio; se manca lo faccio adesso ma il player riprova dopo
+            plugin.send(player, "mine-world-loading");
+            Bukkit.getScheduler().runTask(plugin, this::world);
             return;
         }
+        UUID id = player.getUniqueId();
+        Instance current = instance(id, mine);
+        if (current.loading) {
+            plugin.send(player, "mine-loading", "%mine%", String.valueOf(mine));
+            return;
+        }
+        loadAsync(mine, t -> {
+            Player p = Bukkit.getPlayer(id);
+            if (p == null) {
+                return;
+            }
+            if (t == null) {
+                plugin.send(p, "mine-unavailable", "%mine%", String.valueOf(mine));
+                plugin.playConfiguredSound(p.getLocation(), "mines-gui.sounds.error");
+                return;
+            }
+            proceedEnter(p, t, mine);
+        });
+    }
+
+    private void proceedEnter(Player player, Template t, int mine) {
         World w = world();
         if (w == null) {
             plugin.send(player, "mine-unavailable", "%mine%", String.valueOf(mine));
@@ -837,16 +978,27 @@ public final class MineTemplates implements Listener {
         }
         UUID id = player.getUniqueId();
         Instance inst = instance(id, mine);
+        if (inst.loading) {
+            return;
+        }
+        inst.lastActive = System.currentTimeMillis();
         if (w != player.getWorld()) {
             player.getPersistentDataContainer().set(returnKey, PersistentDataType.STRING, encode(player.getLocation()));
         }
-        if (inst.applied >= t.info.stamp()) {
+        if (inst.loaded && !inst.unloadStarted && inst.applied >= t.info.stamp()) {
             teleportIn(player, t, mine);
             return;
         }
-        plugin.send(player, "mine-loading", "%mine%", String.valueOf(mine));
+        inst.loading = true;
+        if (jobs.isEmpty()) {
+            plugin.send(player, "mine-loading", "%mine%", String.valueOf(mine));
+        } else {
+            plugin.send(player, "mine-queue", "%mine%", String.valueOf(mine), "%count%", String.valueOf(jobs.size()));
+        }
         Job job = jobFor(t, inst, w);
         job.done = () -> {
+            inst.loading = false;
+            inst.lastActive = System.currentTimeMillis();
             Player p = Bukkit.getPlayer(id);
             if (p != null) {
                 teleportIn(p, t, mine);
@@ -877,6 +1029,7 @@ public final class MineTemplates implements Listener {
         Location to = new Location(w, plotX(player.getUniqueId()) + i.sx(), baseY() + i.sy(),
                 plotZ(mine) + i.sz(), i.yaw(), i.pitch());
         player.teleport(to);
+        instance(player.getUniqueId(), mine).lastActive = System.currentTimeMillis();
         plugin.send(player, "mine-enter", "%mine%", String.valueOf(mine));
     }
 
@@ -934,7 +1087,7 @@ public final class MineTemplates implements Listener {
                 continue;
             }
             Instance inst = instance(p.getUniqueId(), mine);
-            if (inst.applied == 0) {
+            if (!inst.loaded || inst.loading || inst.unloadStarted) {
                 continue;
             }
             enqueue(jobFor(t, inst, w));
@@ -959,20 +1112,67 @@ public final class MineTemplates implements Listener {
             jobTask = null;
             return;
         }
+        Instance inst = job.instance;
+        if (job.clear && job.cursor == 0) {
+            // prima di svuotare controllo che nessuno sia tornato nella copia
+            long idle = System.currentTimeMillis() - (inst == null ? 0 : inst.lastActive);
+            if (inst == null || occupied(inst) || idle < unloadMillis()) {
+                if (inst != null) {
+                    inst.unloadQueued = false;
+                }
+                jobs.poll();
+                return;
+            }
+            inst.unloadStarted = true;
+            inst.loaded = false; // salvato subito: se il server si ferma a meta' la copia non risulta piu' pronta
+            inst.dirty = true;
+            writeInstance(inst);
+        }
         int budget = Math.max(500, plugin.getConfig().getInt("mines.paste-per-tick", 6000));
+        // se il server rallenta, la scrittura rallenta con lui
+        double tps = Bukkit.getTPS()[0];
+        if (tps < 19.0) {
+            budget = (int) Math.max(300, budget * Math.max(0.1, (tps - 14.0) / 5.0));
+        }
+        long deadline = System.nanoTime() + Math.max(1, plugin.getConfig().getLong("mines.max-ms-per-tick", 6)) * 1_000_000L;
         BlockManager bm = plugin.getBlocks();
         Template t = job.t;
         int tdx = t.info.dx();
         int tdy = t.info.dy();
         int tdz = t.info.dz();
         World world = job.world;
+        int minY = world.getMinHeight();
+        int maxY = world.getMaxHeight();
         long end = Math.min(job.total, job.cursor + budget);
-        for (long i = job.cursor; i < end; i++) {
+        long i = job.cursor;
+        for (; i < end; i++) {
+            if ((i & 255) == 0 && System.nanoTime() > deadline) {
+                break;
+            }
             int x = (int) (i % job.dx);
             int y = (int) ((i / job.dx) % job.dy);
             int z = (int) (i / ((long) job.dx * job.dy));
             int wy = job.oy + y;
-            if (wy < world.getMinHeight() || wy >= world.getMaxHeight()) {
+            if (wy < minY || wy >= maxY) {
+                continue;
+            }
+            Block block = world.getBlockAt(job.ox + x, wy, job.oz + z);
+            Material type = block.getType();
+            boolean air = type.isAir();
+            if (job.clear) {
+                if (air) {
+                    continue;
+                }
+                if (type == Material.NOTE_BLOCK || type == Material.BARRIER) {
+                    BlockManager.Tracked tr = bm.raw(block);
+                    if (tr != null) {
+                        if (tr.hp() < bm.maxHealth(tr.number())) {
+                            inst.hp.put(key(x, y, z), tr.hp());
+                        }
+                        bm.remove(block);
+                    }
+                }
+                block.setType(Material.AIR, false);
                 continue;
             }
             int pal = -2;
@@ -982,11 +1182,20 @@ public final class MineTemplates implements Listener {
                 pal = t.pal[lin];
                 number = t.num[lin];
             }
-            if (job.broken != null && !job.broken.isEmpty() && job.broken.contains(key(x, y, z))) {
+            if (pal != -2 && job.broken != null && !job.broken.isEmpty() && job.broken.contains(key(x, y, z))) {
                 pal = -2;
             }
-            Block block = world.getBlockAt(job.ox + x, wy, job.oz + z);
-            BlockManager.Tracked tracked = bm.get(block);
+            if (pal == -2) {
+                if (air) {
+                    continue; // aria dove deve esserci aria: niente da fare (il caso piu' comune)
+                }
+                if (type == Material.NOTE_BLOCK || type == Material.BARRIER) {
+                    bm.remove(block);
+                }
+                block.setType(Material.AIR, false);
+                continue;
+            }
+            BlockManager.Tracked tracked = (type == Material.NOTE_BLOCK || type == Material.BARRIER) ? bm.raw(block) : null;
             if (pal == -1) {
                 if (tracked != null && tracked.number() == number) {
                     continue;
@@ -994,35 +1203,45 @@ public final class MineTemplates implements Listener {
                 if (tracked != null) {
                     bm.remove(block);
                 }
-                bm.place(block, number);
-            } else if (pal >= 0) {
+                Integer saved = inst == null ? null : inst.hp.get(key(x, y, z));
+                if (saved != null && saved > 0) {
+                    int stage = bm.stageFor(saved, bm.maxHealth(number));
+                    bm.restore(block, bm.dataFor(number, stage), number, saved);
+                } else {
+                    bm.place(block, number);
+                }
+            } else {
                 BlockData data = t.palette.get(pal);
-                if (tracked == null && block.getBlockData().equals(data)) {
+                if (tracked == null && !air && block.getBlockData().equals(data)) {
                     continue;
                 }
                 if (tracked != null) {
                     bm.remove(block);
                 }
                 block.setBlockData(data, false);
-            } else {
-                if (tracked != null) {
-                    bm.remove(block);
-                    block.setType(Material.AIR, false);
-                } else if (!block.getType().isAir()) {
-                    block.setType(Material.AIR, false);
-                }
             }
         }
-        job.cursor = end;
-        if (end >= job.total) {
+        job.cursor = i;
+        if (i >= job.total) {
             jobs.poll();
-            if (job.instance != null) {
-                job.instance.applied = t.info.stamp();
-                job.instance.adx = tdx;
-                job.instance.ady = tdy;
-                job.instance.adz = tdz;
-                job.instance.dirty = true;
-                writeInstance(job.instance);
+            if (inst != null) {
+                if (job.clear) {
+                    inst.loaded = false;
+                    inst.adx = 0;
+                    inst.ady = 0;
+                    inst.adz = 0;
+                    inst.unloadQueued = false;
+                    inst.unloadStarted = false;
+                } else {
+                    inst.hp.clear(); // la vita salvata e' gia' stata rimessa ai blocchi
+                    inst.loaded = true;
+                    inst.applied = t.info.stamp();
+                    inst.adx = tdx;
+                    inst.ady = tdy;
+                    inst.adz = tdz;
+                }
+                inst.dirty = true;
+                writeInstance(inst);
             }
             if (job.done != null) {
                 job.done.run();
@@ -1031,14 +1250,45 @@ public final class MineTemplates implements Listener {
     }
 
     // ------------------------------------------------------------------
-    //  Manutenzione
+    //  Manutenzione: salvataggi e copie spente quando nessuno le usa
     // ------------------------------------------------------------------
+
+    private long unloadMillis() {
+        return Math.max(10, plugin.getConfig().getLong("mines.unload-after-seconds", 300)) * 1000L;
+    }
+
+    /** Vero se il proprietario e' dentro questa copia in questo momento. */
+    private boolean occupied(Instance inst) {
+        Player p = Bukkit.getPlayer(inst.owner);
+        World w = minesWorld;
+        if (p == null || w == null || p.getWorld() != w) {
+            return false;
+        }
+        int idx = Math.floorDiv(p.getLocation().getBlockX(), spacingX());
+        int mine = Math.floorDiv(p.getLocation().getBlockZ(), spacingZ()) + 1;
+        Integer own = plots.get(inst.owner);
+        return own != null && own == idx && mine == inst.mine;
+    }
 
     private void maintain() {
         saveInstances(false);
         World w = minesWorld;
         if (w == null) {
             return;
+        }
+        long now = System.currentTimeMillis();
+        long idleLimit = unloadMillis();
+        for (Instance inst : new ArrayList<>(instances.values())) {
+            if (!inst.loaded || inst.loading || inst.unloadQueued) {
+                continue;
+            }
+            if (occupied(inst)) {
+                inst.lastActive = now;
+                continue;
+            }
+            if (now - inst.lastActive >= idleLimit) {
+                queueUnload(inst, w);
+            }
         }
         for (Player p : w.getPlayers()) {
             if (p.getLocation().getY() < w.getMinHeight() + 10) {
@@ -1052,6 +1302,31 @@ public final class MineTemplates implements Listener {
                 }
             }
         }
+    }
+
+    private void queueUnload(Instance inst, World w) {
+        inst.unloadQueued = true;
+        Job job = new Job();
+        job.world = w;
+        job.t = emptyTemplate();
+        job.ox = plotX(inst.owner);
+        job.oy = baseY();
+        job.oz = plotZ(inst.mine);
+        job.dx = Math.max(1, inst.adx);
+        job.dy = Math.max(1, inst.ady);
+        job.dz = Math.max(1, inst.adz);
+        job.instance = inst;
+        job.clear = true;
+        job.total = (long) job.dx * job.dy * job.dz;
+        enqueue(job);
+    }
+
+    private Template emptyTemplate() {
+        Template t = new Template();
+        t.info = new Info("", 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0);
+        t.pal = new int[]{-2};
+        t.num = new int[]{0};
+        return t;
     }
 
     /** Descrizione di tutte le miniere salvate (per /bm mines list). */
