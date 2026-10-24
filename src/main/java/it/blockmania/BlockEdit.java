@@ -156,6 +156,29 @@ public final class BlockEdit implements Listener {
                 "%z%", String.valueOf(block.getBlockZ()), "%size%", size);
     }
 
+    /** Zona scelta con la bacchetta (o pos1/pos2). */
+    public record Selection(World world, int minX, int minY, int minZ, int dx, int dy, int dz) {
+        public long volume() {
+            return (long) dx * dy * dz;
+        }
+    }
+
+    /** La zona scelta dal giocatore, oppure null (con messaggio di errore) se manca o e' in mondi diversi. */
+    public Selection selection(Player player) {
+        UUID id = player.getUniqueId();
+        Location l1 = pos1.get(id);
+        Location l2 = pos2.get(id);
+        if (l1 == null || l2 == null || l1.getWorld() != l2.getWorld() || l1.getWorld() == null) {
+            plugin.sendCommand(player, "missing-selection");
+            return null;
+        }
+        return new Selection(l1.getWorld(),
+                Math.min(l1.getBlockX(), l2.getBlockX()), Math.min(l1.getBlockY(), l2.getBlockY()),
+                Math.min(l1.getBlockZ(), l2.getBlockZ()),
+                Math.abs(l1.getBlockX() - l2.getBlockX()) + 1, Math.abs(l1.getBlockY() - l2.getBlockY()) + 1,
+                Math.abs(l1.getBlockZ() - l2.getBlockZ()) + 1);
+    }
+
     private static long volume(Location a, Location b) {
         long dx = Math.abs(a.getBlockX() - b.getBlockX()) + 1L;
         long dy = Math.abs(a.getBlockY() - b.getBlockY()) + 1L;

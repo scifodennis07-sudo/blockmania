@@ -37,6 +37,7 @@ public final class Power implements Listener {
     private final NamespacedKey targetKey;
     private final NamespacedKey noLimitsKey;
     private final NamespacedKey modeKey;
+    private final NamespacedKey usesKey;
     private BukkitTask task;
 
     public Power(BlockMania plugin) {
@@ -47,6 +48,7 @@ public final class Power implements Listener {
         this.targetKey = new NamespacedKey(plugin, "power_target");
         this.noLimitsKey = new NamespacedKey(plugin, "limits_off");
         this.modeKey = new NamespacedKey(plugin, "stamina_mode");
+        this.usesKey = new NamespacedKey(plugin, "power_uses");
     }
 
     public void start() {
@@ -163,6 +165,25 @@ public final class Power implements Listener {
         player.getPersistentDataContainer().set(chargesKey, PersistentDataType.INTEGER, Math.max(0, value));
     }
 
+    /** Quanti attacchi potenziati regala ogni sblocco (di default 1, si cambia con /bm power uses). */
+    public int uses(Player player) {
+        int def = Math.max(1, plugin.getConfig().getInt("power-attack.uses-per-unlock", 1));
+        return Math.max(1, player.getPersistentDataContainer().getOrDefault(usesKey, PersistentDataType.INTEGER, def));
+    }
+
+    public void setUses(Player player, int value) {
+        player.getPersistentDataContainer().set(usesKey, PersistentDataType.INTEGER, Math.max(1, value));
+    }
+
+    /** Quanti attacchi si possono tenere al massimo. */
+    public int cap(Player player) {
+        return Math.max(Math.max(1, plugin.getConfig().getInt("power-attack.max-charges", 1)), uses(player));
+    }
+
+    public void setChargesTo(Player player, int value) {
+        setCharges(player, value);
+    }
+
     public int progress(Player player) {
         return player.getPersistentDataContainer().getOrDefault(progressKey, PersistentDataType.INTEGER, 0);
     }
@@ -187,7 +208,7 @@ public final class Power implements Listener {
         if (!c.getBoolean("power-attack.enabled", true)) {
             return;
         }
-        int max = Math.max(1, c.getInt("power-attack.max-charges", 1));
+        int max = cap(player);
         if (charges(player) >= max) {
             return; // ne ha gia uno pronto: finche' non lo usa non si conta
         }
@@ -203,10 +224,7 @@ public final class Power implements Listener {
 
     /** Regala un attacco potenziato (con messaggio e suono). Serve anche per i test. */
     public void giveCharge(Player player) {
-        int max = Math.max(1, plugin.getConfig().getInt("power-attack.max-charges", 1));
-        if (charges(player) < max) {
-            setCharges(player, charges(player) + 1);
-        }
+        setCharges(player, Math.min(cap(player), charges(player) + uses(player)));
         plugin.send(player, "power-unlocked");
         plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.unlock");
     }
@@ -224,9 +242,6 @@ public final class Power implements Listener {
         if (!plugin.getConfig().getBoolean("power-attack.enabled", true)) {
             return false;
         }
-        if (!isLimited(player)) {
-            return true;
-        }
         return charges(player) > 0 && stamina(player) >= 0.999;
     }
 
@@ -238,9 +253,6 @@ public final class Power implements Listener {
         if (!plugin.getConfig().getBoolean("power-attack.enabled", true)) {
             return false;
         }
-        if (!isLimited(player)) {
-            return true; // limitazioni tolte: sempre disponibile, non consuma niente
-        }
         if (charges(player) <= 0) {
             plugin.send(player, "power-locked");
             return false;
@@ -250,7 +262,7 @@ public final class Power implements Listener {
             return false;
         }
         setCharges(player, charges(player) - 1);
-        drain(player, 1.0); // consuma tutta la stamina
+        drain(player, 1.0); // consuma tutta la stamina (con /bm stamina infinite no)
         return true;
     }
 
@@ -307,5 +319,8 @@ public final class Power implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         powerBars.remove(id);
         plugin.getBars().forget(id);
+        if (plugin.getMineTemplates() != null) {
+            plugin.getMineTemplates().forget(id);
+        }
     }
 }

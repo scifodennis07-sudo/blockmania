@@ -59,7 +59,7 @@ public final class GhostBall {
         launch(plugin, shooter, start, direction, speed, maxDistance, damage, model, false);
     }
 
-    /** Con power = true e' un colpo dell'attacco potenziato: scia di fuoco ed esplosione dove finisce. */
+    /** Con power = true e' un colpo dell'attacco potenziato: scia di fuoco. */
     public static void launch(BlockMania plugin, Player shooter, Location start, Vector direction, double speed,
                               double maxDistance, int damage, ItemStack model, boolean power) {
         GhostBall ball = new GhostBall(plugin, shooter, start, direction, speed, maxDistance, damage, model, power);
@@ -99,10 +99,6 @@ public final class GhostBall {
     }
 
     private void finish() {
-        if (power) {
-            Player owner = plugin.getServer().getPlayer(shooter);
-            plugin.getBlocks().powerBlast(position.getBlock(), damage, owner);
-        }
         if (task != null) {
             task.cancel();
         }

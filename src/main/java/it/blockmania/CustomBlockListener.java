@@ -97,12 +97,6 @@ public final class CustomBlockListener implements Listener {
         Integer stored = event.getEntity().getPersistentDataContainer()
                 .get(plugin.getDamageKey(), PersistentDataType.INTEGER);
         int damage = stored != null ? stored : plugin.getAmmo().getDamage(type);
-        if (event.getEntity().getPersistentDataContainer().has(powerKey, PersistentDataType.BYTE)) {
-            // colpo dell'attacco potenziato: esplosione di fuoco all'impatto
-            blocks().damage(hit, damage, shooter, BlockManager.HitStyle.EXPLOSION);
-            blocks().powerBlast(hit, damage, shooter);
-            return;
-        }
         // explosionball: solo il primo urto di ogni palla esplode, i rimbalzi no
         Integer bounces = event.getEntity().getPersistentDataContainer().get(bouncesKey, PersistentDataType.INTEGER);
         boolean first = bounces == null || bounces == 0;

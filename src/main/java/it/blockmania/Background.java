@@ -288,8 +288,7 @@ public final class Background {
         }
         int width = barWidth > 0 ? barWidth : total - 1;
         int offset = barWidth > 0 ? (total - 1 - width) / 2 : 0; // barra centrata sotto il testo
-        boolean custom = fillChar != null && !fillChar.isEmpty();
-        boolean caps = !custom && !barLeft.isEmpty() && !barRight.isEmpty() && width > 2 * barCap;
+        boolean caps = !barLeft.isEmpty() && !barRight.isEmpty() && width > 2 * barCap;
         int inner = caps ? width - 2 * barCap : width;
         int filled = (int) Math.round(Math.max(0.0, Math.min(1.0, progress)) * inner);
         StringBuilder sb = new StringBuilder(move(offset - total));

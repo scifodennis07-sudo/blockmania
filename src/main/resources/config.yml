@@ -243,7 +243,7 @@ messages:
   power-usage:
     type: error
     channel: chat
-    text: "uso: /bm power <give|see|reset> [player]"
+    text: "uso: /bm power <give|see|reset|set <n>|uses <n>> [player]"
   stamina-usage:
     type: error
     channel: chat
@@ -252,6 +252,54 @@ messages:
     type: success
     channel: chat
     text: "stamina di %player%: %stamina%% (%mode%)"
+  mines-usage:
+    type: error
+    channel: chat
+    text: "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n|save>|list>"
+  mine-tpl-number:
+    type: error
+    channel: chat
+    text: "il numero della miniera va da 1 a %max%"
+  mine-tpl-exists:
+    type: error
+    channel: chat
+    text: "la miniera %mine% esiste gia: per sostituirla usa /bm mines changemines %mine%"
+  mine-tpl-missing:
+    type: error
+    channel: chat
+    text: "la miniera %mine% non esiste ancora: crea con /bm mines setmines %mine%"
+  mine-tpl-noworld:
+    type: error
+    channel: chat
+    text: "il mondo %world% della miniera non e caricato"
+  mine-tpl-error:
+    type: error
+    channel: chat
+    text: "non sono riuscito a salvare la miniera (guarda la console)"
+  mine-tpl-none:
+    type: info
+    channel: chat
+    text: "nessuna miniera salvata, usa /bm mines setmines <n>"
+  mine-tpl-saved:
+    type: success
+    channel: chat
+    text: "miniera %mine% salvata: %count% blocchi. E' quella ufficiale di tutti i player"
+  mine-tpl-changed:
+    type: success
+    channel: chat
+    text: "miniera %mine% sostituita con la nuova selezione: %count% blocchi"
+  mine-edit-start:
+    type: info
+    channel: chat
+    text: "sei nella miniera %mine%: modificala e poi scrivi /bm mines editmines save"
+  mine-edit-none:
+    type: error
+    channel: chat
+    text: "non stai modificando nessuna miniera: usa /bm mines editmines <n>"
+  mine-edit-saved:
+    type: success
+    channel: chat
+    text: "modifiche alla miniera %mine% salvate: %count% blocchi"
   mine-bought:
     type: success
     channel: actionbar
@@ -267,7 +315,7 @@ messages:
   power-state:
     type: success
     channel: chat
-    text: "%player%: attacchi pronti %charges%, colpi %hits%/%target%, stamina %stamina%%"
+    text: "%player%: attacchi pronti %charges% (ogni sblocco ne da %uses%), colpi %hits%/%target%, stamina %stamina%%"
   limits-state:
     type: success
     channel: chat
@@ -433,9 +481,14 @@ help:
       example: "/bm blockcoin see doppiax"
     power:
       permission: blockmania.stats
-      usage: "/bm power <give|see|reset> [player]"
-      description: "give = regala l'attacco potenziato (per provarlo), see = mostra i colpi e la stamina, reset = azzera tutto"
+      usage: "/bm power <give|see|reset|set <n>|uses <n>> [player]"
+      description: "give = regala gli attacchi di uno sblocco, set <n> = imposta quanti ne ha pronti, uses <n> = quanti ne regala ogni sblocco, see = mostra, reset = azzera"
       example: "/bm power give"
+    mines:
+      permission: blockmania.build
+      usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n|save>|list>"
+      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/remove/undo come /bm block. setmines n = la zona scelta diventa la miniera n, changemines n = la sostituisce, editmines n = ti porta nella miniera n per modificarla, editmines save = salva le modifiche"
+      example: "/bm mines setmines 1"
     stamina:
       permission: blockmania.stats
       usage: "/bm stamina <see|refill|empty|set <0-100>|infinite|locked|normal> [player]"
@@ -1126,12 +1179,10 @@ power-attack:
   unlock-hits-min: 500         # ogni blocco colpito da una palla (anche ai rimbalzi) conta 1.
   unlock-hits-max: 3000        # Per sbloccarne uno servono un numero a caso di colpi tra min e max
   max-charges: 1               # quanti se ne possono tenere
+  uses-per-unlock: 1           # quanti attacchi regala ogni sblocco (per un giocatore: /bm power uses <n>)
   regen-seconds: 180           # tempo per ricaricare la stamina da 0 (180 = 3 minuti)
   cooldown-ticks: 12           # dopo il colpo potenziato non parte subito uno normale
   damage-multiplier: 10.0      # danno rispetto al normale
-  explosion-radius: 2          # raggio dell'esplosione all'impatto (in blocchi)
-  explosion-damage-percent: 3  # danno dell'esplosione ai blocchi vicini, in % del danno della palla (scenica, minimo)
-  blast-flames: 40             # fiamme dell'esplosione
   trail-particles: 4           # fiamme della scia a ogni tick
   bossbar:
     color: PURPLE
@@ -1144,7 +1195,7 @@ power-attack:
       pitch: 1.0
     use:
       sound: "entity.wither.shoot"
-      volume: 0.7
+      volume: 1.5
       pitch: 1.4
 
 # ----------------------------------------------------------------------
@@ -1157,6 +1208,10 @@ power-attack:
 #  Segnaposto: %number% %blocks% (da scavare) %broken% (scavati ora) %left% %total% (scavati in tutto)
 #              %runs% (volte rifatta) %max_runs% %price% %redo_price% %coin% %blockcoin% %mine% %page% %pages%
 # ----------------------------------------------------------------------
+mines:
+  max-blocks: 400000           # blocchi massimi di una miniera ufficiale
+  blocks-per-tick: 20000       # quanti blocchi legge/scrive a ogni tick
+
 mines-gui:
   count: 21                    # quante miniere esistono
   max-runs: 10                 # dopo tante volte la miniera e' platino e non si rifa piu

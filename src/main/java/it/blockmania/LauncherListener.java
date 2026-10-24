@@ -172,7 +172,7 @@ public final class LauncherListener implements Listener {
                 return; // appena sparato: niente raffica normale subito dopo
             }
             if (plugin.getPower().canUse(player)) {
-                firePower(player, li);
+                tryFire(player, li, true);
                 return;
             }
         }
@@ -210,13 +210,18 @@ public final class LauncherListener implements Listener {
 
     /** Spara se la ricarica e' finita e ci sono palle del tipo scelto. */
     private void tryFire(Player player, LauncherItem li) {
+        tryFire(player, li, false);
+    }
+
+    /** power = attacco potenziato: identico a uno sparo normale (palle, raffica, suoni) ma piu forte e con il fuoco. */
+    private boolean tryFire(Player player, LauncherItem li, boolean power) {
         UpgradeManager up = plugin.getUpgrades();
         int now = Bukkit.getCurrentTick();
         int cooldownTicks = Math.max(1, (int) Math.round(up.cooldown(player, li.cooldownSeconds()) * 20));
         Map<String, Integer> uses = lastUse.computeIfAbsent(player.getUniqueId(), k -> new HashMap<>());
         Integer last = uses.get(li.id());
         if (last != null && now - last < cooldownTicks) {
-            return; // in ricarica: nessun messaggio, il giocatore non deve sapere il tempo
+            return false; // in ricarica: nessun messaggio, il giocatore non deve sapere il tempo
         }
 
         AmmoManager ammo = plugin.getAmmo();
@@ -227,25 +232,36 @@ public final class LauncherListener implements Listener {
                 lastNoAmmo.put(player.getUniqueId(), now);
                 plugin.send(player, "no-ammo");
             }
-            return;
+            return false;
+        }
+        // l'attacco potenziato si consuma solo se la palla parte davvero (sblocco + stamina)
+        if (power && (plugin.getPower() == null || !plugin.getPower().tryUse(player))) {
+            return false;
         }
         ammo.addAmmo(player, type, -1);
         uses.put(li.id(), now);
 
         var c = plugin.getConfig();
         String path = "ammo." + type + ".";
+        double mult = power ? Math.max(0.1, c.getDouble("power-attack.damage-multiplier", 10.0)) : 1.0;
+        if (power) {
+            lastPower.put(player.getUniqueId(), now);
+            plugin.send(player, "power-used");
+            plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.use");
+        }
         int shots = Math.max(1, c.getInt(path + "shots", 1));
         int delay = Math.max(1, c.getInt(path + "shot-delay-ticks", 2));
         for (int i = 0; i < shots; i++) {
             if (i == 0) {
-                launchOnce(player, li, type);
+                launchOnce(player, li, type, mult, power);
             } else {
-                plugin.getServer().getScheduler().runTaskLater(plugin, () -> launchOnce(player, li, type),
+                plugin.getServer().getScheduler().runTaskLater(plugin, () -> launchOnce(player, li, type, mult, power),
                         (long) delay * i);
             }
         }
         plugin.playConfiguredSound(player.getEyeLocation(), "items." + li.id());
         plugin.playLayers(player.getEyeLocation(), path + "fire-sounds");
+        return true;
     }
 
     /** Lancia una "raffica" di una palla: una sola, oppure una griglia (es. 3x3) di palle parallele. */
@@ -265,7 +281,7 @@ public final class LauncherListener implements Listener {
         String path = "ammo." + type + ".";
         UpgradeManager up = plugin.getUpgrades();
         boolean ghost = c.getBoolean(path + "ghost", false);
-        int grid = power ? 1 : Math.max(1, c.getInt(path + "grid", 1));
+        int grid = Math.max(1, c.getInt(path + "grid", 1));
         double spacing = c.getDouble(path + "grid-spacing", 1.0);
         double speed = up.speed(player, li.speed());
         int damage = (int) Math.max(1, Math.round(up.damage(player, type) * damageMultiplier));
@@ -368,20 +384,6 @@ public final class LauncherListener implements Listener {
     // ---------- attacco potenziato: shift + click destro con il lanciapalle in mano ----------
 
     private final Map<UUID, Integer> lastPower = new HashMap<>();
-
-    /** Attacco potenziato: UN solo colpo della palla scelta, molto piu forte, senza consumare palle. */
-    private void firePower(Player player, LauncherItem li) {
-        if (plugin.getPower() == null || !plugin.getPower().tryUse(player)) {
-            return;
-        }
-        lastPower.put(player.getUniqueId(), Bukkit.getCurrentTick());
-        var c = plugin.getConfig();
-        String type = plugin.getAmmo().getSelected(player, li.ammoType());
-        double multiplier = Math.max(0.1, c.getDouble("power-attack.damage-multiplier", 10.0));
-        plugin.send(player, "power-used");
-        plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.use");
-        launchOnce(player, li, type, multiplier, true);
-    }
 
     // ---------- mira: shift = modello 2, rilasciato = modello 1 ----------
 

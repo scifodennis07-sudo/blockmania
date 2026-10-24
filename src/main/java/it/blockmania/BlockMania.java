@@ -48,6 +48,7 @@ public final class BlockMania extends JavaPlugin {
     private Power power;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
+    private MineTemplates mineTemplates;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
     private final Map<Character, int[]> palette = new HashMap<>();
@@ -89,6 +90,7 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(upgrades, this);
         getServer().getPluginManager().registerEvents(shops, this);
         blockEdit = new BlockEdit(this);
+        mineTemplates = new MineTemplates(this);
         getServer().getPluginManager().registerEvents(blockEdit, this);
         itemsGui = new ItemsGui(this);
         getServer().getPluginManager().registerEvents(itemsGui, this);
@@ -300,6 +302,10 @@ public final class BlockMania extends JavaPlugin {
 
     public UpgradeManager getUpgrades() {
         return upgrades;
+    }
+
+    public MineTemplates getMineTemplates() {
+        return mineTemplates;
     }
 
     public BlockEdit getBlockEdit() {

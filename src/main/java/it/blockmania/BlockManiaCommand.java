@@ -116,6 +116,7 @@ public final class BlockManiaCommand implements TabExecutor {
             case "limits" -> limits(sender, args);
             case "power" -> power(sender, args);
             case "stamina" -> stamina(sender, args);
+            case "mines" -> minesCmd(sender, args);
             case "guidebug" -> {
                 if (!sender.hasPermission("blockmania.reload")) {
                     plugin.sendCommand(sender, "no-permission");
@@ -198,26 +199,101 @@ public final class BlockManiaCommand implements TabExecutor {
             plugin.sendCommand(sender, "no-permission");
             return;
         }
-        if (args.length < 2 || !List.of("give", "see", "reset").contains(args[1].toLowerCase(Locale.ROOT))) {
+        if (args.length < 2 || !List.of("give", "see", "reset", "set", "uses").contains(args[1].toLowerCase(Locale.ROOT))) {
             plugin.sendCommand(sender, "power-usage");
             return;
         }
-        Player target = resolveTarget(sender, args, 2, "power");
+        String action = args[1].toLowerCase(Locale.ROOT);
+        boolean needsNumber = action.equals("set") || action.equals("uses");
+        int number = 0;
+        if (needsNumber) {
+            try {
+                number = Integer.parseInt(args.length > 2 ? args[2] : "");
+            } catch (NumberFormatException ex) {
+                plugin.sendCommand(sender, "power-usage");
+                return;
+            }
+            if (number < 0 || (action.equals("uses") && number < 1)) {
+                plugin.sendCommand(sender, "power-usage");
+                return;
+            }
+        }
+        Player target = resolveTarget(sender, args, needsNumber ? 3 : 2, "power");
         if (target == null) {
             return;
         }
         Power power = plugin.getPower();
-        switch (args[1].toLowerCase(Locale.ROOT)) {
+        switch (action) {
             case "give" -> power.giveCharge(target);
             case "reset" -> power.resetAll(target);
+            case "set" -> power.setChargesTo(target, number);
+            case "uses" -> power.setUses(target, number);
             default -> {
             }
         }
         plugin.sendCommand(sender, "power-state", "%player%", target.getName(),
                 "%charges%", String.valueOf(power.charges(target)),
+                "%uses%", String.valueOf(power.uses(target)),
                 "%hits%", String.valueOf(power.progress(target)),
                 "%target%", String.valueOf(power.target(target)),
                 "%stamina%", String.valueOf((int) Math.round(power.stamina(target) * 100)));
+    }
+
+    // ---------- /blockmania mines <wand|pos1|pos2|set|replace|remove|undo|setmines|changemines|editmines|list> ----------
+
+    private static final List<String> MINES_EDIT = List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo");
+    private static final List<String> MINES_ACTIONS = List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo",
+            "setmines", "changemines", "editmines", "list");
+
+    private void minesCmd(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.build")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        if (args.length < 2 || !MINES_ACTIONS.contains(args[1].toLowerCase(Locale.ROOT))) {
+            plugin.sendCommand(sender, "mines-usage");
+            return;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (MINES_EDIT.contains(sub)) {
+            // stessi comandi di /bm block: wand, pos1, pos2, set, replace, remove, undo
+            String[] forward = new String[args.length];
+            forward[0] = "block";
+            System.arraycopy(args, 1, forward, 1, args.length - 1);
+            block(sender, forward);
+            return;
+        }
+        if (sub.equals("list")) {
+            List<String> lines = plugin.getMineTemplates().describe();
+            if (lines.isEmpty()) {
+                plugin.sendCommand(sender, "mine-tpl-none");
+            }
+            for (String line : lines) {
+                sender.sendMessage(plugin.text(line));
+            }
+            return;
+        }
+        if (!(sender instanceof Player player)) {
+            plugin.sendCommand(sender, "player-only");
+            return;
+        }
+        MineTemplates tpl = plugin.getMineTemplates();
+        if (sub.equals("editmines") && args.length >= 3 && args[2].equalsIgnoreCase("save")) {
+            tpl.saveEdit(player);
+            return;
+        }
+        int number;
+        try {
+            number = Integer.parseInt(args.length > 2 ? args[2] : "");
+        } catch (NumberFormatException ex) {
+            plugin.sendCommand(sender, "mines-usage");
+            return;
+        }
+        switch (sub) {
+            case "setmines" -> tpl.setMines(player, number);
+            case "changemines" -> tpl.changeMines(player, number);
+            default -> tpl.editMines(player, number);
+        }
     }
 
     // ---------- /blockmania stamina <see|refill|empty|set|infinite|locked|normal> [giocatore] ----------
@@ -807,6 +883,9 @@ public final class BlockManiaCommand implements TabExecutor {
             if (sender.hasPermission("blockmania.limits")) {
                 result.add("limits");
             }
+            if (sender.hasPermission("blockmania.build")) {
+                result.add("mines");
+            }
             if (sender.hasPermission("blockmania.reload")) {
                 result.add("bgtest");
                 result.add("guidebug");
@@ -832,9 +911,27 @@ public final class BlockManiaCommand implements TabExecutor {
                 }
             } else if (sub.equals("power") && canStats) {
                 if (args.length == 2) {
-                    result.addAll(List.of("give", "see", "reset"));
-                } else if (args.length == 3) {
+                    result.addAll(List.of("give", "see", "reset", "set", "uses"));
+                } else if (args.length == 3 && (args[1].equalsIgnoreCase("set") || args[1].equalsIgnoreCase("uses"))) {
+                    result.addAll(List.of("1", "2", "3", "5", "10"));
+                } else if (args.length == 3 || args.length == 4) {
                     addPlayers(result);
+                }
+            } else if (sub.equals("mines") && sender.hasPermission("blockmania.build")) {
+                if (args.length == 2) {
+                    result.addAll(MINES_ACTIONS);
+                } else if (MINES_EDIT.contains(args[1].toLowerCase(Locale.ROOT))) {
+                    String[] forward = new String[args.length];
+                    forward[0] = "block";
+                    System.arraycopy(args, 1, forward, 1, args.length - 1);
+                    blockTab(sender, forward, result);
+                } else if (args.length == 3) {
+                    for (int i = 1; i <= plugin.getMineTemplates().mineCount(); i++) {
+                        result.add(String.valueOf(i));
+                    }
+                    if (args[1].equalsIgnoreCase("editmines")) {
+                        result.add("save");
+                    }
                 }
             } else if (sub.equals("stamina") && canStats) {
                 if (args.length == 2) {
