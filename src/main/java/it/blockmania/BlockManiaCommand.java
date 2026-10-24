@@ -239,11 +239,11 @@ public final class BlockManiaCommand implements TabExecutor {
                 "%stamina%", String.valueOf((int) Math.round(power.stamina(target) * 100)));
     }
 
-    // ---------- /blockmania mines <wand|pos1|pos2|set|replace|remove|undo|setmines|changemines|editmines|list> ----------
+    // ---------- /blockmania mines <wand|pos1|pos2|set|replace|remove|undo|createmines|deletemines|changemines|editmines|area|list> ----------
 
     private static final List<String> MINES_EDIT = List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo");
     private static final List<String> MINES_ACTIONS = List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo",
-            "setmines", "changemines", "editmines", "list");
+            "createmines", "deletemines", "changemines", "editmines", "area", "list");
 
     private void minesCmd(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.build")) {
@@ -278,6 +278,19 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         MineTemplates tpl = plugin.getMineTemplates();
+        if (sub.equals("area")) {
+            Integer target = null;
+            if (args.length > 2) {
+                try {
+                    target = Integer.parseInt(args[2]);
+                } catch (NumberFormatException ex) {
+                    plugin.sendCommand(sender, "mines-usage");
+                    return;
+                }
+            }
+            tpl.area(player, target);
+            return;
+        }
         int number;
         try {
             number = Integer.parseInt(args.length > 2 ? args[2] : "");
@@ -286,7 +299,8 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         switch (sub) {
-            case "setmines" -> tpl.setMines(player, number);
+            case "createmines" -> tpl.createMines(player, number);
+            case "deletemines" -> tpl.deleteMines(player, number);
             case "changemines" -> tpl.changeMines(player, number);
             default -> tpl.editMines(player, number);
         }

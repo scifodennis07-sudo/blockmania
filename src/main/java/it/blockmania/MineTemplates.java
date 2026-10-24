@@ -33,6 +33,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,7 +49,7 @@ import java.util.zip.GZIPOutputStream;
  * Miniere: la costruzione ufficiale di ogni miniera N (salvata su file dallo staff) e le miniere
  * personali dei giocatori (una copia a testa, in un mondo vuoto dedicato).
  *
- * - Staff: /bm mines setmines N (la selezione diventa la miniera), changemines N (la sostituisce),
+ * - Staff: /bm mines createmines N (la selezione diventa la miniera), changemines N (la sostituisce),
  *   editmines N (ti porta li' per modificarla: shift + F salva, shift + Q annulla).
  * - Player: cliccando una miniera in /mines entra nella sua copia personale. I blocchi che ha rotto
  *   restano rotti; le modifiche dello staff si applicano ai blocchi che non ha rotto.
@@ -82,6 +83,7 @@ public final class MineTemplates implements Listener {
         boolean loading;        // la sto preparando adesso
         boolean unloadQueued;   // e' in coda per essere tolta dal mondo
         boolean unloadStarted;
+        boolean deleted;        // la miniera e' stata eliminata: la copia sparisce senza salvarsi
         long lastActive;
 
         Instance(UUID owner, int mine) {
@@ -102,6 +104,29 @@ public final class MineTemplates implements Listener {
         long total;
         long cursor;
         Runnable done;
+        boolean started;   // controlli iniziali fatti
+        boolean preparing; // sto caricando i chunk
+        boolean ready;     // chunk pronti
+        int pending;       // chunk ancora da caricare
+        boolean force;     // svuota anche se qualcuno e' dentro / non e' passato il tempo
+        final List<long[]> tickets = new ArrayList<>();
+    }
+
+    /** Zona di una miniera ufficiale (dove lo staff la costruisce e la modifica). */
+    private record Region(int mine, String world, int ox, int oy, int oz, int dx, int dy, int dz) {
+        boolean contains(Block b, int margin) {
+            return b.getWorld().getName().equals(world)
+                    && b.getX() >= ox - margin && b.getX() < ox + dx + margin
+                    && b.getY() >= oy - margin && b.getY() < oy + dy + margin
+                    && b.getZ() >= oz - margin && b.getZ() < oz + dz + margin;
+        }
+
+        boolean contains(Location l, int margin) {
+            return l.getWorld() != null && l.getWorld().getName().equals(world)
+                    && l.getX() >= ox - margin && l.getX() < ox + dx + margin
+                    && l.getY() >= oy - margin && l.getY() < oy + dy + margin
+                    && l.getZ() >= oz - margin && l.getZ() < oz + dz + margin;
+        }
     }
 
     /** Una modifica della miniera ufficiale in corso da parte di uno staffer. */
@@ -109,13 +134,15 @@ public final class MineTemplates implements Listener {
         final int mine;
         final Location back;
         final Info info;
+        final Region region;
         boolean dirty;
         BossBar bar;
 
-        Session(int mine, Location back, Info info) {
+        Session(int mine, Location back, Info info, Region region) {
             this.mine = mine;
             this.back = back;
             this.info = info;
+            this.region = region;
         }
     }
 
@@ -134,6 +161,7 @@ public final class MineTemplates implements Listener {
     private BukkitTask jobTask;
     private BukkitTask maintenance;
     private World minesWorld;
+    private World areaWorld;
 
     public MineTemplates(BlockMania plugin) {
         this.plugin = plugin;
@@ -148,6 +176,9 @@ public final class MineTemplates implements Listener {
         // il mondo delle miniere si crea/carica all'avvio (la creazione blocca il server: meglio ora che con un player dentro)
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             world();
+            if (new File(Bukkit.getWorldContainer(), areaName()).isDirectory()) {
+                areaWorld(true);
+            }
             scanLoaded();
         }, 40L);
         maintenance = Bukkit.getScheduler().runTaskTimer(plugin, this::maintain, 100L, 100L);
@@ -359,6 +390,7 @@ public final class MineTemplates implements Listener {
             return false;
         }
         templateCache.remove(mine);
+        regions = null;
         return tmp.renameTo(target);
     }
 
@@ -451,8 +483,8 @@ public final class MineTemplates implements Listener {
         return true;
     }
 
-    /** /bm mines setmines N: la zona scelta diventa la miniera N (non deve esistere gia'). */
-    public void setMines(Player player, int mine) {
+    /** /bm mines createmines N: la zona scelta diventa la miniera N (non deve esistere gia'). */
+    public void createMines(Player player, int mine) {
         if (!validNumber(player, mine)) {
             return;
         }
@@ -466,6 +498,7 @@ public final class MineTemplates implements Listener {
         }
         capture(player, sel, mine, spawnOf(player, sel), () -> {
             Info info = info(mine);
+            pasteArea(mine, 0, 0, 0);
             Player p = Bukkit.getPlayer(player.getUniqueId());
             if (p != null) {
                 plugin.send(p, "mine-tpl-saved", "%mine%", String.valueOf(mine),
@@ -487,8 +520,14 @@ public final class MineTemplates implements Listener {
         if (sel == null) {
             return;
         }
+        Info before = info(mine);
         capture(player, sel, mine, spawnOf(player, sel), () -> {
             Info info = info(mine);
+            if (before == null) {
+                pasteArea(mine, 0, 0, 0);
+            } else {
+                pasteArea(mine, before.dx(), before.dy(), before.dz());
+            }
             Player p = Bukkit.getPlayer(player.getUniqueId());
             if (p != null) {
                 plugin.send(p, "mine-tpl-changed", "%mine%", String.valueOf(mine),
@@ -497,12 +536,244 @@ public final class MineTemplates implements Listener {
         });
     }
 
+    /** /bm mines deletemines N: elimina la miniera ufficiale N e tutte le copie dei player. */
+    public void deleteMines(Player player, int mine) {
+        if (!validNumber(player, mine)) {
+            return;
+        }
+        Info old = info(mine);
+        if (old == null) {
+            plugin.sendCommand(player, "mine-tpl-missing", "%mine%", String.valueOf(mine));
+            return;
+        }
+        Region region = regionOf(mine, old);
+        // chi la stava modificando esce dalla modifica
+        for (Map.Entry<UUID, Session> e : new ArrayList<>(sessions.entrySet())) {
+            if (e.getValue().mine == mine) {
+                Player p = Bukkit.getPlayer(e.getKey());
+                sessions.remove(e.getKey());
+                if (p != null) {
+                    plugin.getBars().remove(p, "edit");
+                    if (e.getValue().back != null && e.getValue().back.getWorld() != null) {
+                        p.teleport(e.getValue().back);
+                    }
+                }
+            }
+        }
+        file(mine).delete();
+        templateCache.remove(mine);
+        regions = null;
+        // copie dei player: tolte dal mondo, file cancellati
+        World w = minesWorld;
+        int copies = 0;
+        for (Instance inst : new ArrayList<>(instances.values())) {
+            if (inst.mine != mine) {
+                continue;
+            }
+            copies++;
+            inst.deleted = true;
+            Player owner = Bukkit.getPlayer(inst.owner);
+            if (owner != null && occupied(inst)) {
+                kickOut(owner);
+            }
+            if (inst.loaded && !inst.unloadStarted && !inst.unloadQueued && w != null) {
+                queueUnload(inst, w, true);
+            } else if (!inst.loaded && !inst.loading) {
+                instanceFile(inst.owner, mine).delete();
+                instances.remove(inst.owner + "_" + mine);
+            }
+        }
+        File[] files = instancesDir.listFiles((d, name) -> name.endsWith("_" + mine + ".dat"));
+        if (files != null) {
+            for (File f : files) {
+                String id = f.getName().substring(0, f.getName().length() - 4 - String.valueOf(mine).length() - 1);
+                if (!instances.containsKey(id + "_" + mine) && f.delete()) {
+                    copies++;
+                }
+            }
+        }
+        // anche dall'area
+        World aw = areaWorld(false);
+        if (aw != null) {
+            Job job = new Job();
+            job.t = emptyTemplate();
+            job.world = aw;
+            job.ox = region.ox();
+            job.oy = region.oy();
+            job.oz = region.oz();
+            job.dx = Math.max(1, old.dx());
+            job.dy = Math.max(1, old.dy());
+            job.dz = Math.max(1, old.dz());
+            job.total = (long) job.dx * job.dy * job.dz;
+            enqueue(job);
+        }
+        plugin.send(player, "mine-tpl-deleted", "%mine%", String.valueOf(mine), "%count%", String.valueOf(copies));
+    }
+
+    private void kickOut(Player p) {
+        String raw = p.getPersistentDataContainer().get(returnKey, PersistentDataType.STRING);
+        Location back = raw == null ? null : decode(raw);
+        if (back == null || back.getWorld() == p.getWorld()) {
+            back = Bukkit.getWorlds().get(0).getSpawnLocation();
+        }
+        p.teleport(back);
+    }
+
     // ------------------------------------------------------------------
-    //  Modifica della miniera ufficiale (editmines)
+    //  Area: il mondo staff dove stanno tutte le miniere ufficiali insieme
     // ------------------------------------------------------------------
 
-    private Location referenceSpawn(Info info, World world) {
-        return new Location(world, info.ox() + info.sx(), info.oy() + info.sy(), info.oz() + info.sz(), info.yaw(), info.pitch());
+    private String areaName() {
+        return plugin.getConfig().getString("mines.area.world", "blockmania_area");
+    }
+
+    private int areaSpacing() {
+        return Math.max(64, plugin.getConfig().getInt("mines.area.spacing", 256));
+    }
+
+    private int areaX(int mine) {
+        return (mine - 1) * areaSpacing();
+    }
+
+    private World areaWorld(boolean create) {
+        if (areaWorld != null) {
+            return areaWorld;
+        }
+        World w = Bukkit.getWorld(areaName());
+        if (w == null && create) {
+            w = makeWorld(areaName());
+        }
+        if (w != null) {
+            tune(w);
+        }
+        areaWorld = w;
+        return w;
+    }
+
+    /** Scrive la miniera ufficiale nell'area (se l'area esiste). */
+    private void pasteArea(int mine, int odx, int ody, int odz) {
+        World aw = areaWorld(false);
+        if (aw == null) {
+            return;
+        }
+        Template t = load(mine);
+        if (t == null) {
+            return;
+        }
+        Job job = new Job();
+        job.t = t;
+        job.world = aw;
+        job.ox = areaX(mine);
+        job.oy = baseY();
+        job.oz = 0;
+        job.dx = Math.max(t.info.dx(), odx);
+        job.dy = Math.max(t.info.dy(), ody);
+        job.dz = Math.max(t.info.dz(), odz);
+        job.total = (long) job.dx * job.dy * job.dz;
+        enqueue(job);
+    }
+
+    /** /bm mines area [N]: la prima volta crea il mondo con tutte le miniere, poi ti ci porta. */
+    public void area(Player player, Integer mine) {
+        if (areaWorld(false) != null) {
+            goArea(player, mine);
+            return;
+        }
+        plugin.send(player, "mine-area-creating");
+        UUID id = player.getUniqueId();
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            World w = areaWorld(true);
+            Player p = Bukkit.getPlayer(id);
+            if (w == null) {
+                if (p != null) {
+                    plugin.send(p, "mine-tpl-error");
+                }
+                return;
+            }
+            regions = null;
+            int n = 0;
+            for (int i = 1; i <= mineCount(); i++) {
+                if (exists(i)) {
+                    pasteArea(i, 0, 0, 0);
+                    n++;
+                }
+            }
+            if (p != null) {
+                plugin.send(p, "mine-area-created", "%count%", String.valueOf(n));
+                goArea(p, mine);
+            }
+        }, 2L);
+    }
+
+    private void goArea(Player player, Integer mine) {
+        World aw = areaWorld(false);
+        int target = -1;
+        if (mine != null) {
+            target = mine;
+        } else {
+            for (int i = 1; i <= mineCount(); i++) {
+                if (exists(i)) {
+                    target = i;
+                    break;
+                }
+            }
+        }
+        if (aw == null || target < 1) {
+            plugin.send(player, "mine-area-empty");
+            return;
+        }
+        Info info = info(target);
+        if (info == null) {
+            plugin.sendCommand(player, "mine-tpl-missing", "%mine%", String.valueOf(target));
+            return;
+        }
+        if (player.getWorld() != aw) {
+            player.getPersistentDataContainer().set(returnKey, PersistentDataType.STRING, encode(player.getLocation()));
+        }
+        player.teleportAsync(referenceSpawn(regionOf(target, info), info, aw));
+        plugin.send(player, "mine-area-go", "%mine%", String.valueOf(target));
+    }
+
+    // ------------------------------------------------------------------
+    //  Modifica della miniera ufficiale (editmines e modifica automatica)
+    // ------------------------------------------------------------------
+
+    private Map<Integer, Region> regions;
+
+    /** Dove vive la miniera ufficiale: nell'area se esiste, altrimenti dove e' stata selezionata. */
+    private Region regionOf(int mine, Info info) {
+        World aw = areaWorld(false);
+        if (aw != null) {
+            return new Region(mine, aw.getName(), areaX(mine), baseY(), 0, info.dx(), info.dy(), info.dz());
+        }
+        return new Region(mine, info.world(), info.ox(), info.oy(), info.oz(), info.dx(), info.dy(), info.dz());
+    }
+
+    private Collection<Region> regions() {
+        if (regions == null) {
+            Map<Integer, Region> map = new HashMap<>();
+            for (int i = 1; i <= mineCount(); i++) {
+                Info in = info(i);
+                if (in != null) {
+                    map.put(i, regionOf(i, in));
+                }
+            }
+            regions = map;
+        }
+        return regions.values();
+    }
+
+    private Region regionAt(Block block, int margin) {
+        for (Region r : regions()) {
+            if (r.contains(block, margin)) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private Location referenceSpawn(Region r, Info info, World world) {
+        return new Location(world, r.ox() + info.sx(), r.oy() + info.sy(), r.oz() + info.sz(), info.yaw(), info.pitch());
     }
 
     /** /bm mines editmines N: ti porta alla costruzione ufficiale. Shift + F salva, shift + Q annulla. */
@@ -515,9 +786,10 @@ public final class MineTemplates implements Listener {
             plugin.sendCommand(player, "mine-tpl-missing", "%mine%", String.valueOf(mine));
             return;
         }
-        World world = Bukkit.getWorld(info.world());
+        Region region = regionOf(mine, info);
+        World world = Bukkit.getWorld(region.world());
         if (world == null) {
-            plugin.sendCommand(player, "mine-tpl-noworld", "%world%", info.world());
+            plugin.sendCommand(player, "mine-tpl-noworld", "%world%", region.world());
             return;
         }
         Session old = sessions.get(player.getUniqueId());
@@ -525,8 +797,8 @@ public final class MineTemplates implements Listener {
         if (old != null && old.bar != null) {
             plugin.getBars().remove(player, "edit");
         }
-        sessions.put(player.getUniqueId(), new Session(mine, back, info));
-        player.teleport(referenceSpawn(info, world));
+        sessions.put(player.getUniqueId(), new Session(mine, back, info, region));
+        player.teleportAsync(referenceSpawn(region, info, world));
         plugin.send(player, "mine-edit-start", "%mine%", String.valueOf(mine));
     }
 
@@ -550,21 +822,53 @@ public final class MineTemplates implements Listener {
         plugin.getBars().set(player, "edit", s.bar, 90, false);
     }
 
-    /** Un blocco e' cambiato: se cade nella zona di una miniera in modifica, lo staffer vede la bossbar. */
+    /** Sessione di modifica che parte da sola: lo staffer ha cambiato qualcosa nella miniera ufficiale. */
+    private Session autoSession(Player player, Region r) {
+        Info info = info(r.mine());
+        if (info == null) {
+            return null;
+        }
+        Session s = new Session(r.mine(), null, info, r);
+        sessions.put(player.getUniqueId(), s);
+        return s;
+    }
+
+    /** Un blocco e' cambiato (senza sapere da chi): le modifiche in corso nella sua zona mostrano la bossbar. */
     public void touch(Block block) {
-        if (sessions.isEmpty() || block == null) {
+        touch(block, null);
+    }
+
+    /** Un blocco e' cambiato: dentro una miniera ufficiale lo staffer vede subito la bossbar salva/annulla. */
+    public void touch(Block block, Player player) {
+        if (block == null) {
+            return;
+        }
+        if (player != null) {
+            Session mine = sessions.get(player.getUniqueId());
+            if (mine != null) {
+                if (mine.region.contains(block, 1)) {
+                    markDirty(mine, player);
+                }
+                return;
+            }
+            if (!player.hasPermission("blockmania.build")) {
+                return;
+            }
+            Region r = regionAt(block, 1);
+            if (r != null) {
+                Session s = autoSession(player, r);
+                if (s != null) {
+                    markDirty(s, player);
+                }
+            }
+            return;
+        }
+        if (sessions.isEmpty()) {
             return;
         }
         for (Map.Entry<UUID, Session> e : sessions.entrySet()) {
             Session s = e.getValue();
-            Info i = s.info;
-            if (!block.getWorld().getName().equals(i.world())) {
-                continue;
-            }
-            int x = block.getX(), y = block.getY(), z = block.getZ();
-            // un po' di margine: si puo' costruire anche appena fuori dalla zona salvata
-            if (x >= i.ox() - 1 && x <= i.ox() + i.dx() && y >= i.oy() - 1 && y <= i.oy() + i.dy()
-                    && z >= i.oz() - 1 && z <= i.oz() + i.dz()) {
+            if (s.region.contains(block, 1)) {
                 Player p = Bukkit.getPlayer(e.getKey());
                 if (p != null) {
                     markDirty(s, p);
@@ -576,19 +880,30 @@ public final class MineTemplates implements Listener {
     /** Lo staffer ha fatto una modifica in blocco (set / replace / remove / undo). */
     public void touch(Player player) {
         Session s = sessions.get(player.getUniqueId());
+        if (s == null) {
+            if (!player.hasPermission("blockmania.build")) {
+                return;
+            }
+            for (Region r : regions()) {
+                if (r.contains(player.getLocation(), 12)) {
+                    s = autoSession(player, r);
+                    break;
+                }
+            }
+        }
         if (s != null) {
             markDirty(s, player);
         }
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
-        touch(event.getBlock());
+        touch(event.getBlock(), event.getPlayer());
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
-        touch(event.getBlock());
+        touch(event.getBlock(), event.getPlayer());
     }
 
     /** shift + F: salva le modifiche della miniera ufficiale. */
@@ -628,13 +943,13 @@ public final class MineTemplates implements Listener {
             plugin.send(player, "mine-edit-nochange");
             return;
         }
-        World world = Bukkit.getWorld(s.info.world());
+        World world = Bukkit.getWorld(s.region.world());
         if (world == null) {
-            plugin.sendCommand(player, "mine-tpl-noworld", "%world%", s.info.world());
+            plugin.sendCommand(player, "mine-tpl-noworld", "%world%", s.region.world());
             return;
         }
-        BlockEdit.Selection sel = new BlockEdit.Selection(world, s.info.ox(), s.info.oy(), s.info.oz(),
-                s.info.dx(), s.info.dy(), s.info.dz());
+        Region r = s.region;
+        BlockEdit.Selection sel = new BlockEdit.Selection(world, r.ox(), r.oy(), r.oz(), r.dx(), r.dy(), r.dz());
         double[] spawn = {s.info.sx(), s.info.sy(), s.info.sz(), s.info.yaw(), s.info.pitch()};
         capture(player, sel, s.mine, spawn, () -> {
             Player p = Bukkit.getPlayer(player.getUniqueId());
@@ -643,6 +958,8 @@ public final class MineTemplates implements Listener {
             }
             Info now = info(s.mine);
             endBar(p, s);
+            sessions.remove(p.getUniqueId()); // finita: la prossima modifica ne apre una nuova
+            regions = null;
             plugin.send(p, "mine-edit-saved", "%mine%", String.valueOf(s.mine),
                     "%count%", String.valueOf(now == null ? 0 : now.count()));
         });
@@ -653,17 +970,17 @@ public final class MineTemplates implements Listener {
         boolean wasDirty = s.dirty;
         endBar(player, s);
         Template t = wasDirty ? load(s.mine) : null;
-        World world = Bukkit.getWorld(s.info.world());
+        World world = Bukkit.getWorld(s.region.world());
         if (t != null && world != null) {
             Job job = new Job();
             job.t = t;
             job.world = world;
-            job.ox = t.info.ox();
-            job.oy = t.info.oy();
-            job.oz = t.info.oz();
-            job.dx = t.info.dx();
-            job.dy = t.info.dy();
-            job.dz = t.info.dz();
+            job.ox = s.region.ox();
+            job.oy = s.region.oy();
+            job.oz = s.region.oz();
+            job.dx = Math.max(t.info.dx(), s.region.dx());
+            job.dy = Math.max(t.info.dy(), s.region.dy());
+            job.dz = Math.max(t.info.dz(), s.region.dz());
             job.total = (long) job.dx * job.dy * job.dz;
             enqueue(job);
         }
@@ -687,37 +1004,45 @@ public final class MineTemplates implements Listener {
         }
         World w = Bukkit.getWorld(worldName());
         if (w == null) {
-            WorldCreator creator = new WorldCreator(worldName());
-            creator.generator(new ChunkGenerator() {
-                @Override
-                public Location getFixedSpawnLocation(World world, Random random) {
-                    return new Location(world, 0, 100, 0);
-                }
-            });
-            creator.generateStructures(false);
-            try {
-                // niente chunk di spawn tenuti in memoria: il mondo e' vuoto, non servono
-                creator.getClass().getMethod("keepSpawnLoaded", net.kyori.adventure.util.TriState.class)
-                        .invoke(creator, net.kyori.adventure.util.TriState.FALSE);
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-                // versione senza questa opzione: va bene lo stesso
-            }
-            w = creator.createWorld();
+            w = makeWorld(worldName());
         }
         if (w != null) {
-            try {
-                w.setSpawnFlags(false, false);
-                w.setGameRuleValue("spawnChunkRadius", "0");
-                w.setGameRuleValue("doDaylightCycle", "false");
-                w.setGameRuleValue("doWeatherCycle", "false");
-                w.setGameRuleValue("doMobSpawning", "false");
-                w.setTime(6000);
-            } catch (RuntimeException ignored) {
-                // regole non disponibili: non e' grave
-            }
+            tune(w);
         }
         minesWorld = w;
         return w;
+    }
+
+    /** Crea un mondo vuoto (nessun terreno, nessun chunk di spawn tenuto in memoria). */
+    private World makeWorld(String name) {
+        WorldCreator creator = new WorldCreator(name);
+        creator.generator(new ChunkGenerator() {
+            @Override
+            public Location getFixedSpawnLocation(World world, Random random) {
+                return new Location(world, 0, 100, 0);
+            }
+        });
+        creator.generateStructures(false);
+        try {
+            creator.getClass().getMethod("keepSpawnLoaded", net.kyori.adventure.util.TriState.class)
+                    .invoke(creator, net.kyori.adventure.util.TriState.FALSE);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // versione senza questa opzione: va bene lo stesso
+        }
+        return creator.createWorld();
+    }
+
+    private void tune(World w) {
+        try {
+            w.setSpawnFlags(false, false);
+            w.setGameRuleValue("spawnChunkRadius", "0");
+            w.setGameRuleValue("doDaylightCycle", "false");
+            w.setGameRuleValue("doWeatherCycle", "false");
+            w.setGameRuleValue("doMobSpawning", "false");
+            w.setTime(6000);
+        } catch (RuntimeException ignored) {
+            // regole non disponibili: non e' grave
+        }
     }
 
     private int spacingX() {
@@ -757,11 +1082,16 @@ public final class MineTemplates implements Listener {
             return idx;
         }
         int next = 0;
-        for (int v : plots.values()) {
-            next = Math.max(next, v + 1);
+        while (plotOwners.containsKey(next)) {
+            next++; // il primo posto libero: i posti si riusano
         }
         plots.put(id, next);
         plotOwners.put(next, id);
+        savePlots();
+        return next;
+    }
+
+    private void savePlots() {
         if (!dir.isDirectory()) {
             dir.mkdirs();
         }
@@ -774,7 +1104,39 @@ public final class MineTemplates implements Listener {
         } catch (IOException ex) {
             plugin.getLogger().warning("Impossibile salvare plots.yml: " + ex.getMessage());
         }
-        return next;
+    }
+
+    /** Il posto in /mines-world torna libero quando il player non ha nessuna copia scritta nel mondo. */
+    private void releaseSlots() {
+        if (plots.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (UUID id : new ArrayList<>(plots.keySet())) {
+            boolean used = false;
+            for (Instance inst : instances.values()) {
+                if (inst.owner.equals(id) && (inst.loaded || inst.loading || inst.unloadQueued || inst.unloadStarted)) {
+                    used = true;
+                    break;
+                }
+            }
+            if (!used) {
+                Player p = Bukkit.getPlayer(id);
+                if (p != null && minesWorld != null && p.getWorld() == minesWorld) {
+                    used = true;
+                }
+            }
+            if (!used) {
+                Integer idx = plots.remove(id);
+                if (idx != null) {
+                    plotOwners.remove(idx);
+                }
+                changed = true;
+            }
+        }
+        if (changed) {
+            savePlots();
+        }
     }
 
     private int plotX(UUID id) {
@@ -876,6 +1238,11 @@ public final class MineTemplates implements Listener {
     }
 
     private void writeInstance(Instance inst) {
+        if (inst.deleted) {
+            instanceFile(inst.owner, inst.mine).delete();
+            inst.dirty = false;
+            return;
+        }
         if (!instancesDir.isDirectory() && !instancesDir.mkdirs()) {
             return;
         }
@@ -914,8 +1281,8 @@ public final class MineTemplates implements Listener {
     }
 
     /** Un blocco custom e' stato distrutto: se e' dentro una miniera personale, resta rotto per sempre. */
-    public void onBroken(Block block) {
-        touch(block);
+    public void onBroken(Block block, Player breaker) {
+        touch(block, breaker);
         World w = minesWorld != null ? minesWorld : Bukkit.getWorld(worldName());
         if (w == null || block.getWorld() != w) {
             return;
@@ -1000,7 +1367,7 @@ public final class MineTemplates implements Listener {
             inst.loading = false;
             inst.lastActive = System.currentTimeMillis();
             Player p = Bukkit.getPlayer(id);
-            if (p != null) {
+            if (p != null && !inst.deleted) {
                 teleportIn(p, t, mine);
             }
         };
@@ -1113,20 +1480,31 @@ public final class MineTemplates implements Listener {
             return;
         }
         Instance inst = job.instance;
-        if (job.clear && job.cursor == 0) {
-            // prima di svuotare controllo che nessuno sia tornato nella copia
-            long idle = System.currentTimeMillis() - (inst == null ? 0 : inst.lastActive);
-            if (inst == null || occupied(inst) || idle < unloadMillis()) {
-                if (inst != null) {
-                    inst.unloadQueued = false;
+        if (!job.started) {
+            job.started = true;
+            if (job.clear) {
+                // prima di svuotare controllo che nessuno sia tornato nella copia
+                long idle = System.currentTimeMillis() - (inst == null ? 0 : inst.lastActive);
+                if (inst == null || (!job.force && (occupied(inst) || idle < unloadMillis()))) {
+                    if (inst != null) {
+                        inst.unloadQueued = false;
+                    }
+                    jobs.poll();
+                    return;
                 }
-                jobs.poll();
-                return;
+                inst.unloadStarted = true;
+                inst.loaded = false; // salvato subito: se il server si ferma a meta' la copia non risulta piu' pronta
+                inst.dirty = true;
+                writeInstance(inst);
             }
-            inst.unloadStarted = true;
-            inst.loaded = false; // salvato subito: se il server si ferma a meta' la copia non risulta piu' pronta
-            inst.dirty = true;
-            writeInstance(inst);
+        }
+        if (!job.ready) {
+            // i chunk si caricano in parallelo (senza bloccare il server) e il lavoro parte quando sono tutti pronti
+            if (!job.preparing) {
+                job.preparing = true;
+                prepareChunks(job);
+            }
+            return;
         }
         int budget = Math.max(500, plugin.getConfig().getInt("mines.paste-per-tick", 6000));
         // se il server rallenta, la scrittura rallenta con lui
@@ -1146,7 +1524,7 @@ public final class MineTemplates implements Listener {
         long end = Math.min(job.total, job.cursor + budget);
         long i = job.cursor;
         for (; i < end; i++) {
-            if ((i & 255) == 0 && System.nanoTime() > deadline) {
+            if ((i & 63) == 0 && System.nanoTime() > deadline) {
                 break;
             }
             int x = (int) (i % job.dx);
@@ -1246,7 +1624,57 @@ public final class MineTemplates implements Listener {
             if (job.done != null) {
                 job.done.run();
             }
+            releaseChunks(job);
+            if (inst != null && inst.deleted && !job.clear) {
+                queueUnload(inst, job.world, true); // eliminata mentre si caricava: si toglie subito
+            }
         }
+    }
+
+    /** Chiede al server i chunk della zona (in modo asincrono) e li tiene caricati finche' il lavoro non finisce. */
+    private void prepareChunks(Job job) {
+        int minCx = Math.floorDiv(job.ox, 16);
+        int maxCx = Math.floorDiv(job.ox + Math.max(1, job.dx) - 1, 16);
+        int minCz = Math.floorDiv(job.oz, 16);
+        int maxCz = Math.floorDiv(job.oz + Math.max(1, job.dz) - 1, 16);
+        int count = (maxCx - minCx + 1) * (maxCz - minCz + 1);
+        if (count <= 0 || count > 4096) {
+            job.ready = true;
+            return;
+        }
+        job.pending = count;
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                final int fx = cx;
+                final int fz = cz;
+                try {
+                    job.world.addPluginChunkTicket(fx, fz, plugin);
+                    job.tickets.add(new long[]{fx, fz});
+                    job.world.getChunkAtAsync(fx, fz).whenComplete((chunk, error) -> {
+                        // la risposta arriva sul thread principale; se un chunk fallisce si va avanti lo stesso
+                        if (--job.pending <= 0) {
+                            job.ready = true;
+                        }
+                    });
+                } catch (RuntimeException ex) {
+                    job.pending--;
+                    if (job.pending <= 0) {
+                        job.ready = true;
+                    }
+                }
+            }
+        }
+    }
+
+    private void releaseChunks(Job job) {
+        for (long[] c : job.tickets) {
+            try {
+                job.world.removePluginChunkTicket((int) c[0], (int) c[1], plugin);
+            } catch (RuntimeException ignored) {
+                // gia' tolto
+            }
+        }
+        job.tickets.clear();
     }
 
     // ------------------------------------------------------------------
@@ -1272,6 +1700,7 @@ public final class MineTemplates implements Listener {
 
     private void maintain() {
         saveInstances(false);
+        releaseSlots();
         World w = minesWorld;
         if (w == null) {
             return;
@@ -1305,8 +1734,13 @@ public final class MineTemplates implements Listener {
     }
 
     private void queueUnload(Instance inst, World w) {
+        queueUnload(inst, w, false);
+    }
+
+    private void queueUnload(Instance inst, World w, boolean force) {
         inst.unloadQueued = true;
         Job job = new Job();
+        job.force = force;
         job.world = w;
         job.t = emptyTemplate();
         job.ox = plotX(inst.owner);

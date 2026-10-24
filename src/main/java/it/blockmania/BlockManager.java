@@ -370,7 +370,7 @@ public final class BlockManager {
             blocks.remove(key(block));
             dirty = true;
             if (plugin.getMineTemplates() != null) {
-                plugin.getMineTemplates().onBroken(block);
+                plugin.getMineTemplates().onBroken(block, shooter);
             }
             if (shake && c.getBoolean("effects.shake.on-break", true)) {
                 startShake(block, t.number, stageBefore, true, style);

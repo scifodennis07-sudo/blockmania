@@ -225,7 +225,6 @@ public final class Power implements Listener {
     /** Regala un attacco potenziato (con messaggio e suono). Serve anche per i test. */
     public void giveCharge(Player player) {
         setCharges(player, Math.min(cap(player), charges(player) + uses(player)));
-        plugin.send(player, "power-unlocked");
         plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.unlock");
     }
 
@@ -242,7 +241,15 @@ public final class Power implements Listener {
         if (!plugin.getConfig().getBoolean("power-attack.enabled", true)) {
             return false;
         }
-        return charges(player) > 0 && stamina(player) >= 0.999;
+        return charges(player) > 0 && stamina(player) >= shotCost(player) - 0.001;
+    }
+
+    /**
+     * Quanta stamina costa un colpo potenziato: se ogni sblocco da 3 attacchi, ognuno costa un terzo,
+     * cosi' con la stamina piena li spari tutti e tre e poi aspetti che si ricarichi.
+     */
+    public double shotCost(Player player) {
+        return 1.0 / Math.max(1, uses(player));
     }
 
     /**
@@ -257,12 +264,13 @@ public final class Power implements Listener {
             plugin.send(player, "power-locked");
             return false;
         }
-        if (stamina(player) < 0.999) {
+        double cost = shotCost(player);
+        if (stamina(player) < cost - 0.001) {
             plugin.send(player, "power-no-stamina");
             return false;
         }
         setCharges(player, charges(player) - 1);
-        drain(player, 1.0); // consuma tutta la stamina (con /bm stamina infinite no)
+        drain(player, cost); // consuma la sua parte di stamina (con /bm stamina infinite no)
         return true;
     }
 
@@ -293,10 +301,12 @@ public final class Power implements Listener {
                 }
                 continue;
             }
-            String key = level >= 0.999 ? "power-attack.bossbar.ready" : "power-attack.bossbar.waiting";
-            String text = c.getString(key, level >= 0.999
-                    ? "&dattacco potenziato sbloccato &8| &fpremi &eshift + click destro &fper usarlo"
-                    : "&dattacco potenziato sbloccato &8| &7aspetta la stamina");
+            boolean ready = level >= shotCost(player) - 0.001;
+            String key = ready ? "power-attack.bossbar.ready" : "power-attack.bossbar.waiting";
+            String text = c.getString(key, ready
+                    ? "&dx%charges% attacco potenziato sbloccato &8| {key:shift + click destro}"
+                    : "&dx%charges% attacco potenziato sbloccato &8| &7aspetta la stamina")
+                    .replace("%charges%", String.valueOf(charges(player)));
             Component name = plugin.bossSegments(List.of(text), -1);
             if (pbar == null) {
                 pbar = BossBar.bossBar(name, 1f, color("power-attack.bossbar.color", BossBar.Color.PURPLE),

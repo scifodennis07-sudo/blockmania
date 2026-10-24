@@ -246,7 +246,6 @@ public final class LauncherListener implements Listener {
         double mult = power ? Math.max(0.1, c.getDouble("power-attack.damage-multiplier", 10.0)) : 1.0;
         if (power) {
             lastPower.put(player.getUniqueId(), now);
-            plugin.send(player, "power-used");
             plugin.playConfiguredSound(player.getLocation(), "power-attack.sounds.use");
         }
         int shots = Math.max(1, c.getInt(path + "shots", 1));

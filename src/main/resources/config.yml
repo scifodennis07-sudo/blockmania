@@ -255,7 +255,7 @@ messages:
   mines-usage:
     type: error
     channel: chat
-    text: "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n>|list>"
+    text: "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>"
   mine-tpl-number:
     type: error
     channel: chat
@@ -267,7 +267,7 @@ messages:
   mine-tpl-missing:
     type: error
     channel: chat
-    text: "la miniera %mine% non esiste ancora: crea con /bm mines setmines %mine%"
+    text: "la miniera %mine% non esiste ancora: crea con /bm mines createmines %mine%"
   mine-tpl-noworld:
     type: error
     channel: chat
@@ -279,7 +279,27 @@ messages:
   mine-tpl-none:
     type: info
     channel: chat
-    text: "nessuna miniera salvata, usa /bm mines setmines <n>"
+    text: "nessuna miniera salvata, usa /bm mines createmines <n>"
+  mine-tpl-deleted:
+    type: success
+    channel: chat
+    text: "miniera %mine% eliminata (copie dei player tolte: %count%)"
+  mine-area-creating:
+    type: info
+    channel: chat
+    text: "sto creando il mondo area, il server puo bloccarsi qualche secondo..."
+  mine-area-created:
+    type: success
+    channel: chat
+    text: "mondo area creato con %count% miniere ufficiali, una accanto all'altra"
+  mine-area-empty:
+    type: error
+    channel: chat
+    text: "non c'e nessuna miniera ufficiale: crea con /bm mines createmines <n>"
+  mine-area-go:
+    type: info
+    channel: chat
+    text: "sei nell'area, miniera %mine%. Qui ogni modifica chiede di salvare (shift + F) o annullare (shift + Q). Per uscire /mines exit"
   mine-tpl-saved:
     type: success
     channel: chat
@@ -518,9 +538,9 @@ help:
       example: "/bm power give"
     mines:
       permission: blockmania.build
-      usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n>|list>"
-      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/remove/undo come /bm block. setmines n = la zona scelta diventa la miniera n, changemines n = la sostituisce, editmines n = ti porta nella miniera n per modificarla (shift + F salva, shift + Q annulla)"
-      example: "/bm mines setmines 1"
+      usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>"
+      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/remove/undo come /bm block. createmines n = la zona scelta diventa la miniera n, deletemines n = la elimina, changemines n = la sostituisce, area = il mondo staff con tutte le miniere insieme, editmines n = ti porta nella miniera n per modificarla (shift + F salva, shift + Q annulla)"
+      example: "/bm mines createmines 1"
     stamina:
       permission: blockmania.stats
       usage: "/bm stamina <see|refill|empty|set <0-100>|infinite|locked|normal> [player]"
@@ -1218,8 +1238,8 @@ power-attack:
   trail-particles: 4           # fiamme della scia a ogni tick
   bossbar:
     color: PURPLE
-    ready: "&dattacco potenziato sbloccato &8| &fpremi {key:shift + click destro} &fper usarlo"
-    waiting: "&dattacco potenziato sbloccato &8| &7aspetta che la stamina si ricarichi"
+    ready: "&dx%charges% attacco potenziato sbloccato &8| {key:shift + click destro}"
+    waiting: "&dx%charges% attacco potenziato sbloccato &8| &7aspetta la stamina"
   sounds:
     unlock:
       sound: "ui.toast.challenge_complete"
@@ -1250,6 +1270,9 @@ mines:
   spacing-x: 1024              # distanza tra un giocatore e l'altro (in blocchi): piu grande della miniera piu larga
   spacing-z: 1024              # distanza tra una miniera e l'altra dello stesso giocatore
   base-y: 64                   # altezza a cui parte la miniera personale
+  area:
+    world: blockmania_area     # mondo staff con tutte le miniere ufficiali insieme (/bm mines area)
+    spacing: 256               # distanza tra una miniera e l'altra nell'area
   edit:
     bossbar: "&epremi {key:shift + f} &eper salvare tutte le modifiche della miniera &f%mine% &8| &epremi {key:shift + q} &eper annullare"
 

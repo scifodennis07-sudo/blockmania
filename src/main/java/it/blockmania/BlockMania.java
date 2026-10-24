@@ -205,12 +205,29 @@ public final class BlockMania extends JavaPlugin {
                 }
             }
         }
+        if (done < 6) {
+            // testi dell'attacco potenziato (solo bossbar, corti) e comandi rinominati (setmines -> createmines)
+            c.set("power-attack.bossbar.ready", "&dx%charges% attacco potenziato sbloccato &8| {key:shift + click destro}");
+            c.set("power-attack.bossbar.waiting", "&dx%charges% attacco potenziato sbloccato &8| &7aspetta la stamina");
+            for (String path : new String[]{"messages.mines-usage.text", "messages.mine-tpl-exists.text",
+                    "messages.mine-tpl-missing.text", "messages.mine-tpl-none.text", "help.commands.mines.description",
+                    "help.commands.mines.example", "help.commands.mines.usage"}) {
+                String old = c.getString(path, "");
+                if (old.contains("setmines")) {
+                    c.set(path, old.replace("setmines", "createmines"));
+                }
+            }
+            String usage = c.getString("messages.mines-usage.text", "");
+            if (!usage.contains("deletemines")) {
+                c.set("messages.mines-usage.text", "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>");
+            }
+        }
         if (done >= 1) {
-            c.set("tuning-version", 5);
+            c.set("tuning-version", 6);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 5);
+        c.set("tuning-version", 6);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -231,7 +248,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 5);
+        c.set("tuning-version", 6);
         saveConfig();
     }
 
