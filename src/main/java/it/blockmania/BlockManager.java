@@ -364,6 +364,9 @@ public final class BlockManager {
             }
             blocks.remove(key(block));
             dirty = true;
+            if (plugin.getMineTemplates() != null) {
+                plugin.getMineTemplates().onBroken(block);
+            }
             if (shake && c.getBoolean("effects.shake.on-break", true)) {
                 startShake(block, t.number, stageBefore, true, style);
             } else {

@@ -91,6 +91,8 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(shops, this);
         blockEdit = new BlockEdit(this);
         mineTemplates = new MineTemplates(this);
+        getServer().getPluginManager().registerEvents(mineTemplates, this);
+        mineTemplates.start();
         getServer().getPluginManager().registerEvents(blockEdit, this);
         itemsGui = new ItemsGui(this);
         getServer().getPluginManager().registerEvents(itemsGui, this);
@@ -104,6 +106,10 @@ public final class BlockMania extends JavaPlugin {
                     return true;
                 }
                 if (!player.hasPermission("blockmania.use")) {
+                    return true;
+                }
+                if (args.length > 0 && (args[0].equalsIgnoreCase("exit") || args[0].equalsIgnoreCase("esci"))) {
+                    mineTemplates.leave(player);
                     return true;
                 }
                 minesGui.open(player);
@@ -164,12 +170,32 @@ public final class BlockMania extends JavaPlugin {
                 }
             }
         }
+        if (done < 4) {
+            // click sulle miniere gia tue: entrano nella miniera personale
+            if (c.getString("mines-gui.actions.owned", "").isBlank()) {
+                c.set("mines-gui.actions.owned", "&eclicca per entrare");
+            }
+            if (c.getString("mines-gui.actions.platinum", "").isBlank()) {
+                c.set("mines-gui.actions.platinum", "&eclicca per entrare");
+            }
+            for (String st : new String[]{"owned", "platinum"}) {
+                List<String> lore = new ArrayList<>(c.getStringList("mines-gui.states." + st + ".lore"));
+                if (!lore.isEmpty() && lore.stream().noneMatch(l -> l.contains("%action%"))) {
+                    if (st.equals("platinum")) {
+                        lore.removeIf(l -> l.contains("non si rifa piu"));
+                    }
+                    lore.add("");
+                    lore.add("%action%");
+                    c.set("mines-gui.states." + st + ".lore", lore);
+                }
+            }
+        }
         if (done >= 1) {
-            c.set("tuning-version", 3);
+            c.set("tuning-version", 4);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 3);
+        c.set("tuning-version", 4);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -190,7 +216,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 3);
+        c.set("tuning-version", 4);
         saveConfig();
     }
 
@@ -219,6 +245,9 @@ public final class BlockMania extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (mineTemplates != null) {
+            mineTemplates.stop();
+        }
         if (power != null) {
             power.stop();
         }

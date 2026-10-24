@@ -429,6 +429,9 @@ public final class LauncherListener implements Listener {
      */
     @EventHandler
     public void onDrop(PlayerDropItemEvent event) {
+        if (event.isCancelled()) {
+            return; // es. shift + Q mentre si modifica una miniera
+        }
         LauncherItem li = plugin.getLauncher(event.getItemDrop().getItemStack());
         if (li == null) {
             return;

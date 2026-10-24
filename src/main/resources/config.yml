@@ -255,7 +255,7 @@ messages:
   mines-usage:
     type: error
     channel: chat
-    text: "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n|save>|list>"
+    text: "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n>|list>"
   mine-tpl-number:
     type: error
     channel: chat
@@ -291,11 +291,35 @@ messages:
   mine-edit-start:
     type: info
     channel: chat
-    text: "sei nella miniera %mine%: modificala e poi scrivi /bm mines editmines save"
-  mine-edit-none:
-    type: error
+    text: "sei nella miniera %mine%: modifica, poi shift + F salva e shift + Q annulla (ti riporta dove eri)"
+  mine-edit-nochange:
+    type: info
     channel: chat
-    text: "non stai modificando nessuna miniera: usa /bm mines editmines <n>"
+    text: "non hai fatto nessuna modifica da salvare"
+  mine-edit-cancelled:
+    type: info
+    channel: chat
+    text: "modifiche annullate: la miniera %mine% e tornata com'era"
+  mine-unavailable:
+    type: error
+    channel: actionbar
+    text: "la miniera %mine% non e ancora pronta"
+  mine-loading:
+    type: info
+    channel: actionbar
+    text: "sto preparando la tua miniera %mine%..."
+  mine-enter:
+    type: success
+    channel: actionbar
+    text: "sei nella tua miniera %mine%, per uscire scrivi /mines exit"
+  mine-left:
+    type: info
+    channel: actionbar
+    text: "sei tornato dove eri prima"
+  mine-not-inside:
+    type: error
+    channel: actionbar
+    text: "non sei dentro una miniera"
   mine-edit-saved:
     type: success
     channel: chat
@@ -486,8 +510,8 @@ help:
       example: "/bm power give"
     mines:
       permission: blockmania.build
-      usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n|save>|list>"
-      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/remove/undo come /bm block. setmines n = la zona scelta diventa la miniera n, changemines n = la sostituisce, editmines n = ti porta nella miniera n per modificarla, editmines save = salva le modifiche"
+      usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|setmines <n>|changemines <n>|editmines <n>|list>"
+      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/remove/undo come /bm block. setmines n = la zona scelta diventa la miniera n, changemines n = la sostituisce, editmines n = ti porta nella miniera n per modificarla (shift + F salva, shift + Q annulla)"
       example: "/bm mines setmines 1"
     stamina:
       permission: blockmania.stats
@@ -1210,7 +1234,14 @@ power-attack:
 # ----------------------------------------------------------------------
 mines:
   max-blocks: 400000           # blocchi massimi di una miniera ufficiale
-  blocks-per-tick: 20000       # quanti blocchi legge/scrive a ogni tick
+  blocks-per-tick: 20000       # quanti blocchi legge a ogni tick quando salvi una miniera
+  paste-per-tick: 6000         # quanti blocchi scrive a ogni tick quando crea/aggiorna una miniera personale
+  world: blockmania_mines      # mondo vuoto delle miniere personali (si crea da solo)
+  spacing-x: 1024              # distanza tra un giocatore e l'altro (in blocchi): piu grande della miniera piu larga
+  spacing-z: 1024              # distanza tra una miniera e l'altra dello stesso giocatore
+  base-y: 64                   # altezza a cui parte la miniera personale
+  edit:
+    bossbar: "&epremi &fshift + f &eper salvare tutte le modifiche della miniera &f%mine% &8| &fshift + q &eper annullare"
 
 mines-gui:
   count: 21                    # quante miniere esistono
@@ -1305,7 +1336,8 @@ mines-gui:
   actions:
     buy: "&eclicca per acquistare"
     far: "&7sblocca prima la miniera precedente"
-    owned: ""
+    owned: "&eclicca per entrare"
+    platinum: "&eclicca per entrare"
 
   sounds:
     buy:

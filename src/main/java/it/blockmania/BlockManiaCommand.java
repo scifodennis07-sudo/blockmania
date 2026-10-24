@@ -278,10 +278,6 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         MineTemplates tpl = plugin.getMineTemplates();
-        if (sub.equals("editmines") && args.length >= 3 && args[2].equalsIgnoreCase("save")) {
-            tpl.saveEdit(player);
-            return;
-        }
         int number;
         try {
             number = Integer.parseInt(args.length > 2 ? args[2] : "");
@@ -928,9 +924,6 @@ public final class BlockManiaCommand implements TabExecutor {
                 } else if (args.length == 3) {
                     for (int i = 1; i <= plugin.getMineTemplates().mineCount(); i++) {
                         result.add(String.valueOf(i));
-                    }
-                    if (args[1].equalsIgnoreCase("editmines")) {
-                        result.add("save");
                     }
                 }
             } else if (sub.equals("stamina") && canStats) {

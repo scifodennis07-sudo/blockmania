@@ -276,6 +276,9 @@ public final class BlockEdit implements Listener {
                     }
                 }
                 Player online = plugin.getServer().getPlayer(id);
+                if (online != null && changed[0] > 0) {
+                    plugin.getMineTemplates().touch(online);
+                }
                 if (online != null) {
                     if (changed[0] == 0) {
                         plugin.send(online, "edit-nothing");
@@ -320,6 +323,7 @@ public final class BlockEdit implements Listener {
                 busy.remove(id);
                 Player online = plugin.getServer().getPlayer(id);
                 if (online != null) {
+                    plugin.getMineTemplates().touch(online);
                     plugin.send(online, "undo-done", "%count%", String.valueOf(done[0]));
                 }
             }

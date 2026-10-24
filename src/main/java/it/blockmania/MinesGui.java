@@ -256,9 +256,13 @@ public final class MinesGui implements Listener {
             r = java.util.Arrays.copyOf(r, general.length + extra.length);
 
             String name = c.getString(bp + ".name", "&fminiera %number%");
-            String actionKey = key.equals("locked") ? (mine == owned + 1 ? "buy" : "far") : key.equals("owned") ? "owned" : "";
-            String actionText = actionKey.isEmpty() ? ""
-                    : c.getString(GUI + "actions." + actionKey, actionKey.equals("buy") ? "&eclicca per acquistare" : "");
+            String actionKey = key.equals("locked") ? (mine == owned + 1 ? "buy" : "far") : key;
+            if (actionKey.equals("platinum") || actionKey.equals("owned")) {
+                actionKey = key;
+            }
+            String actionText = c.getString(GUI + "actions." + actionKey,
+                    actionKey.equals("buy") ? "&eclicca per acquistare"
+                            : actionKey.equals("owned") || actionKey.equals("platinum") ? "&eclicca per entrare" : "");
             List<String> lore = new ArrayList<>();
             for (String line : c.getStringList(bp + ".lore")) {
                 if (line.contains("%action%")) {
@@ -269,7 +273,8 @@ public final class MinesGui implements Listener {
                 }
                 lore.add(line);
             }
-            String click = actionKey.equals("buy") ? "buy:" + mine : actionKey.equals("far") ? "far:" + mine : null;
+            String click = actionKey.equals("buy") ? "buy:" + mine : actionKey.equals("far") ? "far:" + mine
+                    : "enter:" + mine;
             put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs, key.equals("locked")), name, lore, r, false), click);
             for (int slot : pos.extra()) {
                 put(inv, holder, slot, invisible(name, lore, r, false), click);
@@ -374,7 +379,15 @@ public final class MinesGui implements Listener {
                 }
             }
             default -> {
-                if (action.startsWith("buy:") || action.startsWith("far:")) {
+                if (action.startsWith("enter:")) {
+                    try {
+                        int mine = Integer.parseInt(action.substring(6));
+                        player.closeInventory();
+                        plugin.getMineTemplates().enter(player, mine);
+                    } catch (NumberFormatException ignored) {
+                        // azione rovinata
+                    }
+                } else if (action.startsWith("buy:") || action.startsWith("far:")) {
                     int mine;
                     try {
                         mine = Integer.parseInt(action.substring(4));
