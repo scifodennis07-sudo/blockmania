@@ -222,12 +222,18 @@ public final class BlockMania extends JavaPlugin {
                 c.set("messages.mines-usage.text", "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>");
             }
         }
+        if (done < 7) {
+            // le icone hanno la loro larghezza (background.icons): il valore generale torna normale
+            if (c.getInt("background.unknown-char-width", 6) == 12) {
+                c.set("background.unknown-char-width", 6);
+            }
+        }
         if (done >= 1) {
-            c.set("tuning-version", 6);
+            c.set("tuning-version", 7);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 6);
+        c.set("tuning-version", 7);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -248,7 +254,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 6);
+        c.set("tuning-version", 7);
         saveConfig();
     }
 
@@ -438,6 +444,9 @@ public final class BlockMania extends JavaPlugin {
 
     /** Trasforma {key:...} in segnali che il "tiny text" non rovina. Va fatto PRIMA di tiny(). */
     public String keyMarks(String text) {
+        if (text != null && background != null) {
+            text = background.iconMarks(text);
+        }
         if (text == null || !text.contains("{key:")) {
             return text;
         }
@@ -726,7 +735,22 @@ public final class BlockMania extends JavaPlugin {
         boolean sloped = gradient != null && (gradient[0] != gradient[3] || gradient[1] != gradient[4]
                 || gradient[2] != gradient[5]);
         if (!sloped) {
-            out.add(styled(text, gradient != null ? TextColor.color(gradient[0], gradient[1], gradient[2]) : color, deco));
+            TextColor tc = gradient != null ? TextColor.color(gradient[0], gradient[1], gradient[2]) : color;
+            // le icone: sempre bianche (cosi' si vedono i colori veri del PNG) e senza ombra
+            int from = 0;
+            for (int i = 0; i < text.length(); i++) {
+                if (background != null && background.isIcon(text.charAt(i))) {
+                    if (i > from) {
+                        out.add(styled(text.substring(from, i), tc, deco));
+                    }
+                    out.add(styled(String.valueOf(text.charAt(i)), TextColor.color(255, 255, 255), new boolean[5])
+                            .shadowColor(ShadowColor.none()));
+                    from = i + 1;
+                }
+            }
+            if (from < text.length()) {
+                out.add(styled(text.substring(from), tc, deco));
+            }
             return;
         }
         int n = text.length();

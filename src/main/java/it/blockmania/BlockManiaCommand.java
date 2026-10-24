@@ -555,7 +555,7 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         String text = args.length > 1 ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)) : "coin 25";
-        String legacy = "&f" + plugin.tiny(text);
+        String legacy = "&f" + plugin.tiny(plugin.keyMarks(text));
         player.sendActionBar(plugin.withBackground(legacy));
     }
 

@@ -24,6 +24,8 @@ public final class Background {
     private int padding;
     private int adjust;
     private int unknownWidth;
+    private final Map<Character, Integer> iconWidths = new java.util.HashMap<>();
+    private final Map<String, String> iconChars = new java.util.HashMap<>();
 
     private String barLeft;
     private String barRight;
@@ -60,6 +62,18 @@ public final class Background {
         padding = Math.max(0, c.getInt("background.padding", 0));
         adjust = c.getInt("background.adjust", 0);
         unknownWidth = Math.max(1, c.getInt("background.unknown-char-width", 6));
+        iconWidths.clear();
+        iconChars.clear();
+        ConfigurationSection icons = c.getConfigurationSection("background.icons");
+        if (icons != null) {
+            for (String name : icons.getKeys(false)) {
+                String chr = icons.getString(name + ".char", "");
+                if (!chr.isEmpty()) {
+                    iconChars.put(name.toLowerCase(java.util.Locale.ROOT), chr);
+                    iconWidths.put(chr.charAt(0), Math.max(1, icons.getInt(name + ".width", 9)));
+                }
+            }
+        }
 
         left = c.getString("background.left.char", "\u3c00");
         center = c.getString("background.center.char", "\u3c01");
@@ -187,13 +201,31 @@ public final class Background {
                     continue;
                 }
             }
-            int w = FontMetrics.width(c);
+            Integer iconWidth = iconWidths.get(c);
+            int w = iconWidth != null ? iconWidth : FontMetrics.width(c);
             if (w < 0) {
                 w = unknownWidth;
             }
             total += w + (bold && w > 0 ? 1 : 0);
         }
         return total;
+    }
+
+    /** Vero se il carattere e' una delle icone di background.icons. */
+    public boolean isIcon(char c) {
+        return iconWidths.containsKey(c);
+    }
+
+    /** Trasforma {icon:nome} nel carattere dell'icona (nome come in background.icons). */
+    public String iconMarks(String text) {
+        if (text == null || iconChars.isEmpty() || !text.contains("{icon:")) {
+            return text;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\{icon:([A-Za-z0-9_\\-]+)\\}").matcher(text);
+        return m.replaceAll(r -> {
+            String chr = iconChars.get(r.group(1).toLowerCase(java.util.Locale.ROOT));
+            return java.util.regex.Matcher.quoteReplacement(chr == null ? r.group() : chr);
+        });
     }
 
     private static boolean isHex(String s, int from, int count) {

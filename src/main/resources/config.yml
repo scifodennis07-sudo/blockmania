@@ -1580,6 +1580,70 @@ background:
     right:
       char: "\u3c22"
       width: 6
+  # Icone nel testo: scrivi {icon:nome} (anche in /bm bgtest) e il plugin le misura, le tiene bianche e senza ombra.
+  #   char   il carattere nel tuo font (default.json), non uno gia usato (3c00-3c06, 3c10-3c15, 3c20-3c22)
+  #   width  larghezza nel gioco = (colonna piu a destra con pixel nel PNG) * height / altezza PNG, arrotondato, + 1
+  icons:
+    standardball:
+      char: "\u3c40"
+      width: 13
+    doubleball:
+      char: "\u3c41"
+      width: 13
+    ghostball:
+      char: "\u3c42"
+      width: 13
+    explosionball:
+      char: "\u3c43"
+      width: 13
+    coin:
+      char: "\u3c44"
+      width: 13
+    blockcoin:
+      char: "\u3c45"
+      width: 13
+    blockshell:
+      char: "\u3c46"
+      width: 12
+    danno:
+      char: "\u3c47"
+      width: 12
+    cooldown:
+      char: "\u3c48"
+      width: 12
+    velocita:
+      char: "\u3c49"
+      width: 12
+    capacita:
+      char: "\u3c50"
+      width: 12
+    capacita_standardball:
+      char: "\u3c51"
+      width: 12
+    capacita_doubleball:
+      char: "\u3c52"
+      width: 13
+    capacita_ghostball:
+      char: "\u3c53"
+      width: 12
+    capacita_explosionball:
+      char: "\u3c54"
+      width: 12
+    colpo_potenziato:
+      char: "\u3c55"
+      width: 13
+    miniera:
+      char: "\u3c56"
+      width: 13
+    stamina:
+      char: "\u3c57"
+      width: 13
+    bloccato:
+      char: "\u3c58"
+      width: 13
+    livello:
+      char: "\u3c59"
+      width: 13
   bar:                         # barra di avanzamento sotto lo sfondo (usata dalla vendita shell)
     enabled: true
     fill: "\u3c10"              # pezzo pieno (1 pixel)
