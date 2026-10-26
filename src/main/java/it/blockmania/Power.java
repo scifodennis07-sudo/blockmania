@@ -1,6 +1,5 @@
 package it.blockmania;
 
-import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
@@ -12,14 +11,10 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 /**
- * Stamina (bossbar gialla sotto quella principale) e attacco potenziato.
+ * Stamina (barra gialla sotto la bossbar principale) e attacco potenziato.
  *
  * - La stamina e' sempre piena, tranne quando la consuma l'attacco potenziato: da 0 ci vogliono
  *   power-attack.regen-seconds secondi (default 180 = 3 minuti) per tornare piena.
@@ -30,7 +25,7 @@ import java.util.UUID;
 public final class Power implements Listener {
 
     private final BlockMania plugin;
-    private final Map<UUID, BossBar> powerBars = new HashMap<>();
+    private final java.util.Set<UUID> shown = new java.util.HashSet<>();
     private final NamespacedKey fullAtKey;
     private final NamespacedKey progressKey;
     private final NamespacedKey chargesKey;
@@ -274,60 +269,44 @@ public final class Power implements Listener {
         return true;
     }
 
-    // ---------- bossbar ----------
-
-    private BossBar.Color color(String path, BossBar.Color fallback) {
-        try {
-            return BossBar.Color.valueOf(plugin.getConfig().getString(path, fallback.name()).toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ex) {
-            return fallback;
-        }
-    }
+    // ---------- testo nella actionbar ----------
 
     private void tick() {
         var c = plugin.getConfig();
         boolean powerOn = c.getBoolean("power-attack.enabled", true);
-        BarStack stack = plugin.getBars();
         for (Player player : Bukkit.getOnlinePlayers()) {
             UUID id = player.getUniqueId();
-            double level = stamina(player);
-            boolean mainReady = plugin.getAmmo().hasBossBar(player) || !c.getBoolean("bossbar.enabled", true);
-            BossBar pbar = powerBars.get(id);
-            boolean show = powerOn && mainReady && charges(player) > 0;
-            if (!show) {
-                if (pbar != null) {
-                    powerBars.remove(id);
-                    stack.remove(player, "power");
+            boolean has = powerOn && charges(player) > 0;
+            if (!has) {
+                if (shown.remove(id) && !plugin.isActionBarBusy(player)) {
+                    player.sendActionBar(Component.empty()); // toglie il testo rimasto
                 }
                 continue;
             }
-            boolean ready = level >= shotCost(player) - 0.001;
-            String key = ready ? "power-attack.bossbar.ready" : "power-attack.bossbar.waiting";
-            String text = c.getString(key, ready
-                    ? "&dx%charges% attacco potenziato sbloccato &8| {key:shift + click destro}"
-                    : "&dx%charges% attacco potenziato sbloccato &8| &7aspetta la stamina")
-                    .replace("%charges%", String.valueOf(charges(player)));
-            Component name = plugin.bossSegments(List.of(text), -1);
-            if (pbar == null) {
-                pbar = BossBar.bossBar(name, 1f, color("power-attack.bossbar.color", BossBar.Color.PURPLE),
-                        BossBar.Overlay.PROGRESS);
-                powerBars.put(id, pbar);
-                stack.set(player, "power", pbar, 50, false);
-            } else {
-                pbar.name(name);
+            // con una GUI aperta l'actionbar e' coperta, e un messaggio appena uscito ha la precedenza
+            if (plugin.hasOpenGui(player) || plugin.isActionBarBusy(player)) {
+                continue;
             }
+            boolean ready = stamina(player) >= shotCost(player) - 0.001;
+            String key = ready ? "power-attack.actionbar.ready" : "power-attack.actionbar.waiting";
+            String text = c.getString(key, ready
+                    ? "{icon:fireball} &dx%charges% attacco potenziato sbloccato {key:shift + click destro}"
+                    : "{icon:fireball} &dx%charges% attacco potenziato sbloccato &7aspetta la stamina");
+            player.sendActionBar(plugin.actionBarText(text, "%charges%", String.valueOf(charges(player))));
+            shown.add(id);
         }
     }
 
     private void hideBars(Player player) {
-        powerBars.remove(player.getUniqueId());
-        plugin.getBars().remove(player, "power");
+        if (shown.remove(player.getUniqueId())) {
+            player.sendActionBar(Component.empty());
+        }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        powerBars.remove(id);
+        shown.remove(id);
         plugin.getBars().forget(id);
         if (plugin.getMineTemplates() != null) {
             plugin.getMineTemplates().forget(id);

@@ -445,7 +445,7 @@ public final class LauncherListener implements Listener {
         String type = ammo.cycleSelected(player, li.ammoType());
         // il lanciapalle viene rifatto un attimo dopo, quando il drop annullato e' finito
         plugin.getServer().getScheduler().runTask(plugin, () -> plugin.getUpgrades().refreshLaunchers(player));
-        plugin.send(player, "ball-selected", "%ball%", plugin.tiny(type),
+        plugin.send(player, "ball-selected", "%ball_icon%", plugin.ballIcon(type), "%ball%", plugin.tiny(type),
                 "%ammo%", String.valueOf(ammo.getAmmo(player, type)),
                 "%max%", String.valueOf(ammo.getAmmoMax(player, type)));
         plugin.playConfiguredSound(player.getLocation(), "ball-switch");

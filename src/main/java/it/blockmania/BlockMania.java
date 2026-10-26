@@ -44,6 +44,7 @@ public final class BlockMania extends JavaPlugin {
     private BlockManager blocks;
     private Background background;
     private ItemsGui itemsGui;
+    private BlockVariantsGui variantsGui;
     private MinesGui minesGui;
     private Power power;
     private final BarStack bars = new BarStack();
@@ -54,6 +55,8 @@ public final class BlockMania extends JavaPlugin {
     private final Map<Character, int[]> palette = new HashMap<>();
     private final Map<UUID, BossBar> messageBars = new HashMap<>();
     private final Map<UUID, BukkitTask> messageTasks = new HashMap<>();
+    /** Fino a quando un messaggio sta occupando l'actionbar (il testo fisso del colpo potenziato aspetta). */
+    private final Map<UUID, Long> actionBarBusy = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -68,6 +71,8 @@ public final class BlockMania extends JavaPlugin {
         // aggiunge al config eventuali voci nuove senza toccare quelle che hai cambiato
         getConfig().options().copyDefaults(true);
         saveConfig();
+        // ricarica dal file appena scritto: senza questo le sezioni nuove (come background.icons) restano vuote al primo avvio
+        reloadConfig();
         loadItems();
         background = new Background(this);
         reloadPalette();
@@ -96,6 +101,8 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(blockEdit, this);
         itemsGui = new ItemsGui(this);
         getServer().getPluginManager().registerEvents(itemsGui, this);
+        variantsGui = new BlockVariantsGui(this);
+        getServer().getPluginManager().registerEvents(variantsGui, this);
         minesGui = new MinesGui(this);
         getServer().getPluginManager().registerEvents(minesGui, this);
         PluginCommand minesCommand = getCommand("mines");
@@ -228,12 +235,28 @@ public final class BlockMania extends JavaPlugin {
                 c.set("background.unknown-char-width", 6);
             }
         }
+        if (done < 8) {
+            // colpo potenziato nella actionbar (non piu bossbar), suono sblocco morbido, icone nuove (59, come i PNG del pack)
+            c.set("power-attack.bossbar", null);
+            c.set("background.icons", null);
+            if ("ui.toast.challenge_complete".equals(c.getString("power-attack.sounds.unlock.sound", ""))) {
+                c.set("power-attack.sounds.unlock.sound", "block.amethyst_block.chime");
+                c.set("power-attack.sounds.unlock.volume", 0.6);
+                c.set("power-attack.sounds.unlock.pitch", 1.4);
+            }
+        }
+        if (done < 9) {
+            // bossbar principale: icona della palla scelta e icone giuste (i nomi delle icone sono cambiati)
+            c.set("bossbar.segments", null);
+            c.set("messages.ball-selected.text", null);
+            c.set("messages.ball-selected.icon", null);
+        }
         if (done >= 1) {
-            c.set("tuning-version", 7);
+            c.set("tuning-version", 9);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 7);
+        c.set("tuning-version", 9);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -254,7 +277,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 7);
+        c.set("tuning-version", 9);
         saveConfig();
     }
 
@@ -393,6 +416,10 @@ public final class BlockMania extends JavaPlugin {
 
     public ItemsGui getItemsGui() {
         return itemsGui;
+    }
+
+    public BlockVariantsGui getVariantsGui() {
+        return variantsGui;
     }
 
     public AmmoManager getAmmo() {
@@ -743,8 +770,11 @@ public final class BlockMania extends JavaPlugin {
                     if (i > from) {
                         out.add(styled(text.substring(from, i), tc, deco));
                     }
-                    out.add(styled(String.valueOf(text.charAt(i)), TextColor.color(255, 255, 255), new boolean[5])
-                            .shadowColor(ShadowColor.none()));
+                    Component icon = styled(String.valueOf(text.charAt(i)), TextColor.color(255, 255, 255), new boolean[5]);
+                    if (!getConfig().getBoolean("background.icon-shadow", true)) {
+                        icon = icon.shadowColor(ShadowColor.none());
+                    }
+                    out.add(icon);
                     from = i + 1;
                 }
             }
@@ -916,8 +946,19 @@ public final class BlockMania extends JavaPlugin {
         boolean uniform = getConfig().getBoolean(base + ".uniform", false);
         boolean actionBar = channel.equalsIgnoreCase("actionbar") && to instanceof Player;
 
+        // icona davanti al messaggio (solo actionbar/bossbar): quella del messaggio, oppure quella dello stile
+        String icon = "";
+        if (actionBar) {
+            icon = m != null && m.contains("icon") ? m.getString("icon", "") : getConfig().getString(base + ".icon", "");
+            if (icon == null || icon.equalsIgnoreCase("none")) {
+                icon = "";
+            } else if (!icon.isBlank()) {
+                icon = icon + " ";
+            }
+        }
+
         for (String line : lines) {
-            String t = tiny(keyMarks(prefix + line + suffix));
+            String t = tiny(keyMarks(icon + prefix + line + suffix));
             if (uniform) {
                 t = stripCodes(t);
             }
@@ -933,11 +974,49 @@ public final class BlockMania extends JavaPlugin {
             Component component = actionBar && background != null && background.forActionbar()
                     ? withBackground(legacy) : color(legacy);
             if (actionBar) {
+                markActionBarBusy((Player) to);
                 ((Player) to).sendActionBar(component);
                 return;
             }
             to.sendMessage(component);
         }
+    }
+
+    /** Icona della palla (bossbar.ball-icons) pronta da mettere nel testo; vuota se non esiste. */
+    public String ballIcon(String type) {
+        String name = getConfig().getString("bossbar.ball-icons." + type, type);
+        String r = keyMarks("{icon:" + name + "}");
+        return r.contains("{icon:") ? "" : r;
+    }
+
+    /** Testo fisso per la actionbar (tiny, tasti, icone) con lo sfondo, come i messaggi standard. */
+    public Component actionBarText(String template, String... replacements) {
+        String t = tiny(keyMarks(template));
+        for (int i = 0; i + 1 < replacements.length; i += 2) {
+            t = t.replace(replacements[i], replacements[i + 1]);
+        }
+        if (background != null && background.forActionbar()) {
+            return withBackground(t);
+        }
+        return color(stripKeyMarks(t));
+    }
+
+    /** Un messaggio e' appena apparso nella actionbar: per qualche secondo il testo fisso non lo copre. */
+    public void markActionBarBusy(Player player) {
+        long ms = (long) (getConfig().getDouble("gui-messages.seconds", 3.0) * 1000);
+        actionBarBusy.put(player.getUniqueId(), System.currentTimeMillis() + ms);
+    }
+
+    public boolean isActionBarBusy(Player player) {
+        Long until = actionBarBusy.get(player.getUniqueId());
+        if (until == null) {
+            return false;
+        }
+        if (System.currentTimeMillis() >= until) {
+            actionBarBusy.remove(player.getUniqueId());
+            return false;
+        }
+        return true;
     }
 
     /** Suono preso dal config: <percorso>.sound / .volume / .pitch. Se il nome e' vuoto non suona. */
@@ -1011,9 +1090,14 @@ public final class BlockMania extends JavaPlugin {
 
     /** Crea l'oggetto da piazzare per il blocco numero N (la sua prima variante, N-1). */
     public ItemStack createBlockItem(int number) {
+        return createBlockItem(number, 1);
+    }
+
+    /** Il blocco con il modello di una sua variante (1-10): serve per mostrarle tutte nella GUI delle varianti. */
+    public ItemStack createBlockItem(int number, int variant) {
         String[] r = {
                 "%number%", String.valueOf(number),
-                "%variant%", number + "-1",
+                "%variant%", number + "-" + variant,
                 "%health%", String.valueOf(blocks.maxHealth(number))
         };
 
@@ -1030,7 +1114,7 @@ public final class BlockMania extends JavaPlugin {
         }
         meta.getPersistentDataContainer().set(blockKey, PersistentDataType.INTEGER, number);
         if (getConfig().getBoolean("blocks.custom-model-data", true)) {
-            meta.setCustomModelData(BlockManager.itemModelData(number, 1));
+            meta.setCustomModelData(BlockManager.itemModelData(number, variant));
         }
         stack.setItemMeta(meta);
         return stack;

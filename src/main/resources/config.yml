@@ -24,6 +24,8 @@ tab:
 #  Ogni messaggio ha un "type" che sceglie lo stile qui sotto.
 #    color     colore del testo
 #    highlight colore dei valori (nomi, numeri) dentro al messaggio
+#    icon      icona messa davanti ai messaggi che compaiono in actionbar/bossbar ({icon:nome}, vuoto = nessuna).
+#              Un messaggio puo avere la sua con  icon: "{icon:nome}"  oppure  icon: none  (nessuna)
 #    prefix    testo messo PRIMA del messaggio (vuoto = niente)
 #    suffix    testo messo DOPO il messaggio
 #    uniform   true = tutto il messaggio (anche i valori) ha lo stesso colore
@@ -32,22 +34,26 @@ styles:
   error:
     color: "&c"
     highlight: "&f"
+    icon: "{icon:rosso_x}"
     prefix: ""
     suffix: ""
     uniform: true
   success:
     color: "&a"
     highlight: "&f"
+    icon: "{icon:verde_spunta}"
     prefix: ""
     suffix: ""
   info:
     color: "&7"
     highlight: "&f"
+    icon: "{icon:blu_info}"
     prefix: ""
     suffix: ""
   warning:
     color: "&e"
     highlight: "&f"
+    icon: "{icon:giallo_esclamativo}"
     prefix: ""
     suffix: ""
 
@@ -101,6 +107,8 @@ glyphs:
   top-shadow: "\uE430"
   bottom: "\uE440"
   bottom-shadow: "\uE450"
+  bar: "\uE460"              # numero al centro della barra delle varianti (shopitem-2.png)
+  bar-shadow: "\uE470"
   shadow-color: "#3F3F3F"     # colore dell'ombra dei numeri
 
 # ----------------------------------------------------------------------
@@ -115,66 +123,82 @@ messages:
   no-permission:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lucchetto}"
     text: "non hai il permesso per usare questo comando"
   unknown-subcommand:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lente}"
     text: "comando sconosciuto: %value%, scrivi /bm help per vedere la lista"
   missing-item:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca il nome dell'oggetto, uso: %usage%, disponibili: %items%"
   unknown-item:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lente}"
     text: "oggetto sconosciuto: %value%, disponibili: %items%"
   missing-block:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca il codice del blocco, uso: %usage% (da 1-1 a %max%-1)"
   invalid-block:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "codice blocco non valido: %value%, scrivilo come numero-1, da 1-1 a %max%-1"
   missing-action:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca l'azione, scegli tra: %actions%, uso: %usage%"
   invalid-action:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "azione non valida: %value%, scegli tra: %actions%"
   missing-type:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca il tipo (%types% oppure all), uso: %usage%"
   unknown-ammo:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lente}"
     text: "tipo di palla sconosciuto: %value%, scegli tra: %types% oppure all"
   missing-number:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca il numero, uso: %usage%"
   invalid-number:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "numero non valido: %value%, deve essere un intero maggiore di 0"
   player-not-found:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lente}"
     text: "giocatore non trovato o offline: %value%"
   missing-player:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "da console devi indicare il giocatore, uso: %usage%"
   given:
     type: success
     channel: actionbar
+    icon: "{icon:verde_stella}"
     text: "hai ricevuto %item%"
   given-other:
     type: success
     channel: actionbar
+    icon: "{icon:verde_stella}"
     text: "hai dato %item% a %player%"
   stat-updated:
     type: success
@@ -187,26 +211,32 @@ messages:
   unknown-upgrade:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lente}"
     text: "il potenziamento %value% non esiste. Scegli tra: %types%"
   block-sub-missing:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca cosa fare, uso: %usage%. Scegli tra: %actions%"
   block-sub-invalid:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "azione non valida: %value%. Scegli tra: %actions%"
   wand-given:
     type: success
     channel: actionbar
+    icon: "{icon:giallo_matita}"
     text: "hai ricevuto la bacchetta: tasto sinistro = pos1, tasto destro = pos2"
   pos-set:
     type: success
     channel: actionbar
+    icon: "{icon:giallo_matita}"
     text: "%pos% impostata a %x% %y% %z% %size%"
   missing-selection:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "scegli prima i due angoli con la bacchetta (pos1 e pos2)"
   selection-too-big:
     type: error
@@ -215,10 +245,12 @@ messages:
   edit-busy:
     type: error
     channel: actionbar
+    icon: "{icon:blu_clessidra}"
     text: "hai ancora un'operazione in corso, aspetta che finisca"
   edit-start:
     type: info
     channel: actionbar
+    icon: "{icon:blu_clessidra}"
     text: "lavoro su %count% blocchi, ci vuole un attimo"
   edit-done:
     type: success
@@ -231,10 +263,12 @@ messages:
   undo-done:
     type: success
     channel: actionbar
+    icon: "{icon:verde_spunta}"
     text: "annullato: %count% blocchi ripristinati"
   undo-empty:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_indietro}"
     text: "non c'e niente da annullare"
   limits-usage:
     type: error
@@ -323,18 +357,22 @@ messages:
   mine-unavailable:
     type: error
     channel: actionbar
+    icon: "{icon:blu_clessidra}"
     text: "la miniera %mine% non e ancora pronta"
   mine-loading:
     type: info
     channel: actionbar
+    icon: "{icon:blu_clessidra}"
     text: "sto preparando la tua miniera %mine%..."
   mine-enter:
     type: success
     channel: actionbar
+    icon: "{icon:verde_su}"
     text: "sei nella tua miniera %mine%, per uscire scrivi /mines exit"
   mine-left:
     type: info
     channel: actionbar
+    icon: "{icon:rosso_indietro}"
     text: "sei tornato dove eri prima"
   mine-not-inside:
     type: error
@@ -347,22 +385,27 @@ messages:
   mine-world-loading:
     type: info
     channel: actionbar
+    icon: "{icon:blu_clessidra}"
     text: "il mondo delle miniere si sta preparando, riprova tra poco"
   mine-queue:
     type: info
     channel: actionbar
+    icon: "{icon:blu_clessidra}"
     text: "la tua miniera %mine% e in coda (davanti a te: %count%)..."
   mine-bought:
     type: success
     channel: actionbar
+    icon: "{icon:verde_moneta}"
     text: "hai comprato la miniera %mine% per %price% blockcoin!"
   mine-no-funds:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_moneta}"
     text: "ti servono %price% blockcoin per la miniera %mine% (ne hai %blockcoin%)"
   mine-far:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lucchetto}"
     text: "devi prima sbloccare la miniera precedente"
   power-state:
     type: success
@@ -375,23 +418,28 @@ messages:
   power-unlocked:
     type: success
     channel: actionbar
+    icon: "{icon:fireball}"
     text: "attacco potenziato sbloccato! premi {key:shift + click destro} con il lanciapalle"
   power-locked:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lucchetto}"
     text: "non hai ancora sbloccato l'attacco potenziato"
   power-no-stamina:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_batteria}"
     text: "la stamina non e piena, aspetta che si ricarichi"
   power-used:
     type: info
     channel: actionbar
+    icon: "{icon:fireball}"
     text: "attacco potenziato!"
   ball-selected:
     type: info
     channel: actionbar
-    text: "palla scelta: %ball% (%ammo%/%max%)"
+    icon: none
+    text: "%ball_icon% palla scelta: %ball% (%ammo%/%max%)"
   see:
     type: info
     channel: chat
@@ -403,10 +451,12 @@ messages:
   no-ammo:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_meno}"
     text: "hai finito le palle"
   shell-full:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_cassa}"
     text: "hai troppe blockshell, non puoi distruggere altri blocchi"
   cannot-break:
     type: error
@@ -415,14 +465,17 @@ messages:
   ammo-full:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_cassa}"
     text: "hai gia le palle al massimo (%ammo%)"
   ammo-bought:
     type: success
     channel: actionbar
+    icon: "{icon:verde_moneta}"
     text: "hai comprato %amount% palle per %price% %currency%"
   shop-no-funds:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_moneta}"
     text: "non hai abbastanza %currency%: ti servono %price%, ne hai %balance%"
   sell-no-shells:
     type: error
@@ -435,38 +488,47 @@ messages:
   sell-done:
     type: success
     channel: actionbar
+    icon: "{icon:verde_moneta}"
     text: "hai ottenuto %coins% coin"
   sell-hold-still:
     type: info
     channel: actionbar
+    icon: "{icon:blu_orologio}"
     text: "resta fermo fino alla fine della vendita"
   sell-moved:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_indietro}"
     text: "ti sei mosso: vendita annullata, non hai perso niente. Riprova stando fermo"
   sell-cancelled:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_indietro}"
     text: "vendita interrotta, hai ottenuto %coins% coin"
   shop-removed:
     type: success
     channel: actionbar
+    icon: "{icon:verde_spunta}"
     text: "negozio %shop% tolto, la piuma e' tornata nel tuo inventario"
   shop-remove-hint:
     type: warning
     channel: actionbar
+    icon: "{icon:giallo_lampadina}"
     text: "per togliere il negozio: shift + tasto destro a mano vuota"
   shop-spawned:
     type: success
     channel: actionbar
+    icon: "{icon:verde_stella}"
     text: "hai ricevuto la piuma del negozio %shop%, piazzala dove vuoi"
   missing-shop:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_domanda}"
     text: "manca il tipo di negozio (ammo oppure sell), uso: %usage%"
   invalid-shop:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lente}"
     text: "negozio non valido: %value%, scegli tra: ammo, sell"
   player-only:
     type: error
@@ -475,6 +537,7 @@ messages:
   upgrade-bought:
     type: success
     channel: actionbar
+    icon: "{icon:verde_su}"
     text: "potenziamento %upgrade% al livello %level% per %cost% %currency%"
   sale-no-gui:
     type: error
@@ -483,14 +546,17 @@ messages:
   upgrade-locked:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_lucchetto}"
     text: "per potenziare %upgrade% oltre il livello %level% devi sbloccare la miniera successiva"
   upgrade-max:
     type: warning
     channel: actionbar
+    icon: "{icon:giallo_stella}"
     text: "il potenziamento %upgrade% e' gia al livello massimo"
   upgrade-no-funds:
     type: error
     channel: actionbar
+    icon: "{icon:rosso_moneta}"
     text: "non hai abbastanza %currency%: ti servono %cost%, ne hai %balance%"
 
 # ----------------------------------------------------------------------
@@ -922,11 +988,17 @@ bossbar:
   always-visible: true         # false = visibile solo con il lanciapalle in mano
   ammo-type: standardball      # tipo di palla mostrato se il giocatore non ne ha scelto uno. Scrivi %ball% nel testo per il nome
   # un riquadro (sfondo) per ogni voce della lista. Aggiungi, togli o cambia le righe come vuoi
+  # %ball_icon% = l'icona della palla scelta (qui sotto ball-icons: palla -> nome icona di background.icons)
   segments:
-    - "&b%ball%: &f%ammo%&8/&f%ammo_max%"
-    - "&6blockshell: &f%shell%/%shell_max%"
-    - "&eblockcoin: &f%blockcoin%"
-    - "&acoin: &f%coin%"
+    - "%ball_icon% &b%ball%: &f%ammo%&8/&f%ammo_max%"
+    - "{icon:blockshell} &6blockshell: &f%shell%/%shell_max%"
+    - "{icon:blockcoin} &eblockcoin: &f%blockcoin%"
+    - "{icon:coin} &acoin: &f%coin%"
+  ball-icons:
+    standardball: standardball
+    doubleball: doubleball
+    ghostball: ghostball
+    explosionball: explosionball
   text: "&bstandardball: &f%ammo%&8/&f%ammo_max% &8| &6blockshell: &f%shell%/%shell_max% &8| &eblockcoin: &f%blockcoin% &8| &acoin: &f%coin%"   # usato solo se segments e' vuoto
   font: ""                     # font del pack per abbassare il testo, ad esempio "minecraft:bossbar"
                                # (vuoto = font normale). Attivalo solo dopo aver messo bossbar.json nel pack
@@ -1236,15 +1308,14 @@ power-attack:
   cooldown-ticks: 12           # dopo il colpo potenziato non parte subito uno normale
   damage-multiplier: 10.0      # danno rispetto al normale
   trail-particles: 4           # fiamme della scia a ogni tick
-  bossbar:
-    color: PURPLE
-    ready: "&dx%charges% attacco potenziato sbloccato &8| {key:shift + click destro}"
-    waiting: "&dx%charges% attacco potenziato sbloccato &8| &7aspetta la stamina"
+  actionbar:                   # il testo dell'attacco potenziato sta nella actionbar (i messaggi normali lo coprono per qualche secondo)
+    ready: "{icon:fireball} &dx%charges% attacco potenziato sbloccato {key:shift + click destro}"
+    waiting: "{icon:fireball} &dx%charges% attacco potenziato sbloccato &7aspetta la stamina"
   sounds:
     unlock:
-      sound: "ui.toast.challenge_complete"
-      volume: 0.8
-      pitch: 1.0
+      sound: "block.amethyst_block.chime"   # suono morbido e calmo
+      volume: 0.6
+      pitch: 1.4
     use:
       sound: "entity.wither.shoot"
       volume: 1.5
@@ -1274,7 +1345,7 @@ mines:
     world: blockmania_area     # mondo staff con tutte le miniere ufficiali insieme (/bm mines area)
     spacing: 256               # distanza tra una miniera e l'altra nell'area
   edit:
-    bossbar: "&epremi {key:shift + f} &eper salvare tutte le modifiche della miniera &f%mine% &8| &epremi {key:shift + q} &eper annullare"
+    bossbar: "{icon:giallo_matita} &epremi {key:shift + f} &eper salvare tutte le modifiche della miniera &f%mine% &8| &epremi {key:shift + q} &eper annullare"
 
 mines-gui:
   count: 21                    # quante miniere esistono
@@ -1460,6 +1531,13 @@ items-gui:
   selected-line: "&a► aperta"
   click-line: "&eclicca per aprire"
 
+  # nella categoria dei note block: clic sinistro apre le varianti del blocco
+  block-lore:
+    - ""
+    - "&6clic sinistro &7apre le varianti"
+    - "&6clic destro &7ne ricevi 1"
+    - "&6shift + clic &7ricevi uno stack"
+
   # come si vede un oggetto nella lista (se non e' un lanciapalle o un blocco)
   item-name: "&f%material% &8cmd &f%cmd%"
   item-lore:
@@ -1542,6 +1620,71 @@ items-gui:
       font: ""
 
 # ----------------------------------------------------------------------
+#  GUI DELLE VARIANTI (clic sinistro su un note block in /bm items)
+#  Mostra le 10 varianti del blocco. Le frecce passano al blocco prima/dopo, al centro c'e' il numero (3/21).
+#  Gli slot si contano da 0 (riga 1 = 0-8, riga 2 = 9-17 ...). Il disegno e' custom-gui/shopitem-2.png.
+#  Il numero e' scritto nel titolo (title.number): se non e' centrato cambia center (+1 = un pixel a destra)
+#  e, se e' piu in alto o in basso, l'ascent del set "bar" nel default.json.
+# ----------------------------------------------------------------------
+variants-gui:
+  invisible:
+    material: GLASS_PANE
+    cmd: 999
+
+  slots:
+    close: [11]                # X del pannello chiaro (torna alla lista)
+    info: [15]                 # i
+    previous: [38]             # freccia sinistra
+    next: [42]                 # freccia destra
+    page: [39, 40, 41]         # la barra al centro (il numero e' nel titolo)
+    grid: [20, 21, 22, 23, 24, 29, 30, 31, 32, 33]   # le 10 varianti
+
+  sounds:
+    open:
+      sound: "block.chest.open"
+      volume: 0.6
+      pitch: 1.2
+    page:
+      sound: "ui.button.click"
+      volume: 0.6
+      pitch: 1.2
+
+  close:
+    name: "&cindietro"
+    lore: []
+  info:
+    name: "&fblocco %number%"
+    lore:
+      - "&8vita &f%health%"
+      - "&8le varianti sono le fasi di danno del blocco"
+  previous:
+    name: "&7blocco precedente"
+    lore: []
+  next:
+    name: "&7blocco successivo"
+    lore: []
+  page:
+    name: "&7blocco &f%number%&8/&f%max%"
+    lore: []
+  item-lore:
+    - ""
+    - "&6clic &7ne ricevi 1"
+    - "&6shift + clic &7ricevi uno stack"
+
+  title:
+    text: "&f{shift:-15}\u3c30"
+    font: ""
+    widths:
+      "\u3c30": 179           # come le altre GUI: 179 con la stessa misura delle immagini
+    advance: 0
+    number:
+      set: bar
+      shadow-set: bar-shadow
+      shadow: true
+      font: ""
+      center: 73              # centro del numero (come il numero pagina delle miniere)
+
+# ----------------------------------------------------------------------
 #  SFONDO AUTOMATICO dietro ad actionbar e bossbar
 #  Il plugin misura il testo (con le misure vere del font di Minecraft) e costruisce
 #  da solo lo sfondo con i pezzi del resource pack. I caratteri e le larghezze qui sotto
@@ -1583,66 +1726,187 @@ background:
   # Icone nel testo: scrivi {icon:nome} (anche in /bm bgtest) e il plugin le misura, le tiene bianche e senza ombra.
   #   char   il carattere nel tuo font (default.json), non uno gia usato (3c00-3c06, 3c10-3c15, 3c20-3c22)
   #   width  larghezza nel gioco = (colonna piu a destra con pixel nel PNG) * height / altezza PNG, arrotondato, + 1
+  icon-shadow: true            # true = le icone hanno l'ombra come il testo, false = senza ombra
   icons:
-    standardball:
+    tasto_verde:
       char: "\u3c40"
       width: 13
-    doubleball:
+    tasto_rosso:
       char: "\u3c41"
       width: 13
-    ghostball:
+    tasto_grigio:
       char: "\u3c42"
       width: 13
-    explosionball:
+    esplosione:
       char: "\u3c43"
       width: 13
-    coin:
+    velocita:
       char: "\u3c44"
       width: 13
-    blockcoin:
+    cooldown:
       char: "\u3c45"
       width: 13
-    blockshell:
+    capacita:
       char: "\u3c46"
       width: 12
-    danno:
+    capacita_standardball:
       char: "\u3c47"
       width: 12
-    cooldown:
+    capacita_doubleball:
       char: "\u3c48"
       width: 12
-    velocita:
+    capacita_ghostball:
       char: "\u3c49"
       width: 12
-    capacita:
+    capacita_explosionball:
       char: "\u3c50"
       width: 12
-    capacita_standardball:
+    standardball:
       char: "\u3c51"
       width: 12
-    capacita_doubleball:
+    doubleball:
       char: "\u3c52"
       width: 13
-    capacita_ghostball:
+    ghostball:
       char: "\u3c53"
       width: 12
-    capacita_explosionball:
+    explosionball:
       char: "\u3c54"
       width: 12
-    colpo_potenziato:
+    blockshell:
       char: "\u3c55"
       width: 13
-    miniera:
+    blockcoin:
       char: "\u3c56"
       width: 13
-    stamina:
+    coin:
       char: "\u3c57"
       width: 13
-    bloccato:
+    fireball:
       char: "\u3c58"
       width: 13
-    livello:
+    stella_oro:
       char: "\u3c59"
+      width: 13
+    rosso_domanda:
+      char: "\u3c60"
+      width: 12
+    rosso_esclamativo:
+      char: "\u3c61"
+      width: 12
+    rosso_indietro:
+      char: "\u3c62"
+      width: 12
+    rosso_lente:
+      char: "\u3c63"
+      width: 12
+    rosso_lucchetto:
+      char: "\u3c64"
+      width: 12
+    rosso_meno:
+      char: "\u3c65"
+      width: 12
+    rosso_moneta:
+      char: "\u3c66"
+      width: 12
+    rosso_x:
+      char: "\u3c67"
+      width: 12
+    rosso_batteria:
+      char: "\u3c68"
+      width: 12
+    rosso_cassa:
+      char: "\u3c69"
+      width: 12
+    verde_corona:
+      char: "\u3c70"
+      width: 12
+    verde_cuore:
+      char: "\u3c71"
+      width: 12
+    verde_fulmine:
+      char: "\u3c72"
+      width: 12
+    verde_moneta:
+      char: "\u3c73"
+      width: 12
+    verde_piu:
+      char: "\u3c74"
+      width: 12
+    verde_spunta:
+      char: "\u3c75"
+      width: 12
+    verde_stella:
+      char: "\u3c76"
+      width: 12
+    verde_su:
+      char: "\u3c77"
+      width: 12
+    giallo_clessidra:
+      char: "\u3c78"
+      width: 12
+    giallo_domanda:
+      char: "\u3c79"
+      width: 12
+    giallo_esclamativo:
+      char: "\u3c80"
+      width: 12
+    giallo_lampadina:
+      char: "\u3c81"
+      width: 12
+    giallo_matita:
+      char: "\u3c82"
+      width: 12
+    giallo_orologio:
+      char: "\u3c83"
+      width: 12
+    giallo_stella:
+      char: "\u3c84"
+      width: 12
+    grigio_clessidra:
+      char: "\u3c85"
+      width: 12
+    grigio_divieto:
+      char: "\u3c86"
+      width: 12
+    grigio_lucchetto:
+      char: "\u3c87"
+      width: 12
+    grigio_meno:
+      char: "\u3c88"
+      width: 12
+    viola_corona:
+      char: "\u3c89"
+      width: 12
+    viola_fulmine:
+      char: "\u3c90"
+      width: 12
+    viola_palla:
+      char: "\u3c91"
+      width: 12
+    viola_stella:
+      char: "\u3c92"
+      width: 12
+    blu_clessidra:
+      char: "\u3c93"
+      width: 12
+    blu_domanda:
+      char: "\u3c94"
+      width: 12
+    blu_info:
+      char: "\u3c95"
+      width: 12
+    blu_lente:
+      char: "\u3c96"
+      width: 12
+    blu_matita:
+      char: "\u3c97"
+      width: 12
+    blu_orologio:
+      char: "\u3c98"
+      width: 12
+    colpo_potenziato:            # stesso simbolo di fireball
+      char: "\u3c58"
       width: 13
   bar:                         # barra di avanzamento sotto lo sfondo (usata dalla vendita shell)
     enabled: true

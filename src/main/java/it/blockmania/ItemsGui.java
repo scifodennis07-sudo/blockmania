@@ -148,9 +148,10 @@ public final class ItemsGui implements Listener {
         List<String> hint = c.getStringList(P + "item-lore");
 
         if (type.equals("blocks")) {
+            List<String> blockHint = c.contains(P + "block-lore") ? c.getStringList(P + "block-lore") : hint;
             for (int n = 1; n <= plugin.getMaxBlock(); n++) {
                 ItemStack give = plugin.createBlockItem(n);
-                out.add(new Entry(give, withHint(give, hint)));
+                out.add(new Entry(give, withHint(give, blockHint)));
             }
             return out;
         }
@@ -240,6 +241,19 @@ public final class ItemsGui implements Listener {
 
     public void open(Player player) {
         open(player, 0, 0);
+    }
+
+    /** Riapre la lista dei note block alla pagina dove si trova il blocco indicato (si torna dalle varianti). */
+    public void openBlocks(Player player, int number) {
+        List<Map<?, ?>> cats = categories();
+        int category = 0;
+        for (int i = 0; i < cats.size(); i++) {
+            if (str(cats.get(i).get("type"), "items").equalsIgnoreCase("blocks")) {
+                category = i;
+                break;
+            }
+        }
+        open(player, category, Math.max(0, (number - 1) / perPage()));
     }
 
     private void open(Player player, int category, int page) {
@@ -363,11 +377,17 @@ public final class ItemsGui implements Listener {
             if (index < 0 || index >= holder.entries.size() || cats.isEmpty()) {
                 return;
             }
+            boolean blocks = str(cats.get(holder.category).get("type"), "items").equalsIgnoreCase("blocks");
+            if (blocks && event.isLeftClick() && !event.isShiftClick()) {
+                // clic sinistro su un note block: si aprono tutte le sue varianti
+                plugin.getVariantsGui().open(player, index + 1);
+                return;
+            }
             give(player, holder.entries.get(index).give(), event.isShiftClick());
         }
     }
 
-    private void give(Player player, ItemStack template, boolean stack) {
+    void give(Player player, ItemStack template, boolean stack) {
         ItemStack item = template.clone();
         item.setAmount(stack ? Math.max(1, item.getMaxStackSize()) : 1);
         Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);

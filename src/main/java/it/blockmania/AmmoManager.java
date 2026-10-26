@@ -408,6 +408,7 @@ public final class AmmoManager {
         Component title = plugin.bossSegmentsBar(ballTemplates(templates, defaultType), progress,
                 c.getString("stamina.bar-fill", "\u3c14"), c.getString("stamina.bar-empty", "\u3c15"),
                 c.getInt("stamina.bar-width", 182),
+                "%ball_icon%", plugin.ballIcon(type),
                 "%ball%", plugin.tiny(type),
                 "%ammo%", String.valueOf(getAmmo(player, type)),
                 "%ammo_max%", String.valueOf(getAmmoMax(player, type)),
