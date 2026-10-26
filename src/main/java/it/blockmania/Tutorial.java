@@ -738,15 +738,15 @@ public final class Tutorial implements Listener, TabExecutor {
             // vita: ogni tanto cammina, si guarda intorno, annuisce, muove le braccia
             if (n.patStart < 0 && t >= n.nextIdle) {
                 double r = ThreadLocalRandom.current().nextDouble();
-                if (r < 0.40) {
+                if (r < 0.55) {
                     double ang = ThreadLocalRandom.current().nextDouble() * Math.PI * 2;
-                    double len = 0.4 + ThreadLocalRandom.current().nextDouble() * 0.7;
+                    double len = 0.5 + ThreadLocalRandom.current().nextDouble() * 0.8;
                     double nx = n.cx + Math.cos(ang) * len;
                     double nz = n.cz + Math.sin(ang) * len;
                     double rad = Math.sqrt(nx * nx + nz * nz);
-                    if (rad > 1.1) {
-                        nx = nx / rad * 1.1;
-                        nz = nz / rad * 1.1;
+                    if (rad > 1.3) {
+                        nx = nx / rad * 1.3;
+                        nz = nz / rad * 1.3;
                     }
                     boolean free = true;
                     if (otherNpc != null) {
@@ -757,26 +757,28 @@ public final class Tutorial implements Listener, TabExecutor {
                     if (free) {
                         n.tx = nx;
                         n.tz = nz;
-                        n.speed = 0.09;
+                        n.speed = 0.11;
                     }
-                } else if (r < 0.55) {
+                } else if (r < 0.62) {
                     n.glanceTarget = (ThreadLocalRandom.current().nextBoolean() ? 1 : -1)
                             * (25f + ThreadLocalRandom.current().nextFloat() * 30f);
                     n.glanceUntil = t + 0.8 + ThreadLocalRandom.current().nextDouble() * 0.8;
-                } else if (r < 0.70) {
+                } else if (r < 0.78) {
                     n.pn.swing(ThreadLocalRandom.current().nextBoolean());
-                } else if (r < 0.80) {
+                    n.waveLeft = ThreadLocalRandom.current().nextInt(2);
+                    n.nextWave = t + 0.25;
+                } else if (r < 0.84) {
                     n.head = speaking ? "shake" : "nod";
                     n.headStart = t;
-                } else if (r < 0.87) {
-                    startHand(n, "crouch", t, 0.5);
                 } else if (r < 0.92) {
+                    startHand(n, "crouch", t, 0.5);
+                } else if (r < 0.96) {
                     n.hopStart = t;
                 } else {
                     n.waveLeft = 2;
                     n.nextWave = t;
                 }
-                n.nextIdle = t + (speaking ? 0.7 : 1.2) + ThreadLocalRandom.current().nextDouble() * 1.8;
+                n.nextIdle = t + (speaking ? 0.35 : 0.5) + ThreadLocalRandom.current().nextDouble() * 0.9;
             }
             if (t > n.glanceUntil) {
                 n.glanceTarget = 0f;

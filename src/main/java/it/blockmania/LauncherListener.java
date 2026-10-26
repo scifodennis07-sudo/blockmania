@@ -36,6 +36,9 @@ public final class LauncherListener implements Listener {
     private final Map<UUID, Map<String, Integer>> lastUse = new HashMap<>();
     /** Giocatori che tengono premuto il tasto destro: fino a che tick continuano a sparare da soli. */
     private final Map<UUID, Integer> holdUntil = new HashMap<>();
+    // quanti clic distinti (su tick diversi) ha fatto di seguito: con un solo clic non parte lo sparo automatico
+    private final Map<UUID, Integer> holdCount = new HashMap<>();
+    private final Map<UUID, Integer> holdLastTick = new HashMap<>();
     /** Ultimo messaggio "senza palle", per non ripeterlo a ogni sparo automatico. */
     private final Map<UUID, Integer> lastNoAmmo = new HashMap<>();
     /** Tick dell'ultimo drop (tasto Q) di ogni giocatore: il drop fa partire anche un finto clic sinistro. */
@@ -179,7 +182,18 @@ public final class LauncherListener implements Listener {
 
         // tenendo premuto spara da solo, alla velocita' del potenziamento
         if (plugin.getConfig().getBoolean("autofire.enabled", true)) {
-            holdUntil.put(player.getUniqueId(), Bukkit.getCurrentTick()
+            UUID hid = player.getUniqueId();
+            int tickNow = Bukkit.getCurrentTick();
+            Integer until = holdUntil.get(hid);
+            int count = holdCount.getOrDefault(hid, 0);
+            if (until == null || tickNow > until) {
+                count = 1;
+            } else if (holdLastTick.getOrDefault(hid, -1) != tickNow) {
+                count++;
+            }
+            holdCount.put(hid, count);
+            holdLastTick.put(hid, tickNow);
+            holdUntil.put(hid, tickNow
                     + Math.max(1, plugin.getConfig().getInt("autofire.grace-ticks", 5)));
         }
         tryFire(player, li);
@@ -196,6 +210,7 @@ public final class LauncherListener implements Listener {
             Map.Entry<UUID, Integer> entry = it.next();
             Player player = Bukkit.getPlayer(entry.getKey());
             if (player == null || now > entry.getValue()) {
+                holdCount.remove(entry.getKey());
                 it.remove();
                 continue;
             }
@@ -203,6 +218,9 @@ public final class LauncherListener implements Listener {
             if (li == null || plugin.hasOpenGui(player) || !player.hasPermission("blockmania.use")) {
                 it.remove();
                 continue;
+            }
+            if (holdCount.getOrDefault(entry.getKey(), 0) < 2) {
+                continue; // un solo clic: ha gia' sparato, niente colpo in piu'
             }
             tryFire(player, li);
         }
@@ -461,6 +479,7 @@ public final class LauncherListener implements Listener {
         resetAll(event.getPlayer());
         lastUse.remove(event.getPlayer().getUniqueId());
         holdUntil.remove(event.getPlayer().getUniqueId());
+        holdCount.remove(event.getPlayer().getUniqueId());
         lastNoAmmo.remove(event.getPlayer().getUniqueId());
         lastDrop.remove(event.getPlayer().getUniqueId());
     }

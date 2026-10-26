@@ -12,7 +12,7 @@
 #  Per rifare: /tutorial resetspot, /tutorial resetpoint <denny|andrew|center|all>
 #  Spot, punti e NPC stanno in tutorial-data.yml (non toccarlo a mano).
 # ----------------------------------------------------------------------
-config-version: 4
+config-version: 5
 sound:
   name: "tutorial1"          # il suono del resource pack (playsound tutorial1)
   volume: 1.0
@@ -48,32 +48,59 @@ scene:
   # do = gesti degli NPC (swing = muove il braccio, wave = saluta, hop = saltello, pat = pacca sulla spalla all'altro, bump = pugno tra i due, step = passo verso il giocatore, nod = si', shake = no, eat = mano alla bocca col gomito piegato, block = braccio alzato, crouch = si abbassa), commands = comandi console (%player% = il giocatore)
   steps:
     - {at: 0.00, look: "away:120", turn: 0.1, speaker: denny}
-    - {at: 0.05, look: "away:120", turn: 0.5, speaker: denny, text: "&bDenny&7: Ehi, ciao? ... Ehi?", do: ["denny:wave"]}
+    - {at: 0.08, text: "&bDenny&7: Ehi, ciao? ... Ehi?", do: ["denny:wave"]}
     - {at: 0.55, look: "away:-110,-6", turn: 1.0, speaker: denny}
-    - {at: 1.15, look: "away:110,8", turn: 0.9, speaker: denny, do: ["denny:swing"]}
-    - {at: 1.65, look: "away:75,-3", turn: 1.0, speaker: andrew, text: "&cAndrew&7: Ma questo è cieco?", do: ["andrew:shake"]}
-    - {at: 3.62, look: denny, turn: 0.5, text: "&bDenny&7: Eh? ... Ah, eccoti!", do: ["denny:wave", "denny:hop"]}
-    - {at: 5.91, look: andrew, turn: 0.4, text: "&cAndrew&7: Siamo qui! Davanti a te!", do: ["andrew:swing"]}
-    - {at: 8.53, look: denny, turn: 0.4, text: "&bDenny&7: Sono qui! Guardami... ahah!", do: ["denny:wave"]}
-    - {at: 10.60, look: andrew, turn: 0.4, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo.", do: ["andrew:shake"]}
-    - {at: 13.12, look: denny, turn: 0.4, text: "&bDenny&7: Lascia perdere Andrew... Ti do il benvenuto su BlockMania.", do: ["denny:shake"]}
-    - {at: 14.2, do: ["denny:pat"]}
-    - {at: 18.50, look: andrew, turn: 0.4, text: "&cAndrew&7: Sì sì, benvenuto. Non toccare niente senza chiedere."}
-    - {at: 22.30, look: denny, turn: 0.4, text: "&bDenny&7: Ma dai, Andrew! ... Io sono Denny, piacere!", do: ["denny:wave"]}
-    - {at: 29.72, look: andrew, turn: 0.4, text: "&cAndrew&7: Bravo, Denny. Dopo dieci secondi. Un record.", do: ["andrew:shake"]}
-    - {at: 33.06, look: denny, turn: 0.4, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\".", do: ["denny:nod"]}
-    - {at: 36.64, look: andrew, turn: 0.4, text: "&cAndrew&7: E io sono Andrew. Purtroppo.", do: ["andrew:shake"]}
-    - {at: 38.83, look: denny, turn: 0.4, text: "&bDenny&7: Sarò io il tuo tutor: ti guiderò qui nel server...", do: ["denny:eat"]}
-    - {at: 41.5, do: ["denny:step"]}
-    - {at: 47.89, look: andrew, turn: 0.4, text: "&cAndrew&7: Io intanto ti guardo. Giusto per essere sicuro che non rompi niente.", do: ["andrew:block"]}
-    - {at: 52.58, look: denny, turn: 0.4, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone.", do: ["denny:wave"]}
-    - {at: 54.0, do: ["denny:pat"]}
-    - {at: 56.05, look: andrew, turn: 0.4, text: "&cAndrew&7: Ripetilo e me ne vado.", do: ["andrew:shake"]}
-    - {at: 59.08, look: denny, turn: 0.4, text: "&bDenny&7: Allora... sei pronto?", do: ["denny:nod"]}
-    - {at: 60.67, look: andrew, turn: 0.4, text: "&cAndrew&7: Ma figurati, no. Guarda che faccia.", do: ["andrew:shake"]}
-    - {at: 63.30, look: denny, turn: 0.4, text: "&bDenny&7: Beh... che domanda stupida! Se sei qui, vuol dire che sei nato pronto. Andiamo, allora!", do: ["denny:wave", "denny:hop"]}
-    - {at: 66.6, do: ["denny:bump"]}
-    - {at: 68.91, look: andrew, turn: 0.4, text: "&cAndrew&7: ...Che pazienza. Andiamo.", do: ["andrew:shake"]}
+    - {at: 1.15, look: "away:110,8", turn: 0.9, speaker: denny}
+    - {at: 1.60, look: "away:75,-3", turn: 0.6, speaker: andrew}
+    - {at: 1.88, text: "&cAndrew&7: Ma questo è cieco?", do: ["andrew:shake"]}
+    - {at: 3.58, look: denny, turn: 0.35}
+    - {at: 3.83, text: "&bDenny&7: Eh? ... Ah, eccoti!", do: ["denny:wave", "denny:hop"]}
+    - {at: 5.83, look: andrew, turn: 0.35}
+    - {at: 6.08, text: "&cAndrew&7: Siamo qui! Davanti a te!", do: ["andrew:swing", "andrew:crouch"]}
+    - {at: 8.35, look: denny, turn: 0.35}
+    - {at: 8.60, text: "&bDenny&7: Sono qui! Guardami... ahah!", do: ["denny:swing", "denny:hop"]}
+    - {at: 10.42, look: andrew, turn: 0.35}
+    - {at: 10.67, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo.", do: ["andrew:shake"]}
+    - {at: 11.50, do: ["andrew:swing"]}
+    - {at: 13.23, look: denny, turn: 0.35}
+    - {at: 13.48, text: "&bDenny&7: Lascia perdere Andrew, fa così con tutti quelli nuovi. Bene! Ti do il benvenuto su BlockMania.", do: ["denny:shake"]}
+    - {at: 14.20, do: ["denny:pat"]}
+    - {at: 18.54, look: andrew, turn: 0.35}
+    - {at: 18.79, text: "&cAndrew&7: Sì sì, benvenuto. Non toccare niente senza chiedere.", do: ["andrew:swing", "andrew:crouch"]}
+    - {at: 20.50, do: ["andrew:crouch"]}
+    - {at: 22.33, look: denny, turn: 0.35}
+    - {at: 22.58, text: "&bDenny&7: Ma dai, Andrew! Lascialo respirare! Ah, scusa, che maleducato... non mi sono nemmeno presentato. Io sono Denny, piacere!", do: ["denny:wave"]}
+    - {at: 27.00, do: ["denny:step"]}
+    - {at: 29.75, look: andrew, turn: 0.35}
+    - {at: 30.00, text: "&cAndrew&7: Bravo, Denny. Dopo dieci secondi. Un record.", do: ["andrew:shake"]}
+    - {at: 31.50, do: ["andrew:swing"]}
+    - {at: 32.92, look: denny, turn: 0.35}
+    - {at: 33.17, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\".", do: ["denny:nod"]}
+    - {at: 35.30, do: ["denny:hop"]}
+    - {at: 36.51, look: andrew, turn: 0.35}
+    - {at: 36.76, text: "&cAndrew&7: E io sono Andrew. Purtroppo.", do: ["andrew:crouch", "andrew:swing"]}
+    - {at: 38.64, look: denny, turn: 0.35}
+    - {at: 38.89, text: "&bDenny&7: Sarò io il tuo tutor: ti guiderò qui nel server. Ti spiegherò come iniziare, come muoverti, e qualche strategia che ti farà risparmiare un sacco di tempo.", do: ["denny:nod"]}
+    - {at: 40.60, do: ["denny:step"]}
+    - {at: 45.00, do: ["denny:wave"]}
+    - {at: 47.84, look: andrew, turn: 0.35}
+    - {at: 48.09, text: "&cAndrew&7: Io intanto ti guardo. Giusto per essere sicuro che non rompi niente.", do: ["andrew:swing"]}
+    - {at: 50.00, do: ["andrew:swing"]}
+    - {at: 52.55, look: denny, turn: 0.35}
+    - {at: 52.80, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone.", do: ["denny:nod"]}
+    - {at: 54.40, do: ["denny:pat"]}
+    - {at: 55.94, look: andrew, turn: 0.35}
+    - {at: 56.19, text: "&cAndrew&7: Ripetilo e me ne vado.", do: ["andrew:shake"]}
+    - {at: 58.97, look: denny, turn: 0.35}
+    - {at: 59.22, text: "&bDenny&7: Allora... sei pronto?", do: ["denny:nod"]}
+    - {at: 60.55, look: andrew, turn: 0.35}
+    - {at: 60.80, text: "&cAndrew&7: Ma figurati, no. Guarda che faccia.", do: ["andrew:shake", "andrew:crouch"]}
+    - {at: 61.90, do: ["andrew:crouch"]}
+    - {at: 63.13, look: denny, turn: 0.35}
+    - {at: 63.38, text: "&bDenny&7: Beh... che domanda stupida! Se sei qui, vuol dire che sei nato pronto. Andiamo, allora!", do: ["denny:wave", "denny:hop"]}
+    - {at: 66.40, do: ["denny:bump"]}
+    - {at: 68.86, look: andrew, turn: 0.35}
+    - {at: 69.11, text: "&cAndrew&7: ...Che pazienza. Andiamo.", do: ["andrew:shake"]}
     - {at: 71.85, look: center, turn: 1.0, text: "", speaker: ""}
 
 messages:
