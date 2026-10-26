@@ -84,6 +84,10 @@ public final class Tutorial implements Listener, TabExecutor {
         int patStep;
         double hopY;
         float flinch;
+        double glanceUntil;
+        float glanceTarget;
+        float glanceNow;
+        double speed = 0.1;
 
         Npc(PacketNpc pn) {
             this.pn = pn;
@@ -707,7 +711,7 @@ public final class Tutorial implements Listener, TabExecutor {
                 headPitch += (float) (Math.sin(t * 8.5) * 1.6 + Math.sin(t * 5.1 + 1) * 1.2 + Math.sin(t * 2.3) * 2.0);
                 if (talk && t >= n.nextSwing && n.hand.isEmpty()) {
                     n.pn.swing(ThreadLocalRandom.current().nextBoolean());
-                    n.nextSwing = t + 1.8 + ThreadLocalRandom.current().nextDouble() * 2.7;
+                    n.nextSwing = t + 0.9 + ThreadLocalRandom.current().nextDouble() * 1.6;
                 }
             }
             if (!n.head.isEmpty()) {
@@ -731,12 +735,54 @@ public final class Tutorial implements Listener, TabExecutor {
             if (s.ticks % 2 == 0) {
                 n.pn.look(headYaw, headPitch);
             }
-            // movimenti: non stanno mai impalati, ogni tanto spostano il peso
+            // vita: ogni tanto cammina, si guarda intorno, annuisce, muove le braccia
             if (n.patStart < 0 && t >= n.nextIdle) {
-                n.tx = (ThreadLocalRandom.current().nextDouble() - 0.5) * 0.35;
-                n.tz = (ThreadLocalRandom.current().nextDouble() - 0.5) * 0.35;
-                n.nextIdle = t + 1.5 + ThreadLocalRandom.current().nextDouble() * 3.0;
+                double r = ThreadLocalRandom.current().nextDouble();
+                if (r < 0.40) {
+                    double ang = ThreadLocalRandom.current().nextDouble() * Math.PI * 2;
+                    double len = 0.4 + ThreadLocalRandom.current().nextDouble() * 0.7;
+                    double nx = n.cx + Math.cos(ang) * len;
+                    double nz = n.cz + Math.sin(ang) * len;
+                    double rad = Math.sqrt(nx * nx + nz * nz);
+                    if (rad > 1.1) {
+                        nx = nx / rad * 1.1;
+                        nz = nz / rad * 1.1;
+                    }
+                    boolean free = true;
+                    if (otherNpc != null) {
+                        double ox = n.base.getX() + nx - (otherNpc.base.getX() + otherNpc.cx);
+                        double oz = n.base.getZ() + nz - (otherNpc.base.getZ() + otherNpc.cz);
+                        free = ox * ox + oz * oz > 1.0;
+                    }
+                    if (free) {
+                        n.tx = nx;
+                        n.tz = nz;
+                        n.speed = 0.09;
+                    }
+                } else if (r < 0.55) {
+                    n.glanceTarget = (ThreadLocalRandom.current().nextBoolean() ? 1 : -1)
+                            * (25f + ThreadLocalRandom.current().nextFloat() * 30f);
+                    n.glanceUntil = t + 0.8 + ThreadLocalRandom.current().nextDouble() * 0.8;
+                } else if (r < 0.70) {
+                    n.pn.swing(ThreadLocalRandom.current().nextBoolean());
+                } else if (r < 0.80) {
+                    n.head = speaking ? "shake" : "nod";
+                    n.headStart = t;
+                } else if (r < 0.87) {
+                    startHand(n, "crouch", t, 0.5);
+                } else if (r < 0.92) {
+                    n.hopStart = t;
+                } else {
+                    n.waveLeft = 2;
+                    n.nextWave = t;
+                }
+                n.nextIdle = t + (speaking ? 0.7 : 1.2) + ThreadLocalRandom.current().nextDouble() * 1.8;
             }
+            if (t > n.glanceUntil) {
+                n.glanceTarget = 0f;
+            }
+            n.glanceNow += (n.glanceTarget - n.glanceNow) * 0.15f;
+            headYaw += n.glanceNow;
             if (n.patStart >= 0 && otherNpc != null) {
                 double e = t - n.patStart;
                 double ddx = otherNpc.base.getX() - n.base.getX();
@@ -791,8 +837,14 @@ public final class Tutorial implements Listener, TabExecutor {
             }
             double oldX = n.cx;
             double oldZ = n.cz;
-            n.cx += (n.tx - n.cx) * 0.18;
-            n.cz += (n.tz - n.cz) * 0.18;
+            double mdx = n.tx - n.cx;
+            double mdz = n.tz - n.cz;
+            double md = Math.sqrt(mdx * mdx + mdz * mdz);
+            if (md > 0.001) {
+                double stp = Math.min(md, n.patStart >= 0 ? 0.14 : n.speed);
+                n.cx += mdx / md * stp;
+                n.cz += mdz / md * stp;
+            }
             double hy = 0;
             if (n.hopStart >= 0) {
                 double prog = (t - n.hopStart) / 0.6;
@@ -859,7 +911,7 @@ public final class Tutorial implements Listener, TabExecutor {
                 sender.sendMessage(msg("npc-nopoint", "%name%", key));
                 continue;
             }
-            Location feet = pt.clone().add(0, -1.62, 0);
+            Location feet = pt.clone().add(0, -1.62 + cfg.getDouble("npc.y-offset", 0), 0);
             if (spot != null) {
                 feet.setYaw(aim(pt, spot.clone().add(0, 1.62, 0))[0]);
             }

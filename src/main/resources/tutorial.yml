@@ -12,7 +12,7 @@
 #  Per rifare: /tutorial resetspot, /tutorial resetpoint <denny|andrew|center|all>
 #  Spot, punti e NPC stanno in tutorial-data.yml (non toccarlo a mano).
 # ----------------------------------------------------------------------
-config-version: 3
+config-version: 4
 sound:
   name: "tutorial1"          # il suono del resource pack (playsound tutorial1)
   volume: 1.0
@@ -28,6 +28,7 @@ camera:
 # Denny e Andrew sono giocatori veri (skin completa) fatti con packetevents. Si creano con  /tutorial npc
 npc:
   talk-gestures: true        # chi parla muove il braccio ogni tanto
+  y-offset: 0                # se gli NPC sembrano troppo alti o bassi (es. -0.1), poi rifai /tutorial npc
   view-distance: 48          # da quanti blocchi si vedono
   denny:
     name: "Denny"
