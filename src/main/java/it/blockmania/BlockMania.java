@@ -109,32 +109,6 @@ public final class BlockMania extends JavaPlugin {
         rewards = new Rewards(this);
         getServer().getPluginManager().registerEvents(rewards, this);
         rewards.start();
-        PluginCommand rewardsCommand = getCommand("ricompense");
-        if (rewardsCommand != null) {
-            rewardsCommand.setExecutor((sender, cmd, label, args) -> {
-                if (!(sender instanceof org.bukkit.entity.Player player)) {
-                    sender.sendMessage("solo i giocatori possono aprire le ricompense");
-                    return true;
-                }
-                if (player.hasPermission("blockmania.use")) {
-                    rewards.open(player);
-                }
-                return true;
-            });
-        }
-        PluginCommand afkCommand = getCommand("afk");
-        if (afkCommand != null) {
-            afkCommand.setExecutor((sender, cmd, label, args) -> {
-                if (!(sender instanceof org.bukkit.entity.Player player)) {
-                    sender.sendMessage("solo i giocatori possono andare AFK");
-                    return true;
-                }
-                if (player.hasPermission("blockmania.use")) {
-                    rewards.toggleAfk(player);
-                }
-                return true;
-            });
-        }
         PluginCommand minesCommand = getCommand("mines");
         if (minesCommand != null) {
             minesCommand.setExecutor((sender, cmd, label, args) -> {
@@ -286,12 +260,17 @@ public final class BlockMania extends JavaPlugin {
             c.set("mines.edit.bossbar", null);
             c.set("mines.edit.bossbar-cancel", null);
         }
+        if (done < 11) {
+            // ricompense (nuovo percorso coi bauli) e clic sinistro/destro della lista dei blocchi
+            c.set("rewards-gui", null);
+            c.set("items-gui.block-lore", null);
+        }
         if (done >= 1) {
-            c.set("tuning-version", 10);
+            c.set("tuning-version", 11);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 10);
+        c.set("tuning-version", 11);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -312,7 +291,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 10);
+        c.set("tuning-version", 11);
         saveConfig();
     }
 
@@ -978,6 +957,18 @@ public final class BlockMania extends JavaPlugin {
         }
         if (forceChat) {
             channel = "chat";
+        }
+
+        if (to instanceof Player listener) {
+            String soundKey = type.equalsIgnoreCase("error") ? "error" : type.equalsIgnoreCase("success") ? "success" : "";
+            if (!soundKey.isEmpty()) {
+                String sname = getConfig().getString("message-sounds." + soundKey + ".sound", "");
+                if (sname != null && !sname.isBlank()) {
+                    listener.playSound(listener.getLocation(), sname,
+                            (float) getConfig().getDouble("message-sounds." + soundKey + ".volume", 1.0),
+                            (float) getConfig().getDouble("message-sounds." + soundKey + ".pitch", 1.0));
+                }
+            }
         }
 
         String base = "styles." + type;

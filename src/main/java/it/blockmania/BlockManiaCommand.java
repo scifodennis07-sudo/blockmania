@@ -103,6 +103,20 @@ public final class BlockManiaCommand implements TabExecutor {
             case "get" -> getItem(sender, args);
             case "getblock" -> getBlock(sender, args, 1);
             case "cheque", "assegno" -> cheque(sender, args);
+            case "ricompense", "rewards" -> {
+                if (sender instanceof Player p && p.hasPermission("blockmania.use")) {
+                    plugin.getRewards().open(p);
+                } else if (!(sender instanceof Player)) {
+                    sender.sendMessage("solo i giocatori possono aprire le ricompense");
+                }
+            }
+            case "afk" -> {
+                if (sender instanceof Player p && p.hasPermission("blockmania.use")) {
+                    plugin.getRewards().toggleAfk(p);
+                } else if (!(sender instanceof Player)) {
+                    sender.sendMessage("solo i giocatori possono andare AFK");
+                }
+            }
             case "block" -> block(sender, args);
             case "ball" -> ball(sender, args);
             case "blockcoin" -> counter(sender, args, "blockcoin");
@@ -905,6 +919,10 @@ public final class BlockManiaCommand implements TabExecutor {
 
         if (args.length == 1) {
             result.add("help");
+            if (sender.hasPermission("blockmania.use")) {
+                result.add("ricompense");
+                result.add("afk");
+            }
             if (canGet) {
                 result.add("get");
                 result.add("block");

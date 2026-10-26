@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Le varianti di un note block: si apre con il clic sinistro su un blocco nella lista (/bm items).
+ * Le varianti di un note block: si apre con il clic destro su un blocco nella lista (/bm items).
  * Mostra le 10 varianti del blocco, con le frecce si passa al blocco prima o dopo e al centro c'e' il numero (1/21).
  */
 public final class BlockVariantsGui implements Listener {

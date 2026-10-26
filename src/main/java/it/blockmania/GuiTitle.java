@@ -77,6 +77,17 @@ public final class GuiTitle {
         return this;
     }
 
+    /** Come at(), ma dice tu di quanti pixel avanza il testo (per i caratteri che il plugin non sa misurare). */
+    public GuiTitle at(int x, String legacy, String font, int advance) {
+        int move = x - cursor;
+        if (move != 0) {
+            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
+        }
+        result = result.append(withFont(plugin.color(legacy), font));
+        cursor = x + advance;
+        return this;
+    }
+
     public Component build() {
         return result;
     }

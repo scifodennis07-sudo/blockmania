@@ -54,6 +54,7 @@ public final class Rewards implements Listener {
     public static final class Holder implements InventoryHolder {
         private Inventory inventory;
         private String category;
+        private int first = -1;
         private final Map<Integer, String> actions = new HashMap<>();
 
         Holder(String category) {
@@ -285,27 +286,23 @@ public final class Rewards implements Listener {
         AmmoManager a = plugin.getAmmo();
         if (dailyClaimedToday(player)) {
             plugin.send(player, "daily-already");
-            plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.error");
             return;
         }
         if (isAfk(player)) {
             plugin.send(player, "daily-afk");
-            plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.error");
             return;
         }
         int left = dailyMinutes() - minutesToday(player);
         if (left > 0) {
             plugin.send(player, "daily-wait", "%minutes%", String.valueOf(left));
-            plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.error");
             return;
         }
         a.setCounter(player, "rw_dayclaim", (int) today());
         a.setCounter(player, "rw_days", daysClaimed(player) + 1);
         give(player, new Reward("coin", dailyCoins()));
-        plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.claim");
         plugin.send(player, "daily-claimed", "%coin%", String.valueOf(dailyCoins()),
                 "%day%", String.valueOf(daysClaimed(player)));
-        open(player, "daily", false);
+        open(player, "daily", false, -1);
     }
 
     // ------------------------------------------------------------------
@@ -438,7 +435,7 @@ public final class Rewards implements Listener {
         if (cat.equals("daily")) {
             fillDaily(inv, holder, player, panel, iconSlot, r);
         } else {
-            fillLevel(inv, holder, player, cat, panel, iconSlot, r);
+            fillLevel(inv, holder, player, cat, r);
         }
     }
 
@@ -464,45 +461,107 @@ public final class Rewards implements Listener {
         }
     }
 
-    private void fillLevel(Inventory inv, Holder holder, Player player, String cat, List<Integer> panel,
-                           int iconSlot, String[] r) {
-        var c = plugin.getConfig();
+    /** Valori di un livello per i testi (quelli del livello prima, cosi' vincono sui generali). */
+    private String[] levelRepl(Player player, String cat, int level, String[] general) {
         int claimed = claimedLevel(player, cat);
-        boolean finished = claimed >= maxLevel();
-        int next = Math.min(maxLevel(), claimed + 1);
-        boolean ready = !finished && stat(player, cat) >= threshold(cat, next);
-        String key = finished ? "finished" : ready ? "ready" : "progress";
-        String name = c.getString(GUI + "level-states." + key + ".name", "&flivello %level%");
-        List<String> lore = loreOf(GUI + "level-states." + key + ".lore", List.of());
-        for (int slot : panel) {
-            put(inv, holder, slot, pane(invisibleCmd(), name, lore, r, false), ready ? "claim:" + cat : null);
+        long have = stat(player, cat);
+        long need = threshold(cat, level);
+        long from = threshold(cat, level - 1);
+        long pct = level <= claimed || have >= need ? 100
+                : level > claimed + 1 ? 0 : Math.max(0, (have - from) * 100 / Math.max(1, need - from));
+        String[] mine = {"%level%", String.valueOf(level),
+                "%have%", String.valueOf(have),
+                "%need%", String.valueOf(need),
+                "%left%", String.valueOf(Math.max(0, need - have)),
+                "%percent%", String.valueOf(pct),
+                "%reward%", rewardName(rewardOf(level)),
+                "%before%", String.valueOf(Math.max(1, claimed + 1))};
+        String[] out = new String[mine.length + general.length];
+        System.arraycopy(mine, 0, out, 0, mine.length);
+        System.arraycopy(general, 0, out, mine.length, general.length);
+        return out;
+    }
+
+    private List<Integer> fixedSlots(String name, int... def) {
+        List<Integer> d = new ArrayList<>();
+        for (int i : def) {
+            d.add(i);
         }
-        // l'icona della ricompensa al centro
-        if (!finished) {
-            Reward rw = rewardOf(next);
-            ItemStack icon;
-            if (rw.type().startsWith("cheque_")) {
-                icon = cheque(rw.type().substring(7), Math.min(64, rw.amount()));
-            } else {
-                icon = pane(iconCmd(rw.type(), rw.type().equals("coin") ? 506 : 507), name, lore, r, false);
+        return slots(GUI + "slots." + name, d);
+    }
+
+    /**
+     * Il percorso dei livelli: 5 alla volta. Sopra la ricompensa, al centro il baule (aperto = ritirato,
+     * chiuso = da aprire), sotto la spunta o il lucchetto. Le frecce in basso scorrono di 5 livelli.
+     */
+    private void fillLevel(Inventory inv, Holder holder, Player player, String cat, String[] general) {
+        var c = plugin.getConfig();
+        int max = maxLevel();
+        int per = 5;
+        int claimed = claimedLevel(player, cat);
+        if (holder.first < 1) {
+            holder.first = (Math.min(max, claimed + 1) - 1) / per * per + 1;
+        }
+        holder.first = Math.max(1, Math.min(holder.first, (max - 1) / per * per + 1));
+        List<Integer> rewardSlots = fixedSlots("rewards", 20, 21, 22, 23, 24);
+        List<Integer> chestSlots = fixedSlots("chests", 29, 30, 31, 32, 33);
+        List<Integer> statusSlots = fixedSlots("status", 38, 39, 40, 41, 42);
+        for (int i = 0; i < per; i++) {
+            int level = holder.first + i;
+            if (level > max) {
+                break;
             }
-            if (icon != null) {
-                ItemMeta meta = icon.getItemMeta();
-                meta.displayName(plugin.text(name, r));
-                List<Component> lines = new ArrayList<>();
-                for (String line : lore) {
-                    lines.add(plugin.text(line, r));
+            boolean done = level <= claimed;
+            boolean ready = level == claimed + 1 && stat(player, cat) >= threshold(cat, level);
+            String key = done ? "done" : ready ? "ready" : level == claimed + 1 ? "progress" : "locked";
+            String[] r = levelRepl(player, cat, level, general);
+            String name = c.getString(GUI + "level-states." + key + ".name", "&flivello %level%");
+            List<String> lore = loreOf(GUI + "level-states." + key + ".lore", List.of());
+            String action = ready ? "claim:" + cat : null;
+            if (i < chestSlots.size()) {
+                put(inv, holder, chestSlots.get(i), pane(done ? iconCmd("chest-open", 511) : iconCmd("chest", 510),
+                        name, lore, r, false), action);
+            }
+            if (i < rewardSlots.size()) {
+                Reward rw = rewardOf(level);
+                ItemStack icon;
+                if (rw.type().startsWith("cheque_")) {
+                    icon = cheque(rw.type().substring(7), Math.min(64, rw.amount()));
+                } else {
+                    icon = pane(iconCmd(rw.type(), rw.type().equals("coin") ? 506 : 507), name, lore, r, false);
                 }
-                meta.lore(lines);
-                icon.setItemMeta(meta);
-                put(inv, holder, iconSlot, icon, ready ? "claim:" + cat : null);
+                if (icon != null) {
+                    ItemMeta meta = icon.getItemMeta();
+                    meta.displayName(plugin.text(name, r));
+                    List<Component> lines = new ArrayList<>();
+                    for (String line : lore) {
+                        lines.add(plugin.text(line, r));
+                    }
+                    meta.lore(lines);
+                    icon.setItemMeta(meta);
+                    put(inv, holder, rewardSlots.get(i), icon, action);
+                }
             }
-        } else {
-            put(inv, holder, iconSlot, pane(iconCmd("check", 509), name, lore, r, false), null);
+            if (i < statusSlots.size() && !ready) {
+                put(inv, holder, statusSlots.get(i), pane(done ? iconCmd("check", 509) : iconCmd("lock", 508),
+                        name, lore, r, false), null);
+            }
+        }
+        if (holder.first > 1) {
+            for (int slot : fixedSlots("prev", 47)) {
+                put(inv, holder, slot, pane(iconCmd("prev", 512), c.getString(GUI + "prev.name", "&7livelli precedenti"),
+                        List.of(), general, false), "scroll:-" + per);
+            }
+        }
+        if (holder.first + per <= max) {
+            for (int slot : fixedSlots("next", 51)) {
+                put(inv, holder, slot, pane(iconCmd("next", 513), c.getString(GUI + "next.name", "&7livelli successivi"),
+                        List.of(), general, false), "scroll:" + per);
+            }
         }
     }
 
-    private void claimLevel(Player player, String cat) {
+    private void claimLevel(Player player, Holder holder, String cat) {
         int claimed = claimedLevel(player, cat);
         if (claimed >= maxLevel()) {
             return;
@@ -515,9 +574,8 @@ public final class Rewards implements Listener {
         Reward rw = rewardOf(next);
         plugin.getAmmo().setCounter(player, "rw_lvl_" + cat, next);
         give(player, rw);
-        plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.claim");
         plugin.send(player, "reward-claimed", "%level%", String.valueOf(next), "%reward%", rewardName(rw));
-        open(player, cat, false);
+        open(player, cat, false, holder.first);
     }
 
     // ---------- titolo ----------
@@ -535,6 +593,15 @@ public final class Rewards implements Listener {
     }
 
     /** Larghezza in pixel di un testo scritto con le lettere del pack (senza l'ultimo pixel vuoto). */
+    private static int textAdvance(String text) {
+        int total = 0;
+        for (char ch : text.toCharArray()) {
+            int w = ch == ' ' ? 4 : FontMetrics.width(ch);
+            total += w < 0 ? 6 : w;
+        }
+        return total;
+    }
+
     private static int textWidth(String text) {
         int total = 0;
         for (char ch : text.toCharArray()) {
@@ -586,19 +653,19 @@ public final class Rewards implements Listener {
         int start = center - textWidth(text) / 2;
         String font = c.getString(GUI + "title.font", "");
         if (c.getBoolean(GUI + "bar-shadow", true)) {
-            t.at(start + 1, GuiTitle.shadowCode(plugin) + letters(text, TEXT_SHADOW_BASE), font);
+            t.at(start + 1, GuiTitle.shadowCode(plugin) + letters(text, TEXT_SHADOW_BASE), font, textAdvance(text));
         }
-        t.at(start, "&f" + letters(text, TEXT_BASE), font);
+        t.at(start, "&f" + letters(text, TEXT_BASE), font, textAdvance(text));
         return t.build();
     }
 
     // ---------- aprire e usare ----------
 
     public void open(Player player) {
-        open(player, "broken", true);
+        open(player, "broken", true, -1);
     }
 
-    public void open(Player player, String category, boolean sound) {
+    public void open(Player player, String category, boolean sound, int first) {
         String cat = category;
         boolean known = false;
         for (String k : CATEGORIES) {
@@ -608,6 +675,7 @@ public final class Rewards implements Listener {
             cat = "broken";
         }
         Holder holder = new Holder(cat);
+        holder.first = first;
         Inventory inv = Bukkit.createInventory(holder, SIZE, title(player, cat));
         holder.inventory = inv;
         fill(inv, holder, player);
@@ -634,6 +702,7 @@ public final class Rewards implements Listener {
         if (action == null) {
             return;
         }
+        plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.click");
         if (action.equals("close")) {
             player.closeInventory();
         } else if (action.equals("daily")) {
@@ -641,11 +710,17 @@ public final class Rewards implements Listener {
         } else if (action.startsWith("cat:")) {
             String cat = action.substring(4);
             if (!cat.equals(holder.category)) {
-                plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.page");
-                open(player, cat, false);
+                open(player, cat, false, -1);
             }
+        } else if (action.startsWith("scroll:")) {
+            try {
+                holder.first += Integer.parseInt(action.substring(7));
+            } catch (NumberFormatException ex) {
+                return;
+            }
+            open(player, holder.category, false, holder.first);
         } else if (action.startsWith("claim:")) {
-            claimLevel(player, action.substring(6));
+            claimLevel(player, holder, action.substring(6));
         }
     }
 

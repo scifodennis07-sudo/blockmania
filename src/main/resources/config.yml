@@ -111,8 +111,19 @@ glyphs:
   bar-shadow: "\uE470"
   shadow-color: "#3F3F3F"     # colore dell'ombra dei numeri
 
+# suono di ogni messaggio: errori = "error", messaggi giusti (success) = "ding" (suoni custom del resource pack)
+message-sounds:
+  error:
+    sound: "error"
+    volume: 0.8
+    pitch: 1.0
+  success:
+    sound: "ding"
+    volume: 0.8
+    pitch: 1.0
+
 # ----------------------------------------------------------------------
-#  RICOMPENSE  (/ricompense)
+#  RICOMPENSE  (/bm ricompense)
 #  A sinistra le 5 sezioni, al centro la ricompensa del prossimo livello. Ogni sezione ha 100 livelli
 #  (la giornaliera no). Gli sfondi sono le immagini ricompense.png (0%), ricompense-2 ... ricompense-12 (100%)
 #  e ricompense-13 (giornaliera da ritirare) / ricompense-14 (gia' ritirata).
@@ -156,7 +167,12 @@ rewards-gui:
     info: [7, 8]
     bar: [2, 3, 4, 5, 6]
     categories: [9, 18, 27, 36, 45]
-    icon: 31
+    # percorso dei livelli (5 alla volta): ricompensa, baule, spunta/lucchetto, frecce per scorrere
+    rewards: [20, 21, 22, 23, 24]
+    chests: [29, 30, 31, 32, 33]
+    status: [38, 39, 40, 41, 42]
+    prev: [47]
+    next: [51]
   cmds:                        # modelli (glass_pane) delle icone
     broken: 501
     hits: 502
@@ -165,7 +181,12 @@ rewards-gui:
     daily: 505
     coin: 506
     blockcoin: 507
+    lock: 508
     check: 509
+    chest: 510                 # baule chiuso (livello da aprire)
+    chest-open: 511            # baule aperto (livello ritirato)
+    prev: 512
+    next: 513
   selected-prefix: "&a▶ "
   close:
     name: "&cchiudi"
@@ -209,25 +230,32 @@ rewards-gui:
       hint: "&8clicca per aprire"
       lore: []
   level-states:
-    progress:
-      name: "&flivello &e%level%&8/&f%max%"
+    done:
+      name: "&alivello &e%level% &aritirato"
       lore:
         - ""
         - "&7ricompensa: &e%reward%"
-        - "&7progresso: &f%have%&8/&f%need% &8(&f%percent%%&8)"
-        - "&7ne mancano &f%left%"
     ready:
-      name: "&alivello &e%level%&a completato"
+      name: "&alivello &e%level% &acompletato"
       lore:
         - ""
         - "&7ricompensa: &e%reward%"
         - ""
         - "&eclicca per ritirare"
-    finished:
-      name: "&asezione completata"
+    progress:
+      name: "&flivello &e%level%"
       lore:
         - ""
-        - "&7hai ritirato tutti i livelli"
+        - "&7ricompensa: &e%reward%"
+        - "&7progresso: &f%have%&8/&f%need% &8(&f%percent%%&8)"
+        - "&7ne mancano &f%left%"
+    locked:
+      name: "&7livello &e%level%"
+      lore:
+        - ""
+        - "&7ricompensa: &e%reward%"
+        - "&7serve: &f%need%"
+        - "&8prima completa il livello &f%before%"
   daily:
     coin: 1000
     minutes: 30                # minuti giocati (non AFK) prima di poter ritirare
@@ -273,21 +301,22 @@ rewards-gui:
     cheque_coin: "assegno coin x%amount%"
     cheque_blockcoin: "assegno blockcoin x%amount%"
     cheque_power: "assegno attacco potenziato x%amount%"
+  # suoni: "click" e "error" sono suoni custom del resource pack (sounds.json, cartella sounds/custom)
   sounds:
     open:
       sound: "block.chest.open"
       volume: 0.6
       pitch: 1.2
-    page:
-      sound: "ui.button.click"
-      volume: 0.6
-      pitch: 1.2
+    click:
+      sound: "click"
+      volume: 0.8
+      pitch: 1.0
     claim:
       sound: "entity.player.levelup"
       volume: 0.8
       pitch: 1.2
     error:
-      sound: "entity.villager.no"
+      sound: "error"
       volume: 0.8
       pitch: 1.0
 
@@ -879,6 +908,18 @@ help:
       usage: "/bm power <give|see|reset|set <n>|uses <n>> [player]"
       description: "give = regala gli attacchi di uno sblocco, set <n> = imposta quanti ne ha pronti, uses <n> = quanti ne regala ogni sblocco, see = mostra, reset = azzera"
       example: "/bm power give"
+    ricompense:
+      permission: blockmania.use
+      usage: "/bm ricompense"
+      description: "apre le ricompense: livelli, giornaliera e assegni"
+    afk:
+      permission: blockmania.use
+      usage: "/bm afk"
+      description: "attiva o disattiva la modalita AFK (da AFK non conta il tempo di gioco)"
+    cheque:
+      permission: blockmania.get
+      usage: "/bm cheque <tipo> [quantita] [player]"
+      description: "ti da degli assegni (standardball, doubleball, ghostball, explosionball, coin, blockcoin, power)"
     mines:
       permission: blockmania.build
       usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>"
@@ -1809,11 +1850,11 @@ items-gui:
   selected-line: "&a► aperta"
   click-line: "&eclicca per aprire"
 
-  # nella categoria dei note block: clic sinistro apre le varianti del blocco
+  # nella categoria dei note block: clic destro apre le varianti del blocco
   block-lore:
     - ""
-    - "&6clic sinistro &7apre le varianti"
-    - "&6clic destro &7ne ricevi 1"
+    - "&6clic destro &7apre le varianti"
+    - "&6clic sinistro &7ne ricevi 1"
     - "&6shift + clic &7ricevi uno stack"
 
   # come si vede un oggetto nella lista (se non e' un lanciapalle o un blocco)
@@ -1898,7 +1939,7 @@ items-gui:
       font: ""
 
 # ----------------------------------------------------------------------
-#  GUI DELLE VARIANTI (clic sinistro su un note block in /bm items)
+#  GUI DELLE VARIANTI (clic destro su un note block in /bm items)
 #  Mostra le 10 varianti del blocco. Le frecce passano al blocco prima/dopo, al centro c'e' il numero (3/21).
 #  Gli slot si contano da 0 (riga 1 = 0-8, riga 2 = 9-17 ...). Il disegno e' custom-gui/shopitem-2.png.
 #  Il numero e' scritto nel titolo (title.number): se non e' centrato cambia center (+1 = un pixel a destra)

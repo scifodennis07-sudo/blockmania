@@ -378,8 +378,8 @@ public final class ItemsGui implements Listener {
                 return;
             }
             boolean blocks = str(cats.get(holder.category).get("type"), "items").equalsIgnoreCase("blocks");
-            if (blocks && event.isLeftClick() && !event.isShiftClick()) {
-                // clic sinistro su un note block: si aprono tutte le sue varianti
+            if (blocks && event.isRightClick() && !event.isShiftClick()) {
+                // clic destro su un note block: si aprono tutte le sue varianti
                 plugin.getVariantsGui().open(player, index + 1);
                 return;
             }
