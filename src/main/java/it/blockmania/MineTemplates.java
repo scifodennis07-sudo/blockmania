@@ -18,6 +18,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.persistence.PersistentDataType;
@@ -137,6 +140,8 @@ public final class MineTemplates implements Listener {
         final Region region;
         boolean dirty;
         BossBar bar;
+        BossBar bar2;
+        long warned;
 
         Session(int mine, Location back, Info info, Region region) {
             this.mine = mine;
@@ -794,8 +799,8 @@ public final class MineTemplates implements Listener {
         }
         Session old = sessions.get(player.getUniqueId());
         Location back = old != null ? old.back : player.getLocation();
-        if (old != null && old.bar != null) {
-            plugin.getBars().remove(player, "edit");
+        if (old != null) {
+            endBar(player, old);
         }
         sessions.put(player.getUniqueId(), new Session(mine, back, info, region));
         player.teleportAsync(referenceSpawn(region, info, world));
@@ -811,15 +816,24 @@ public final class MineTemplates implements Listener {
             return;
         }
         s.dirty = true;
-        String text = plugin.getConfig().getString("mines.edit.bossbar",
-                "&epremi &fshift + f &eper salvare le modifiche della miniera &f%mine% &8| &fshift + q &eper annullare");
-        Component name = plugin.bossSegments(List.of(text.replace("%mine%", String.valueOf(s.mine))), -1);
+        String save = plugin.getConfig().getString("mines.edit.bossbar",
+                "{icon:giallo_matita} &epremi {key:shift + f} &eper salvare le modifiche della miniera &f%mine%");
+        String cancel = plugin.getConfig().getString("mines.edit.bossbar-cancel",
+                "{icon:giallo_matita} &epremi {key:shift + q} &eper annullare le modifiche");
+        Component name = plugin.bossSegments(List.of(save.replace("%mine%", String.valueOf(s.mine))), -1);
+        Component name2 = plugin.bossSegments(List.of(cancel.replace("%mine%", String.valueOf(s.mine))), -1);
         if (s.bar == null) {
             s.bar = BossBar.bossBar(name, 1f, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
         } else {
             s.bar.name(name);
         }
+        if (s.bar2 == null) {
+            s.bar2 = BossBar.bossBar(name2, 1f, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+        } else {
+            s.bar2.name(name2);
+        }
         plugin.getBars().set(player, "edit", s.bar, 90, false);
+        plugin.getBars().set(player, "edit2", s.bar2, 89, false);
     }
 
     /** Sessione di modifica che parte da sola: lo staffer ha cambiato qualcosa nella miniera ufficiale. */
@@ -930,11 +944,86 @@ public final class MineTemplates implements Listener {
         cancel(player, s);
     }
 
+    /** Una modifica in corso: lo staffer non puo' uscire dalla zona finche' non salva (shift + F) o annulla (shift + Q). */
+    private boolean locked(Session s) {
+        return s.dirty || s.back != null;
+    }
+
+    private void warnLeave(Player player, Session s) {
+        long now = System.currentTimeMillis();
+        if (now - s.warned > 2000) {
+            s.warned = now;
+            plugin.send(player, "mine-edit-leave");
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onMove(PlayerMoveEvent event) {
+        Location to = event.getTo();
+        if (to == null || sessions.isEmpty()) {
+            return;
+        }
+        Location from = event.getFrom();
+        if (from.getBlockX() == to.getBlockX() && from.getBlockY() == to.getBlockY()
+                && from.getBlockZ() == to.getBlockZ()) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Session s = sessions.get(player.getUniqueId());
+        if (s == null || s.region.contains(to, 12)) {
+            return;
+        }
+        if (!locked(s)) {
+            sessions.remove(player.getUniqueId()); // niente da salvare: la sessione finisce da sola
+            return;
+        }
+        if (!s.region.contains(from, 12)) {
+            return; // e' gia' fuori (per esempio appena teletrasportato): non lo blocco in loop
+        }
+        event.setTo(from);
+        warnLeave(player, s);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onTeleport(PlayerTeleportEvent event) {
+        if (sessions.isEmpty()) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Session s = sessions.get(player.getUniqueId());
+        Location to = event.getTo();
+        if (s == null || to == null || !locked(s) || s.region.contains(to, 12)) {
+            return;
+        }
+        event.setCancelled(true);
+        warnLeave(player, s);
+    }
+
+    /** Se esce dal server senza salvare, le modifiche vengono annullate. */
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+        Session s = sessions.get(player.getUniqueId());
+        if (s == null) {
+            return;
+        }
+        if (s.dirty || s.back != null) {
+            cancel(player, s);
+        } else {
+            sessions.remove(player.getUniqueId());
+            endBar(player, s);
+        }
+    }
+
     private void endBar(Player player, Session s) {
         s.dirty = false;
         if (s.bar != null) {
             plugin.getBars().remove(player, "edit");
             s.bar = null;
+        }
+        if (s.bar2 != null) {
+            plugin.getBars().remove(player, "edit2");
+            s.bar2 = null;
         }
     }
 

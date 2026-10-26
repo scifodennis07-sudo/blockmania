@@ -102,6 +102,7 @@ public final class BlockManiaCommand implements TabExecutor {
             case "reload" -> reload(sender);
             case "get" -> getItem(sender, args);
             case "getblock" -> getBlock(sender, args, 1);
+            case "cheque", "assegno" -> cheque(sender, args);
             case "block" -> block(sender, args);
             case "ball" -> ball(sender, args);
             case "blockcoin" -> counter(sender, args, "blockcoin");
@@ -395,6 +396,39 @@ public final class BlockManiaCommand implements TabExecutor {
             return;
         }
         deliver(sender, target, plugin.createItem(li, target), plugin.tiny(li.id()));
+    }
+
+    /** /bm cheque <tipo> [quantita] [giocatore]: da' degli assegni. */
+    private void cheque(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("blockmania.get")) {
+            plugin.sendCommand(sender, "no-permission");
+            return;
+        }
+        Rewards rewards = plugin.getRewards();
+        String types = String.join(", ", rewards.chequeTypes());
+        if (args.length < 2) {
+            plugin.sendCommand(sender, "missing-item", "%usage%", "/bm cheque <tipo> [quantita] [giocatore]", "%items%", types);
+            return;
+        }
+        int amount = 1;
+        if (args.length > 2) {
+            try {
+                amount = Math.max(1, Math.min(64, Integer.parseInt(args[2])));
+            } catch (NumberFormatException ex) {
+                plugin.sendCommand(sender, "unknown-item", "%value%", args[2], "%items%", types);
+                return;
+            }
+        }
+        ItemStack stack = rewards.cheque(args[1], amount);
+        if (stack == null) {
+            plugin.sendCommand(sender, "unknown-item", "%value%", args[1], "%items%", types);
+            return;
+        }
+        Player target = resolveTarget(sender, args, 3, "get");
+        if (target == null) {
+            return;
+        }
+        deliver(sender, target, stack, plugin.tiny("assegno " + args[1].toLowerCase(Locale.ROOT)));
     }
 
     // ---------- /blockmania block <get|wand|pos1|pos2|set|replace|remove|undo> ----------
@@ -875,6 +909,7 @@ public final class BlockManiaCommand implements TabExecutor {
                 result.add("get");
                 result.add("block");
                 result.add("items");
+                result.add("cheque");
             }
             if (canStats) {
                 result.add("power");
@@ -958,6 +993,14 @@ public final class BlockManiaCommand implements TabExecutor {
                 }
             } else if (sub.equals("block")) {
                 blockTab(sender, args, result);
+            } else if ((sub.equals("cheque") || sub.equals("assegno")) && canGet) {
+                if (args.length == 2) {
+                    result.addAll(plugin.getRewards().chequeTypes());
+                } else if (args.length == 3) {
+                    addNumberHint(result);
+                } else if (args.length == 4) {
+                    addPlayers(result);
+                }
             } else if (sub.equals("getblock") && canGet) {
                 if (args.length == 3) {
                     result.addAll(blockCodes());

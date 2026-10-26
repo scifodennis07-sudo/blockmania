@@ -1,5 +1,5 @@
 name: BlockMania
-version: '1.24.0'
+version: '1.25.0'
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom
@@ -12,6 +12,13 @@ commands:
     description: Apre la GUI delle miniere
     usage: /<command>
     aliases: [miniere]
+  ricompense:
+    description: Apre la GUI delle ricompense
+    usage: /<command>
+    aliases: [rewards, ricompensa]
+  afk:
+    description: Attiva o disattiva la modalita AFK
+    usage: /<command>
 permissions:
   blockmania.get:
     description: Permette di ottenere gli oggetti

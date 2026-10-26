@@ -112,6 +112,243 @@ glyphs:
   shadow-color: "#3F3F3F"     # colore dell'ombra dei numeri
 
 # ----------------------------------------------------------------------
+#  RICOMPENSE  (/ricompense)
+#  A sinistra le 5 sezioni, al centro la ricompensa del prossimo livello. Ogni sezione ha 100 livelli
+#  (la giornaliera no). Gli sfondi sono le immagini ricompense.png (0%), ricompense-2 ... ricompense-12 (100%)
+#  e ricompense-13 (giornaliera da ritirare) / ricompense-14 (gia' ritirata).
+#  Il livello n si completa quando il totale arriva a  base * (n + growth * n * n).
+# ----------------------------------------------------------------------
+rewards-gui:
+  levels: 100
+  progress-images: 12
+  images: ["\u3d00", "\u3d01", "\u3d02", "\u3d03", "\u3d04", "\u3d05", "\u3d06", "\u3d07", "\u3d08", "\u3d09", "\u3d0a", "\u3d0b"]
+  image-daily-ready: "\u3d0c"
+  image-daily-claimed: "\u3d0d"
+  bar-center: 88               # centro (in pixel) della barra in alto, dove sta scritto "giorno N" / "livello N"
+  bar-shadow: true
+  bar-text:
+    daily: "giorno %n%"
+    level: "livello %n%"
+  invisible:
+    material: GLASS_PANE
+    cmd: 999
+  title:
+    text: "&f{shift:-15}%image%"
+    font: ""
+    widths:
+      "\u3d00": 179
+      "\u3d01": 179
+      "\u3d02": 179
+      "\u3d03": 179
+      "\u3d04": 179
+      "\u3d05": 179
+      "\u3d06": 179
+      "\u3d07": 179
+      "\u3d08": 179
+      "\u3d09": 179
+      "\u3d0a": 179
+      "\u3d0b": 179
+      "\u3d0c": 179
+      "\u3d0d": 179
+    advance: 0
+  slots:
+    close: [0, 1]
+    info: [7, 8]
+    bar: [2, 3, 4, 5, 6]
+    categories: [9, 18, 27, 36, 45]
+    icon: 31
+  cmds:                        # modelli (glass_pane) delle icone
+    broken: 501
+    hits: 502
+    spent: 503
+    play: 504
+    daily: 505
+    coin: 506
+    blockcoin: 507
+    check: 509
+  selected-prefix: "&a▶ "
+  close:
+    name: "&cchiudi"
+  info:
+    name: "&6informazioni"
+    lore:
+      - "&7completa i livelli per ricevere ricompense"
+      - "&7sempre piu' forti"
+      - "&8la giornaliera si ritira dopo &f%need%&8 minuti di gioco"
+  categories:
+    broken:
+      name: "&fblocchi spaccati"
+      hint: "&8clicca per aprire"
+      base: 100
+      growth: 0.05
+      lore:
+        - "&7ne hai spaccati &f%have%"
+    hits:
+      name: "&fblocchi colpiti"
+      hint: "&8clicca per aprire"
+      base: 150
+      growth: 0.05
+      lore:
+        - "&7ne hai colpiti &f%have%"
+    spent:
+      name: "&fcoin spesi"
+      hint: "&8clicca per aprire"
+      base: 200
+      growth: 0.05
+      lore:
+        - "&7ne hai spesi &f%have%"
+    play:
+      name: "&ftempo di gioco"
+      hint: "&8clicca per aprire"
+      base: 10                 # minuti
+      growth: 0.05
+      lore:
+        - "&7hai giocato &f%have%&7 minuti"
+    daily:
+      name: "&fricompensa giornaliera"
+      hint: "&8clicca per aprire"
+      lore: []
+  level-states:
+    progress:
+      name: "&flivello &e%level%&8/&f%max%"
+      lore:
+        - ""
+        - "&7ricompensa: &e%reward%"
+        - "&7progresso: &f%have%&8/&f%need% &8(&f%percent%%&8)"
+        - "&7ne mancano &f%left%"
+    ready:
+      name: "&alivello &e%level%&a completato"
+      lore:
+        - ""
+        - "&7ricompensa: &e%reward%"
+        - ""
+        - "&eclicca per ritirare"
+    finished:
+      name: "&asezione completata"
+      lore:
+        - ""
+        - "&7hai ritirato tutti i livelli"
+  daily:
+    coin: 1000
+    minutes: 30                # minuti giocati (non AFK) prima di poter ritirare
+    states:
+      wait:
+        name: "&fricompensa giornaliera"
+        lore:
+          - ""
+          - "&7ricompensa: &e%coin_reward% coin"
+          - "&7gioca ancora &f%minutes%&8/&f%need%&7 minuti"
+      ready:
+        name: "&aricompensa giornaliera"
+        lore:
+          - ""
+          - "&7ricompensa: &e%coin_reward% coin"
+          - ""
+          - "&eclicca per ritirare"
+      claimed:
+        name: "&cgia' ritirata"
+        lore:
+          - ""
+          - "&7torna domani dopo mezzanotte"
+  # ricompensa per livello. "upto" = fino a questo livello, "amount" = quanti al primo livello della fascia,
+  # "step" = quanti in piu' a ogni livello successivo. Tipi: coin, blockcoin, cheque_<tipo>
+  # (standardball, doubleball, ghostball, explosionball, coin, blockcoin, power)
+  tiers:
+    - {upto: 10, type: coin, amount: 100, step: 50}
+    - {upto: 20, type: blockcoin, amount: 50, step: 25}
+    - {upto: 30, type: cheque_standardball, amount: 1, step: 0}
+    - {upto: 40, type: cheque_doubleball, amount: 1, step: 0}
+    - {upto: 50, type: cheque_ghostball, amount: 1, step: 0}
+    - {upto: 60, type: cheque_explosionball, amount: 1, step: 0}
+    - {upto: 70, type: cheque_coin, amount: 1, step: 0}
+    - {upto: 80, type: cheque_blockcoin, amount: 1, step: 0}
+    - {upto: 100, type: cheque_power, amount: 1, step: 0}
+  reward-names:
+    coin: "%amount% coin"
+    blockcoin: "%amount% blockcoin"
+    cheque_standardball: "assegno standardball x%amount%"
+    cheque_doubleball: "assegno doubleball x%amount%"
+    cheque_ghostball: "assegno ghostball x%amount%"
+    cheque_explosionball: "assegno explosionball x%amount%"
+    cheque_coin: "assegno coin x%amount%"
+    cheque_blockcoin: "assegno blockcoin x%amount%"
+    cheque_power: "assegno attacco potenziato x%amount%"
+  sounds:
+    open:
+      sound: "block.chest.open"
+      volume: 0.6
+      pitch: 1.2
+    page:
+      sound: "ui.button.click"
+      volume: 0.6
+      pitch: 1.2
+    claim:
+      sound: "entity.player.levelup"
+      volume: 0.8
+      pitch: 1.2
+    error:
+      sound: "entity.villager.no"
+      volume: 0.8
+      pitch: 1.0
+
+# ----------------------------------------------------------------------
+#  ASSEGNI  (bastoncini col modello 3-9, tasto destro per usarli)
+#  Le palle ricaricano le munizioni di quella palla. Coin e blockcoin danno una cifra a caso tra min e max
+#  con l'effetto slot machine. L'attacco potenziato regala tanti attacchi quanti ne ha impostati il giocatore
+#  (/bm power uses). Per averne uno: /bm cheque <tipo> [quantita] [giocatore]
+# ----------------------------------------------------------------------
+cheques:
+  title-color: "&e"
+  reveal-ticks: 8              # ogni quanti tick si ferma una cifra
+  standardball:
+    cmd: 3
+    name: "&b&lassegno standardball"
+    lore: ["", "&7tasto destro: ricarica le &fstandardball"]
+  doubleball:
+    cmd: 4
+    name: "&a&lassegno doubleball"
+    lore: ["", "&7tasto destro: ricarica le &fdoubleball"]
+  ghostball:
+    cmd: 5
+    name: "&d&lassegno ghostball"
+    lore: ["", "&7tasto destro: ricarica le &fghostball"]
+  explosionball:
+    cmd: 6
+    name: "&c&lassegno explosionball"
+    lore: ["", "&7tasto destro: ricarica le &fexplosionball"]
+  coin:
+    cmd: 7
+    name: "&6&lassegno coin"
+    label: "coin"
+    min: 500
+    max: 2000
+    lore: ["", "&7tasto destro: ricevi un po' di &fcoin"]
+  blockcoin:
+    cmd: 8
+    name: "&2&lassegno blockcoin"
+    label: "blockcoin"
+    min: 100
+    max: 500
+    lore: ["", "&7tasto destro: ricevi un po' di &fblockcoin"]
+  power:
+    cmd: 9
+    name: "&6&lassegno attacco potenziato"
+    lore: ["", "&7tasto destro: ricevi attacchi potenziati"]
+  sounds:
+    use:
+      sound: "entity.experience_orb.pickup"
+      volume: 0.8
+      pitch: 1.0
+    tick:
+      sound: "block.note_block.hat"
+      volume: 0.5
+      pitch: 1.6
+    win:
+      sound: "entity.player.levelup"
+      volume: 0.9
+      pitch: 1.3
+
+# ----------------------------------------------------------------------
 #  MESSAGGI
 #    type     error / success / info / warning (oppure uno stile tuo qui sopra)
 #    channel  chat = in chat, actionbar = sopra l'hotbar
@@ -346,6 +583,46 @@ messages:
     type: info
     channel: chat
     text: "sei nella miniera %mine%: modifica, poi shift + F salva e shift + Q annulla (ti riporta dove eri)"
+  afk-on:
+    type: info
+    channel: actionbar
+    text: "sei AFK"
+  afk-off:
+    type: info
+    channel: actionbar
+    text: "non sei piu AFK"
+  daily-wait:
+    type: error
+    channel: actionbar
+    text: "devi giocare ancora %minutes% minuti per ritirare la ricompensa giornaliera"
+  daily-afk:
+    type: error
+    channel: actionbar
+    text: "non puoi ritirare la ricompensa giornaliera da AFK"
+  daily-already:
+    type: error
+    channel: actionbar
+    text: "hai gia ritirato la ricompensa di oggi"
+  daily-claimed:
+    type: success
+    channel: actionbar
+    text: "ricompensa giornaliera ritirata: %coin% coin (giorno %day%)"
+  reward-claimed:
+    type: success
+    channel: actionbar
+    text: "livello %level% ritirato: %reward%"
+  cheque-ammo:
+    type: success
+    channel: actionbar
+    text: "munizioni delle %ball% ricaricate"
+  cheque-power:
+    type: success
+    channel: actionbar
+    text: "hai ricevuto %uses% attacchi potenziati"
+  mine-edit-leave:
+    type: error
+    channel: actionbar
+    text: "non puoi uscire dalla miniera: salva con shift + F o annulla con shift + Q"
   mine-edit-nochange:
     type: info
     channel: chat
@@ -1345,7 +1622,8 @@ mines:
     world: blockmania_area     # mondo staff con tutte le miniere ufficiali insieme (/bm mines area)
     spacing: 256               # distanza tra una miniera e l'altra nell'area
   edit:
-    bossbar: "{icon:giallo_matita} &epremi {key:shift + f} &eper salvare tutte le modifiche della miniera &f%mine% &8| &epremi {key:shift + q} &eper annullare"
+    bossbar: "{icon:giallo_matita} &epremi {key:shift + f} &eper salvare le modifiche della miniera &f%mine%"
+    bossbar-cancel: "{icon:giallo_matita} &epremi {key:shift + q} &eper annullare le modifiche"
 
 mines-gui:
   count: 21                    # quante miniere esistono

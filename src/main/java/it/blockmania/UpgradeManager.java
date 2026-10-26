@@ -657,6 +657,9 @@ public final class UpgradeManager implements Listener {
         }
 
         ammo.setBalance(player, currency(), balance - price);
+        if (currency().equalsIgnoreCase("coin") && plugin.getRewards() != null) {
+            plugin.getRewards().onSpend(player, price);
+        }
         setLevel(player, id, level + 1);
         plugin.send(player, "upgrade-bought",
                 "%upgrade%", label, "%level%", String.valueOf(level + 1),

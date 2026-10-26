@@ -347,6 +347,9 @@ public final class BlockManager {
         if (countHit && shooter != null && plugin.getPower() != null) {
             plugin.getPower().onHit(shooter);
         }
+        if (countHit && shooter != null && plugin.getRewards() != null) {
+            plugin.getRewards().onHit(shooter);
+        }
         int max = maxHealth(t.number);
         int newHp = t.hp - amount;
         int stageBefore = stageFor(t.hp, max);
@@ -363,6 +366,9 @@ public final class BlockManager {
                 if (stats.getShell(shooter) >= stats.getShellMax(shooter)) {
                     plugin.send(shooter, "shell-full");
                     return; // l'ultimo colpo non fa danno
+                }
+                if (plugin.getRewards() != null) {
+                    plugin.getRewards().onBreak(shooter);
                 }
                 stats.addShell(shooter, t.number, Math.max(0, c.getInt("rewards.blockshell", 1)));
                 stats.setBlockCoin(shooter, stats.getBlockCoin(shooter) + Math.max(0, c.getInt("rewards.blockcoin", 1)));

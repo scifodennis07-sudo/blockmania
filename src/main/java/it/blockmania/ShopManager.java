@@ -387,6 +387,9 @@ public final class ShopManager implements Listener {
             return;
         }
         ammo.setBalance(player, currency, balance - price);
+        if (currency.equalsIgnoreCase("coin") && plugin.getRewards() != null) {
+            plugin.getRewards().onSpend(player, price);
+        }
         ammo.setAmmo(player, type, max);
         plugin.send(player, "ammo-bought",
                 "%amount%", String.valueOf(max - current),

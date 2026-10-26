@@ -47,6 +47,7 @@ public final class BlockMania extends JavaPlugin {
     private BlockVariantsGui variantsGui;
     private MinesGui minesGui;
     private Power power;
+    private Rewards rewards;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
     private MineTemplates mineTemplates;
@@ -105,6 +106,35 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(variantsGui, this);
         minesGui = new MinesGui(this);
         getServer().getPluginManager().registerEvents(minesGui, this);
+        rewards = new Rewards(this);
+        getServer().getPluginManager().registerEvents(rewards, this);
+        rewards.start();
+        PluginCommand rewardsCommand = getCommand("ricompense");
+        if (rewardsCommand != null) {
+            rewardsCommand.setExecutor((sender, cmd, label, args) -> {
+                if (!(sender instanceof org.bukkit.entity.Player player)) {
+                    sender.sendMessage("solo i giocatori possono aprire le ricompense");
+                    return true;
+                }
+                if (player.hasPermission("blockmania.use")) {
+                    rewards.open(player);
+                }
+                return true;
+            });
+        }
+        PluginCommand afkCommand = getCommand("afk");
+        if (afkCommand != null) {
+            afkCommand.setExecutor((sender, cmd, label, args) -> {
+                if (!(sender instanceof org.bukkit.entity.Player player)) {
+                    sender.sendMessage("solo i giocatori possono andare AFK");
+                    return true;
+                }
+                if (player.hasPermission("blockmania.use")) {
+                    rewards.toggleAfk(player);
+                }
+                return true;
+            });
+        }
         PluginCommand minesCommand = getCommand("mines");
         if (minesCommand != null) {
             minesCommand.setExecutor((sender, cmd, label, args) -> {
@@ -251,12 +281,17 @@ public final class BlockMania extends JavaPlugin {
             c.set("messages.ball-selected.text", null);
             c.set("messages.ball-selected.icon", null);
         }
+        if (done < 10) {
+            // modifica miniera: due bossbar una sotto l'altra (senza il |)
+            c.set("mines.edit.bossbar", null);
+            c.set("mines.edit.bossbar-cancel", null);
+        }
         if (done >= 1) {
-            c.set("tuning-version", 9);
+            c.set("tuning-version", 10);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 9);
+        c.set("tuning-version", 10);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -277,7 +312,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 9);
+        c.set("tuning-version", 10);
         saveConfig();
     }
 
@@ -311,6 +346,9 @@ public final class BlockMania extends JavaPlugin {
         }
         if (power != null) {
             power.stop();
+        }
+        if (rewards != null) {
+            rewards.stop();
         }
         if (shops != null) {
             shops.stop();
@@ -404,6 +442,10 @@ public final class BlockMania extends JavaPlugin {
 
     public BarStack getBars() {
         return bars;
+    }
+
+    public Rewards getRewards() {
+        return rewards;
     }
 
     public Power getPower() {
