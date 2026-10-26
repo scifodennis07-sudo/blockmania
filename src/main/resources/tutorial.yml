@@ -1,0 +1,99 @@
+# ----------------------------------------------------------------------
+#  TUTORIAL  (/tutorial  oppure  /bm tutorial)
+#  Il giocatore resta fermo e la sua visuale segue chi parla, a tempo con l'audio.
+#  Come si prepara (una volta sola, in gioco, da admin):
+#    1. Vai dove deve stare il giocatore, guarda verso il centro e scrivi  /tutorial setspot
+#    2. Mettiti dove deve stare Denny e scrivi  /tutorial setpoint denny   (stessa cosa per andrew)
+#    3. Mettiti in mezzo ai due e scrivi  /tutorial setpoint center
+#    4. Scrivi  /tutorial npc  per creare Denny e Andrew (/tutorial npcremove li toglie)
+#    5. Prova con  /tutorial   (salta con  /tutorial skip,  controlla con  /tutorial info)
+#  Per rifare: /tutorial resetspot, /tutorial resetpoint <denny|andrew|center|all>
+#  Spot, punti e NPC stanno in tutorial-data.yml (non toccarlo a mano).
+# ----------------------------------------------------------------------
+config-version: 1
+sound:
+  name: "tutorial1"          # il suono del resource pack (playsound tutorial1)
+  volume: 1.0
+  pitch: 1.0
+
+auto-start: true             # parte da solo quando entra chi non l'ha mai visto
+auto-start-delay: 80         # tick (20 = 1 secondo) dopo l'ingresso
+subtitles: true              # sottotitoli nella actionbar con lo sfondo, restano finche' non parla l'altro
+
+camera:
+  sway: 0.8                  # oscillazione leggera della testa (0 = niente)
+
+# I due NPC sono armor stand con la testa del giocatore (skin) e vestiti colorati. Si creano con  /bm tutorial npc
+npc:
+  show-name: true            # il nome sopra la testa
+  talk-gestures: true        # chi parla muove il braccio ogni tanto
+  denny:
+    name: "&bDenny"
+    skin: "doppiaX"          # nome del giocatore di cui prende la testa
+    color: "#3B82F6"         # maglia
+    legs: "#1E3A8A"          # pantaloni
+    boots: "#111827"         # scarpe
+  andrew:
+    name: "&cAndrew"
+    skin: "zCrqck_"
+    color: "#EF4444"
+    legs: "#7F1D1D"
+    boots: "#111827"
+
+scene:
+  length: 80                 # durata in secondi (uguale all'audio)
+  return-after: true         # alla fine riporta il giocatore dov'era
+  start-away: 120            # all'inizio il giocatore guarda questi gradi lontano dagli NPC (0 = niente)
+  avoid-margin: 30           # gradi di margine: quando si guarda in giro non si guarda mai gli NPC
+  # ogni passo:  at = secondo, look = punto da guardare (denny/andrew/center, oppure away:GRADI[,INCLINAZIONE]
+  # per guardare in giro: + dal lato di Denny, - dal lato di Andrew, mai verso di loro), turn = secondi che impiega a girarsi,
+  # speaker = chi parla (serve solo quando look e' away), text = sottotitolo (resta finche' non c'e' un altro testo; text: \"\" lo toglie),
+  # do = gesti degli NPC (swing, wave = saluta, hop = saltello, nod = si', shake = no), commands = comandi console (%player% = il giocatore)
+  steps:
+    - {at: 0.0, look: "away:120", turn: 0.1, speaker: denny}
+    - {at: 0.75, look: "away:120", turn: 0.5, speaker: denny, text: "&bDenny&7: Ehi, ciao? ... Ehi?", do: ["denny:wave"]}
+    - {at: 1.3, look: "away:-110,-6", turn: 1.0, speaker: denny}
+    - {at: 2.2, look: "away:110,8", turn: 0.9, speaker: denny, do: ["denny:swing"]}
+    - {at: 3.05, look: "away:75,-3", turn: 1.0, speaker: andrew, text: "&cAndrew&7: Ma questo è cieco?", do: ["andrew:shake"]}
+    - {at: 4.42, look: denny, turn: 0.5, text: "&bDenny&7: Eh? ... Ah, eccoti!", do: ["denny:wave", "denny:hop"]}
+    - {at: 6.69, look: andrew, turn: 0.6, text: "&cAndrew&7: Siamo qui! Davanti a te!", do: ["andrew:swing"]}
+    - {at: 9.57, look: denny, turn: 0.6, text: "&bDenny&7: Sono qui! Guardami... ahah!", do: ["denny:wave"]}
+    - {at: 12.12, look: andrew, turn: 0.6, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo.", do: ["andrew:shake"]}
+    - {at: 15.17, look: denny, turn: 0.6, text: "&bDenny&7: Lascia perdere Andrew... Ti do il benvenuto su BlockMania.", do: ["denny:shake"]}
+    - {at: 21.03, look: andrew, turn: 0.6, text: "&cAndrew&7: Sì sì, benvenuto. Non toccare niente senza chiedere."}
+    - {at: 24.76, look: denny, turn: 0.6, text: "&bDenny&7: Ma dai, Andrew! ... Io sono Denny, piacere!", do: ["denny:wave"]}
+    - {at: 33.50, look: andrew, turn: 0.6, text: "&cAndrew&7: Bravo, Denny. Dopo dieci secondi. Un record.", do: ["andrew:shake"]}
+    - {at: 37.35, look: denny, turn: 0.6, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\".", do: ["denny:nod"]}
+    - {at: 41.28, look: andrew, turn: 0.6, text: "&cAndrew&7: E io sono Andrew. Purtroppo.", do: ["andrew:shake"]}
+    - {at: 43.79, look: denny, turn: 0.6, text: "&bDenny&7: Sarò io il tuo tutor: ti guiderò qui nel server...", do: ["denny:nod"]}
+    - {at: 52.47, look: andrew, turn: 0.6, text: "&cAndrew&7: Io intanto ti guardo. Giusto per essere sicuro che non rompi niente."}
+    - {at: 58.69, look: denny, turn: 0.6, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone.", do: ["denny:wave"]}
+    - {at: 61.73, look: andrew, turn: 0.6, text: "&cAndrew&7: Ripetilo e me ne vado.", do: ["andrew:shake"]}
+    - {at: 64.36, look: denny, turn: 0.6, text: "&bDenny&7: Allora... sei pronto?", do: ["denny:nod"]}
+    - {at: 66.09, look: andrew, turn: 0.6, text: "&cAndrew&7: Ma figurati, no. Guarda che faccia.", do: ["andrew:shake"]}
+    - {at: 68.94, look: denny, turn: 0.6, text: "&bDenny&7: Beh... che domanda stupida! Se sei qui, vuol dire che sei nato pronto. Andiamo, allora!", do: ["denny:wave", "denny:hop"]}
+    - {at: 76.0, look: center, turn: 1.2, text: "", speaker: ""}
+
+messages:
+  start: "&7tutorial in partenza... &8(scrivi &f/tutorial skip&8 per saltarlo)"
+  end: "&atutorial finito, buon divertimento!"
+  skipped: "&7tutorial saltato"
+  blocked: "&cdurante il tutorial puoi usare solo /tutorial skip"
+  not-running: "&cnon stai guardando nessun tutorial"
+  no-permission: "&cnon puoi farlo"
+  unknown-player: "&cgiocatore non trovato"
+  reset: "&atutorial azzerato per %player%: lo rivedra' al prossimo ingresso"
+  spot-saved: "&aposizione del giocatore salvata"
+  point-saved: "&apunto &f%name% &asalvato"
+  usage-setpoint: "&c/tutorial setpoint <denny|andrew|center>"
+  usage-resetpoint: "&c/tutorial resetpoint <denny|andrew|center|all>"
+  spot-reset: "&aposizione del giocatore azzerata (rifai /tutorial setspot)"
+  point-reset: "&apunto &f%name% &aazzerato"
+  info-title: "&eStato del tutorial:"
+  info-line: "&7%name%: %state%"
+  usage: "&c/tutorial [skip|play|reset|setspot|resetspot|setpoint|resetpoint|info|npc|npcremove|reload]"
+  reloaded: "&aconfig ricaricato"
+  npc-removed: "&aNPC rimossi: %count%"
+  npc-nopoint: "&cmanca il punto %name%: usa prima /tutorial setpoint %name%"
+  npc-exists: "&e%name% esiste gia'"
+  npc-created: "&a%name% creato"

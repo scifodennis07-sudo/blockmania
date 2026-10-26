@@ -110,6 +110,7 @@ public final class BlockManiaCommand implements TabExecutor {
                     sender.sendMessage("solo i giocatori possono aprire le ricompense");
                 }
             }
+            case "tutorial" -> plugin.getTutorial().handle(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
             case "afk" -> {
                 if (sender instanceof Player p && p.hasPermission("blockmania.use")) {
                     plugin.getRewards().toggleAfk(p);
@@ -917,10 +918,14 @@ public final class BlockManiaCommand implements TabExecutor {
         boolean canGet = sender.hasPermission("blockmania.get");
         boolean canStats = sender.hasPermission("blockmania.stats");
 
+        if (args.length >= 2 && args[0].equalsIgnoreCase("tutorial")) {
+            return plugin.getTutorial().complete(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
+        }
         if (args.length == 1) {
             result.add("help");
             if (sender.hasPermission("blockmania.use")) {
                 result.add("ricompense");
+                result.add("tutorial");
                 result.add("afk");
             }
             if (canGet) {

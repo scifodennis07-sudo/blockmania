@@ -1,5 +1,5 @@
 name: BlockMania
-version: '1.25.2'
+version: '1.26.0'
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom
@@ -8,6 +8,9 @@ commands:
     description: Comandi di BlockMania
     usage: /<command> get <oggetto> [giocatore]
     aliases: [bm]
+  tutorial:
+    description: Tutorial con i due NPC
+    usage: /<command> [skip]
   mines:
     description: Apre la GUI delle miniere
     usage: /<command>
@@ -33,6 +36,12 @@ permissions:
     default: op
   blockmania.break:
     description: Permette di rompere a mano i blocchi custom
+    default: op
+  blockmania.tutorial:
+    description: Permette di vedere il tutorial
+    default: true
+  blockmania.tutorial.admin:
+    description: Permette di impostare il tutorial (spot, punti, NPC)
     default: op
   blockmania.use:
     description: Permette di usare gli oggetti

@@ -48,6 +48,7 @@ public final class BlockMania extends JavaPlugin {
     private MinesGui minesGui;
     private Power power;
     private Rewards rewards;
+    private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
     private MineTemplates mineTemplates;
@@ -109,6 +110,14 @@ public final class BlockMania extends JavaPlugin {
         rewards = new Rewards(this);
         getServer().getPluginManager().registerEvents(rewards, this);
         rewards.start();
+        tutorial = new Tutorial(this);
+        tutorial.load();
+        getServer().getPluginManager().registerEvents(tutorial, this);
+        PluginCommand tutorialCommand = getCommand("tutorial");
+        if (tutorialCommand != null) {
+            tutorialCommand.setExecutor(tutorial);
+            tutorialCommand.setTabCompleter(tutorial);
+        }
         PluginCommand minesCommand = getCommand("mines");
         if (minesCommand != null) {
             minesCommand.setExecutor((sender, cmd, label, args) -> {
@@ -329,6 +338,9 @@ public final class BlockMania extends JavaPlugin {
         if (rewards != null) {
             rewards.stop();
         }
+        if (tutorial != null) {
+            tutorial.stop();
+        }
         if (shops != null) {
             shops.stop();
         }
@@ -421,6 +433,10 @@ public final class BlockMania extends JavaPlugin {
 
     public BarStack getBars() {
         return bars;
+    }
+
+    public Tutorial getTutorial() {
+        return tutorial;
     }
 
     public Rewards getRewards() {
