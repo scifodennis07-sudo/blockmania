@@ -128,10 +128,14 @@ final class PacketNpc {
         sendAll(new WrapperPlayServerEntityHeadLook(id, headYaw), to);
     }
 
-    /** Sposta in su/giu' (saltello) senza cambiare dove sta. */
-    void lift(double dy) {
+    /** Sposta l'NPC rispetto al suo punto (passi, saltello, spinte). */
+    void place(double dx, double dy, double dz) {
         sendAll(new WrapperPlayServerEntityTeleport(id,
-                new Vector3d(feet.getX(), feet.getY() + dy, feet.getZ()), bodyYaw, pitch, dy <= 0.001), online());
+                new Vector3d(feet.getX() + dx, feet.getY() + dy, feet.getZ() + dz), bodyYaw, pitch, dy <= 0.001), online());
+    }
+
+    void lift(double dy) {
+        place(0, dy, 0);
     }
 
     void swing(boolean offHand) {

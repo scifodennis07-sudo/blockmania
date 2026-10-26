@@ -12,7 +12,7 @@
 #  Per rifare: /tutorial resetspot, /tutorial resetpoint <denny|andrew|center|all>
 #  Spot, punti e NPC stanno in tutorial-data.yml (non toccarlo a mano).
 # ----------------------------------------------------------------------
-config-version: 2
+config-version: 3
 sound:
   name: "tutorial1"          # il suono del resource pack (playsound tutorial1)
   volume: 1.0
@@ -44,7 +44,7 @@ scene:
   # ogni passo:  at = secondo, look = punto da guardare (denny/andrew/center, oppure away:GRADI[,INCLINAZIONE]
   # per guardare in giro: + dal lato di Denny, - dal lato di Andrew, mai verso di loro), turn = secondi che impiega a girarsi,
   # speaker = chi parla (serve solo quando look e' away), text = sottotitolo (resta finche' non c'e' un altro testo; text: \"\" lo toglie),
-  # do = gesti degli NPC (swing = muove il braccio, wave = saluta, hop = saltello, nod = si', shake = no, eat = mano alla bocca col gomito piegato, block = braccio alzato, crouch = si abbassa), commands = comandi console (%player% = il giocatore)
+  # do = gesti degli NPC (swing = muove il braccio, wave = saluta, hop = saltello, pat = pacca sulla spalla all'altro, bump = pugno tra i due, step = passo verso il giocatore, nod = si', shake = no, eat = mano alla bocca col gomito piegato, block = braccio alzato, crouch = si abbassa), commands = comandi console (%player% = il giocatore)
   steps:
     - {at: 0.00, look: "away:120", turn: 0.1, speaker: denny}
     - {at: 0.05, look: "away:120", turn: 0.5, speaker: denny, text: "&bDenny&7: Ehi, ciao? ... Ehi?", do: ["denny:wave"]}
@@ -52,26 +52,33 @@ scene:
     - {at: 1.15, look: "away:110,8", turn: 0.9, speaker: denny, do: ["denny:swing"]}
     - {at: 1.65, look: "away:75,-3", turn: 1.0, speaker: andrew, text: "&cAndrew&7: Ma questo è cieco?", do: ["andrew:shake"]}
     - {at: 3.62, look: denny, turn: 0.5, text: "&bDenny&7: Eh? ... Ah, eccoti!", do: ["denny:wave", "denny:hop"]}
-    - {at: 5.91, look: andrew, turn: 0.6, text: "&cAndrew&7: Siamo qui! Davanti a te!", do: ["andrew:swing"]}
-    - {at: 8.53, look: denny, turn: 0.6, text: "&bDenny&7: Sono qui! Guardami... ahah!", do: ["denny:wave"]}
-    - {at: 10.60, look: andrew, turn: 0.6, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo.", do: ["andrew:shake"]}
-    - {at: 13.12, look: denny, turn: 0.6, text: "&bDenny&7: Lascia perdere Andrew... Ti do il benvenuto su BlockMania.", do: ["denny:shake"]}
-    - {at: 18.50, look: andrew, turn: 0.6, text: "&cAndrew&7: Sì sì, benvenuto. Non toccare niente senza chiedere."}
-    - {at: 22.30, look: denny, turn: 0.6, text: "&bDenny&7: Ma dai, Andrew! ... Io sono Denny, piacere!", do: ["denny:wave"]}
-    - {at: 29.72, look: andrew, turn: 0.6, text: "&cAndrew&7: Bravo, Denny. Dopo dieci secondi. Un record.", do: ["andrew:shake"]}
-    - {at: 33.06, look: denny, turn: 0.6, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\".", do: ["denny:nod"]}
-    - {at: 36.64, look: andrew, turn: 0.6, text: "&cAndrew&7: E io sono Andrew. Purtroppo.", do: ["andrew:shake"]}
-    - {at: 38.83, look: denny, turn: 0.6, text: "&bDenny&7: Sarò io il tuo tutor: ti guiderò qui nel server...", do: ["denny:eat"]}
-    - {at: 47.89, look: andrew, turn: 0.6, text: "&cAndrew&7: Io intanto ti guardo. Giusto per essere sicuro che non rompi niente.", do: ["andrew:block"]}
-    - {at: 52.58, look: denny, turn: 0.6, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone.", do: ["denny:wave"]}
-    - {at: 56.05, look: andrew, turn: 0.6, text: "&cAndrew&7: Ripetilo e me ne vado.", do: ["andrew:shake"]}
-    - {at: 59.08, look: denny, turn: 0.6, text: "&bDenny&7: Allora... sei pronto?", do: ["denny:nod"]}
-    - {at: 60.67, look: andrew, turn: 0.6, text: "&cAndrew&7: Ma figurati, no. Guarda che faccia.", do: ["andrew:shake"]}
-    - {at: 63.30, look: denny, turn: 0.6, text: "&bDenny&7: Beh... che domanda stupida! Se sei qui, vuol dire che sei nato pronto. Andiamo, allora!", do: ["denny:wave", "denny:hop"]}
-    - {at: 68.91, look: andrew, turn: 0.6, text: "&cAndrew&7: ...Che pazienza. Andiamo.", do: ["andrew:shake"]}
+    - {at: 5.91, look: andrew, turn: 0.4, text: "&cAndrew&7: Siamo qui! Davanti a te!", do: ["andrew:swing"]}
+    - {at: 8.53, look: denny, turn: 0.4, text: "&bDenny&7: Sono qui! Guardami... ahah!", do: ["denny:wave"]}
+    - {at: 10.60, look: andrew, turn: 0.4, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo.", do: ["andrew:shake"]}
+    - {at: 13.12, look: denny, turn: 0.4, text: "&bDenny&7: Lascia perdere Andrew... Ti do il benvenuto su BlockMania.", do: ["denny:shake"]}
+    - {at: 14.2, do: ["denny:pat"]}
+    - {at: 18.50, look: andrew, turn: 0.4, text: "&cAndrew&7: Sì sì, benvenuto. Non toccare niente senza chiedere."}
+    - {at: 22.30, look: denny, turn: 0.4, text: "&bDenny&7: Ma dai, Andrew! ... Io sono Denny, piacere!", do: ["denny:wave"]}
+    - {at: 29.72, look: andrew, turn: 0.4, text: "&cAndrew&7: Bravo, Denny. Dopo dieci secondi. Un record.", do: ["andrew:shake"]}
+    - {at: 33.06, look: denny, turn: 0.4, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\".", do: ["denny:nod"]}
+    - {at: 36.64, look: andrew, turn: 0.4, text: "&cAndrew&7: E io sono Andrew. Purtroppo.", do: ["andrew:shake"]}
+    - {at: 38.83, look: denny, turn: 0.4, text: "&bDenny&7: Sarò io il tuo tutor: ti guiderò qui nel server...", do: ["denny:eat"]}
+    - {at: 41.5, do: ["denny:step"]}
+    - {at: 47.89, look: andrew, turn: 0.4, text: "&cAndrew&7: Io intanto ti guardo. Giusto per essere sicuro che non rompi niente.", do: ["andrew:block"]}
+    - {at: 52.58, look: denny, turn: 0.4, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone.", do: ["denny:wave"]}
+    - {at: 54.0, do: ["denny:pat"]}
+    - {at: 56.05, look: andrew, turn: 0.4, text: "&cAndrew&7: Ripetilo e me ne vado.", do: ["andrew:shake"]}
+    - {at: 59.08, look: denny, turn: 0.4, text: "&bDenny&7: Allora... sei pronto?", do: ["denny:nod"]}
+    - {at: 60.67, look: andrew, turn: 0.4, text: "&cAndrew&7: Ma figurati, no. Guarda che faccia.", do: ["andrew:shake"]}
+    - {at: 63.30, look: denny, turn: 0.4, text: "&bDenny&7: Beh... che domanda stupida! Se sei qui, vuol dire che sei nato pronto. Andiamo, allora!", do: ["denny:wave", "denny:hop"]}
+    - {at: 66.6, do: ["denny:bump"]}
+    - {at: 68.91, look: andrew, turn: 0.4, text: "&cAndrew&7: ...Che pazienza. Andiamo.", do: ["andrew:shake"]}
     - {at: 71.85, look: center, turn: 1.0, text: "", speaker: ""}
 
 messages:
+  usage-offset: "&c/tutorial offset <secondi>  (positivo = scena piu' tardi, negativo = piu' presto)"
+  offset-now: "&7offset attuale: &f%value%&7 secondi"
+  offset-set: "&aoffset impostato a %value% secondi: riprova con /tutorial"
   no-packetevents: "&cmanca il plugin packetevents: mettilo nella cartella plugins e riavvia"
   usage-skin: "&c/tutorial skin <denny|andrew> <nomeGiocatore>"
   skin-loading: "&7cerco la skin di &f%skin%&7..."

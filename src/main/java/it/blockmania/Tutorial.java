@@ -74,6 +74,16 @@ public final class Tutorial implements Listener, TabExecutor {
         String hand = "";
         double handStart;
         double handDur;
+        double cx;
+        double cz;
+        double tx;
+        double tz;
+        double nextIdle;
+        double patStart = -1;
+        String patKind = "";
+        int patStep;
+        double hopY;
+        float flinch;
 
         Npc(PacketNpc pn) {
             this.pn = pn;
@@ -349,7 +359,9 @@ public final class Tutorial implements Listener, TabExecutor {
             finish(s, false);
             return;
         }
-        double t = (System.nanoTime() - s.startNanos) / 1_000_000_000.0;
+        // offset: se l'audio parte in ritardo sul client si mette un numero positivo (tutto va piu' tardi)
+        double t = (System.nanoTime() - s.startNanos) / 1_000_000_000.0
+                - (cfg.getDouble("scene.offset", 0) + data.getDouble("offset", 0));
         while (s.next < s.steps.size() && s.steps.get(s.next).at() <= t) {
             runStep(s, s.steps.get(s.next), t);
             s.next++;
@@ -382,7 +394,7 @@ public final class Tutorial implements Listener, TabExecutor {
         String look = step.look();
         if (look.equals("denny") || look.equals("andrew")) {
             s.speaker = look;
-        } else {
+        } else if (!look.isEmpty()) {
             s.speaker = step.speaker();
         }
         if (!look.isEmpty()) {
@@ -447,6 +459,16 @@ public final class Tutorial implements Listener, TabExecutor {
                     n.nextWave = now;
                 }
                 case "hop" -> n.hopStart = now;
+                case "pat", "bump" -> {
+                    n.patStart = now;
+                    n.patKind = kv[1].trim().toLowerCase(Locale.ROOT);
+                    n.patStep = 0;
+                }
+                case "step" -> {
+                    n.patStart = now;
+                    n.patKind = "step";
+                    n.patStep = 0;
+                }
                 case "nod" -> {
                     n.head = "nod";
                     n.headStart = now;
@@ -578,17 +600,42 @@ public final class Tutorial implements Listener, TabExecutor {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             String value = null;
             String sig = null;
-            try {
-                var profile = Bukkit.createProfile(skinName);
-                profile.complete(true);
-                for (var prop : profile.getProperties()) {
+            // 1) il giocatore e' online: la skin si prende da lui
+            Player online = Bukkit.getPlayerExact(skinName);
+            if (online != null) {
+                for (var prop : online.getPlayerProfile().getProperties()) {
                     if (prop.getName().equals("textures")) {
                         value = prop.getValue();
                         sig = prop.getSignature();
                     }
                 }
-            } catch (RuntimeException e) {
-                plugin.getLogger().warning("Tutorial: non riesco a prendere la skin " + skinName + ": " + e.getMessage());
+            }
+            // 2) Paper chiede a Mojang
+            if (value == null) {
+                try {
+                    var profile = Bukkit.createProfile(skinName);
+                    profile.complete(true);
+                    for (var prop : profile.getProperties()) {
+                        if (prop.getName().equals("textures")) {
+                            value = prop.getValue();
+                            sig = prop.getSignature();
+                        }
+                    }
+                } catch (RuntimeException e) {
+                    plugin.getLogger().warning("Tutorial: Paper non trova la skin " + skinName + ": " + e);
+                }
+            }
+            // 3) richiesta diretta a Mojang
+            if (value == null) {
+                try {
+                    String[] r = mojangSkin(skinName);
+                    if (r != null) {
+                        value = r[0];
+                        sig = r[1];
+                    }
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Tutorial: Mojang non risponde per " + skinName + ": " + e);
+                }
             }
             final String v = value;
             final String sg = sig;
@@ -643,11 +690,21 @@ public final class Tutorial implements Listener, TabExecutor {
             n.yaw += wrap(a[0] - n.yaw) * 0.15f;
             n.pitch += (a[1] - n.pitch) * 0.15f;
 
+            String otherKey = key.equals("denny") ? "andrew" : "denny";
+            Npc otherNpc = s.npcs.get(otherKey);
+            // durante pacca/pugno guarda l'altro
+            if (n.patStart >= 0 && otherNpc != null) {
+                float[] ao = aim(eye, otherNpc.base.clone().add(0, 1.62, 0));
+                n.yaw += wrap(ao[0] - n.yaw) * 0.2f;
+                n.pitch += (ao[1] - n.pitch) * 0.2f;
+            }
             float headYaw = n.yaw;
-            float headPitch = n.pitch;
+            float headPitch = n.pitch + n.flinch;
+            n.flinch *= 0.85f;
             if (speaking) {
+                // dondola leggermente la testa mentre parla, a ritmo di sillabe
                 headYaw += (float) (Math.sin(t * 1.7 + key.length()) * 4.0);
-                headPitch += (float) (Math.sin(t * 2.3) * 3.0);
+                headPitch += (float) (Math.sin(t * 8.5) * 1.6 + Math.sin(t * 5.1 + 1) * 1.2 + Math.sin(t * 2.3) * 2.0);
                 if (talk && t >= n.nextSwing && n.hand.isEmpty()) {
                     n.pn.swing(ThreadLocalRandom.current().nextBoolean());
                     n.nextSwing = t + 1.8 + ThreadLocalRandom.current().nextDouble() * 2.7;
@@ -674,16 +731,109 @@ public final class Tutorial implements Listener, TabExecutor {
             if (s.ticks % 2 == 0) {
                 n.pn.look(headYaw, headPitch);
             }
+            // movimenti: non stanno mai impalati, ogni tanto spostano il peso
+            if (n.patStart < 0 && t >= n.nextIdle) {
+                n.tx = (ThreadLocalRandom.current().nextDouble() - 0.5) * 0.35;
+                n.tz = (ThreadLocalRandom.current().nextDouble() - 0.5) * 0.35;
+                n.nextIdle = t + 1.5 + ThreadLocalRandom.current().nextDouble() * 3.0;
+            }
+            if (n.patStart >= 0 && otherNpc != null) {
+                double e = t - n.patStart;
+                double ddx = otherNpc.base.getX() - n.base.getX();
+                double ddz = otherNpc.base.getZ() - n.base.getZ();
+                double dist = Math.max(0.01, Math.sqrt(ddx * ddx + ddz * ddz));
+                double ux = ddx / dist;
+                double uz = ddz / dist;
+                double reach = n.patKind.equals("bump") ? Math.max(0, (dist - 0.7) / 2) : Math.max(0, dist - 0.85);
+                if (n.patKind.equals("step")) {
+                    // piccolo passo verso il giocatore
+                    double px = s.lock.getX() - n.base.getX();
+                    double pz = s.lock.getZ() - n.base.getZ();
+                    double pd = Math.max(0.01, Math.sqrt(px * px + pz * pz));
+                    boolean out = e < 1.6;
+                    n.tx = out ? px / pd * 0.5 : 0;
+                    n.tz = out ? pz / pd * 0.5 : 0;
+                    if (e > 2.4) {
+                        n.patStart = -1;
+                    }
+                } else {
+                    boolean going = e < 1.7;
+                    n.tx = going ? ux * reach : 0;
+                    n.tz = going ? uz * reach : 0;
+                    if (n.patKind.equals("bump")) {
+                        otherNpc.tx = going ? -ux * reach : 0;
+                        otherNpc.tz = going ? -uz * reach : 0;
+                        otherNpc.nextIdle = t + 1.0;
+                    }
+                    if (e >= 0.8 && n.patStep == 0) {
+                        n.patStep = 1;
+                        n.pn.swing(false);
+                    }
+                    if (e >= 1.05 && n.patStep == 1) {
+                        n.patStep = 2;
+                        n.pn.swing(false);
+                        if (n.patKind.equals("pat")) {
+                            // l'altro sente la pacca: la testa balza e fa mezzo passo
+                            otherNpc.flinch = 9f;
+                            if (otherNpc.patStart < 0) {
+                                otherNpc.tx = ux * 0.18;
+                                otherNpc.tz = uz * 0.18;
+                                otherNpc.nextIdle = t + 1.0;
+                            }
+                        } else {
+                            otherNpc.pn.swing(false);
+                        }
+                    }
+                    if (e > 2.6) {
+                        n.patStart = -1;
+                    }
+                }
+            }
+            double oldX = n.cx;
+            double oldZ = n.cz;
+            n.cx += (n.tx - n.cx) * 0.18;
+            n.cz += (n.tz - n.cz) * 0.18;
+            double hy = 0;
             if (n.hopStart >= 0) {
                 double prog = (t - n.hopStart) / 0.6;
                 if (prog >= 1.0) {
                     n.hopStart = -1;
-                    n.pn.lift(0);
                 } else {
-                    n.pn.lift(0.45 * Math.sin(prog * Math.PI));
+                    hy = 0.45 * Math.sin(prog * Math.PI);
                 }
             }
+            if (hy > 0 || n.hopY > 0 || Math.abs(n.cx - oldX) > 0.002 || Math.abs(n.cz - oldZ) > 0.002) {
+                n.pn.place(n.cx, hy, n.cz);
+            }
+            n.hopY = hy;
         }
+    }
+
+    /** Chiede a Mojang l'UUID del nome e poi la skin firmata: {valore, firma}. */
+    private static String[] mojangSkin(String name) throws Exception {
+        java.net.http.HttpClient http = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpResponse<String> r1 = http.send(java.net.http.HttpRequest.newBuilder(
+                java.net.URI.create("https://api.mojang.com/users/profiles/minecraft/" + name)).build(),
+                java.net.http.HttpResponse.BodyHandlers.ofString());
+        if (r1.statusCode() != 200) {
+            return null;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-fA-F]+)\"").matcher(r1.body());
+        if (!m.find()) {
+            return null;
+        }
+        java.net.http.HttpResponse<String> r2 = http.send(java.net.http.HttpRequest.newBuilder(
+                java.net.URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + m.group(1)
+                        + "?unsigned=false")).build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+        if (r2.statusCode() != 200) {
+            return null;
+        }
+        java.util.regex.Matcher v = java.util.regex.Pattern.compile("\"value\"\\s*:\\s*\"([^\"]+)\"").matcher(r2.body());
+        java.util.regex.Matcher g = java.util.regex.Pattern.compile("\"signature\"\\s*:\\s*\"([^\"]+)\"").matcher(r2.body());
+        if (!v.find()) {
+            return null;
+        }
+        return new String[]{v.group(1), g.find() ? g.group(1) : null};
     }
 
     private int removeNpcs() {
@@ -811,7 +961,7 @@ public final class Tutorial implements Listener, TabExecutor {
         }
         for (Npc n : s.npcs.values()) {
             endHand(n);
-            n.pn.lift(0);
+            n.pn.place(0, 0, 0);
             n.pn.look(n.base.getYaw(), 0f);
         }
         p.getPersistentDataContainer().set(doneKey, PersistentDataType.BYTE, (byte) 1);
@@ -979,6 +1129,24 @@ public final class Tutorial implements Listener, TabExecutor {
                 sender.sendMessage(msg("skin-loading", "%skin%", args[2]));
                 fetchSkin(key, args[2], sender);
             }
+            case "offset" -> {
+                if (!admin) {
+                    sender.sendMessage(msg("no-permission"));
+                    return;
+                }
+                if (args.length < 2) {
+                    sender.sendMessage(msg("offset-now", "%value%", String.valueOf(data.getDouble("offset", 0))));
+                    return;
+                }
+                try {
+                    double v = Double.parseDouble(args[1].replace(',', '.'));
+                    data.set("offset", v);
+                    saveData();
+                    sender.sendMessage(msg("offset-set", "%value%", String.valueOf(v)));
+                } catch (NumberFormatException ex) {
+                    sender.sendMessage(msg("usage-offset"));
+                }
+            }
             case "reload" -> {
                 if (!admin) {
                     sender.sendMessage(msg("no-permission"));
@@ -1004,7 +1172,7 @@ public final class Tutorial implements Listener, TabExecutor {
             out.add("skip");
             if (admin) {
                 out.addAll(List.of("play", "reset", "setspot", "resetspot", "setpoint", "resetpoint", "info",
-                        "npc", "npcremove", "skin", "reload"));
+                        "npc", "npcremove", "skin", "offset", "reload"));
             }
         } else if (args.length == 2 && admin) {
             String sub = args[0].toLowerCase(Locale.ROOT);
