@@ -14,17 +14,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
-import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -32,11 +29,8 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.LeatherArmorMeta;
-import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.util.EulerAngle;
 
 import java.io.File;
 import java.io.IOException;
@@ -51,7 +45,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * /tutorial: una scena con la telecamera guidata e due NPC (Denny e Andrew) fatti con gli armor stand.
+ * /tutorial: una scena con la telecamera guidata e due NPC (Denny e Andrew) fatti con pacchetti (packetevents).
  * Il giocatore resta fermo, la visuale segue chi parla a tempo con l'audio (playsound tutorial1).
  * Tutto e' dentro BlockMania: nessun altro plugin (niente Citizens, niente FancyNpcs).
  */
@@ -65,22 +59,25 @@ public final class Tutorial implements Listener, TabExecutor {
                         String speaker, List<String> actions) {
     }
 
-    /** Un NPC: un armor stand che gira la testa e muove le braccia. */
+    /** Lo stato dei gesti di un NPC durante la scena. */
     private static final class Npc {
-        final ArmorStand stand;
+        final PacketNpc pn;
         final Location base;
         float yaw;
         float pitch;
         double nextSwing;
-        String arm = "";
-        double armStart;
         String head = "";
         double headStart;
         double hopStart = -1;
+        int waveLeft;
+        double nextWave;
+        String hand = "";
+        double handStart;
+        double handDur;
 
-        Npc(ArmorStand stand) {
-            this.stand = stand;
-            this.base = stand.getLocation().clone();
+        Npc(PacketNpc pn) {
+            this.pn = pn;
+            this.base = pn.feet.clone();
             this.yaw = base.getYaw();
         }
     }
@@ -120,7 +117,6 @@ public final class Tutorial implements Listener, TabExecutor {
     private final BlockMania plugin;
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final NamespacedKey doneKey;
-    private final NamespacedKey npcKey;
     private File cfgFile;
     private File dataFile;
     private YamlConfiguration cfg;
@@ -129,7 +125,6 @@ public final class Tutorial implements Listener, TabExecutor {
     public Tutorial(BlockMania plugin) {
         this.plugin = plugin;
         this.doneKey = new NamespacedKey(plugin, "tutorial_done");
-        this.npcKey = new NamespacedKey(plugin, "tutorial_npc");
     }
 
     // ------------------------------------------------------------------
@@ -168,6 +163,11 @@ public final class Tutorial implements Listener, TabExecutor {
         data = YamlConfiguration.loadConfiguration(dataFile);
     }
 
+    /** Da chiamare quando tutti i plugin sono pronti (packetevents compreso). */
+    public void spawnSaved() {
+        respawnAll();
+    }
+
     private void saveData() {
         try {
             data.save(dataFile);
@@ -180,6 +180,11 @@ public final class Tutorial implements Listener, TabExecutor {
         for (Session s : new ArrayList<>(sessions.values())) {
             finish(s, false);
         }
+        if (viewTask != null) {
+            viewTask.cancel();
+            viewTask = null;
+        }
+        clearLive();
     }
 
     // ------------------------------------------------------------------
@@ -432,17 +437,14 @@ public final class Tutorial implements Listener, TabExecutor {
                 continue;
             }
             Npc n = s.npcs.get(kv[0].trim().toLowerCase(Locale.ROOT));
-            if (n == null || !n.stand.isValid()) {
+            if (n == null) {
                 continue;
             }
             switch (kv[1].trim().toLowerCase(Locale.ROOT)) {
-                case "swing" -> {
-                    n.arm = ThreadLocalRandom.current().nextBoolean() ? "swingR" : "swingL";
-                    n.armStart = now;
-                }
+                case "swing" -> n.pn.swing(ThreadLocalRandom.current().nextBoolean());
                 case "wave" -> {
-                    n.arm = "wave";
-                    n.armStart = now;
+                    n.waveLeft = 4;
+                    n.nextWave = now;
                 }
                 case "hop" -> n.hopStart = now;
                 case "nod" -> {
@@ -453,26 +455,162 @@ public final class Tutorial implements Listener, TabExecutor {
                     n.head = "shake";
                     n.headStart = now;
                 }
+                case "eat" -> startHand(n, "eat", now, 1.6);
+                case "block" -> startHand(n, "block", now, 1.8);
+                case "crouch" -> startHand(n, "crouch", now, 0.7);
                 default -> {
                 }
             }
         }
     }
 
+    private void startHand(Npc n, String what, double now, double dur) {
+        endHand(n);
+        n.hand = what;
+        n.handStart = now;
+        n.handDur = dur;
+        switch (what) {
+            case "eat" -> n.pn.useItem(Material.APPLE, true);
+            case "block" -> n.pn.useItem(Material.SHIELD, true);
+            case "crouch" -> n.pn.crouch(true);
+            default -> {
+            }
+        }
+    }
+
+    private void endHand(Npc n) {
+        switch (n.hand) {
+            case "eat", "block" -> n.pn.useItem(Material.AIR, false);
+            case "crouch" -> n.pn.crouch(false);
+            default -> {
+            }
+        }
+        n.hand = "";
+    }
+
     // ------------------------------------------------------------------
-    //  NPC: armor stand con la testa del giocatore
+    //  NPC: giocatori veri fatti con i pacchetti (packetevents)
     // ------------------------------------------------------------------
 
-    private Entity npcEntity(String key) {
-        String id = data.getString("npc." + key + ".uuid");
-        if (id == null) {
+    private final Map<String, PacketNpc> live = new HashMap<>();
+    private BukkitTask viewTask;
+
+    private static String plain(String s) {
+        return s == null ? "" : s.replaceAll("(?i)[&\u00a7][0-9a-fk-or]", "");
+    }
+
+    private boolean hasPacketEvents() {
+        return Bukkit.getPluginManager().getPlugin("packetevents") != null;
+    }
+
+    /** Rimette in piedi gli NPC salvati (all'avvio e dopo /tutorial reload). */
+    private void respawnAll() {
+        clearLive();
+        if (viewTask != null) {
+            viewTask.cancel();
+            viewTask = null;
+        }
+        if (!hasPacketEvents()) {
+            plugin.getLogger().warning("Tutorial: manca il plugin packetevents, gli NPC non si vedranno.");
+            return;
+        }
+        for (String key : KEYS) {
+            if (data.contains("npc." + key + ".x")) {
+                spawnLive(key);
+            }
+        }
+        viewTask = Bukkit.getScheduler().runTaskTimer(plugin, this::updateViewers, 20L, 20L);
+    }
+
+    private void clearLive() {
+        for (PacketNpc n : live.values()) {
+            n.destroy();
+        }
+        live.clear();
+    }
+
+    private Location npcFeet(String key) {
+        ConfigurationSection c = data.getConfigurationSection("npc." + key);
+        if (c == null || !c.contains("x")) {
             return null;
         }
-        try {
-            return Bukkit.getEntity(UUID.fromString(id));
-        } catch (IllegalArgumentException e) {
+        World w = Bukkit.getWorld(c.getString("world", ""));
+        if (w == null) {
             return null;
         }
+        return new Location(w, c.getDouble("x"), c.getDouble("y"), c.getDouble("z"), (float) c.getDouble("yaw"), 0f);
+    }
+
+    private void spawnLive(String key) {
+        Location feet = npcFeet(key);
+        if (feet == null) {
+            return;
+        }
+        String name = plain(cfg.getString("npc." + key + ".name", key));
+        PacketNpc old = live.remove(key);
+        if (old != null) {
+            old.destroy();
+        }
+        PacketNpc n = new PacketNpc(key, name, feet, data.getString("npc." + key + ".tex"),
+                data.getString("npc." + key + ".sig"));
+        live.put(key, n);
+        updateViewers();
+    }
+
+    /** Chi e' vicino vede l'NPC, chi e' lontano o in un altro mondo no. */
+    private void updateViewers() {
+        double range = cfg.getDouble("npc.view-distance", 48);
+        for (PacketNpc n : live.values()) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                boolean near = p.getWorld().equals(n.feet.getWorld())
+                        && p.getLocation().distanceSquared(n.feet) <= range * range;
+                if (near) {
+                    n.show(p);
+                } else {
+                    n.hide(p);
+                }
+            }
+        }
+    }
+
+    /** La skin si prende da Mojang in un thread a parte, poi si salva e l'NPC viene rimesso. */
+    private void fetchSkin(String key, String skinName, CommandSender notify) {
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String value = null;
+            String sig = null;
+            try {
+                var profile = Bukkit.createProfile(skinName);
+                profile.complete(true);
+                for (var prop : profile.getProperties()) {
+                    if (prop.getName().equals("textures")) {
+                        value = prop.getValue();
+                        sig = prop.getSignature();
+                    }
+                }
+            } catch (RuntimeException e) {
+                plugin.getLogger().warning("Tutorial: non riesco a prendere la skin " + skinName + ": " + e.getMessage());
+            }
+            final String v = value;
+            final String sg = sig;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (v == null) {
+                    if (notify != null) {
+                        notify.sendMessage(msg("skin-error", "%skin%", skinName));
+                    }
+                    return;
+                }
+                data.set("npc." + key + ".skin", skinName);
+                data.set("npc." + key + ".tex", v);
+                data.set("npc." + key + ".sig", sg);
+                saveData();
+                if (data.contains("npc." + key + ".x")) {
+                    spawnLive(key);
+                }
+                if (notify != null) {
+                    notify.sendMessage(msg("skin-set", "%name%", key, "%skin%", skinName));
+                }
+            });
+        });
     }
 
     private void tickNpcs(Session s, double t) {
@@ -480,26 +618,23 @@ public final class Tutorial implements Listener, TabExecutor {
         if (s.ticks % 10 == 1) {
             for (String key : KEYS) {
                 Npc old = s.npcs.get(key);
-                if (old == null || !old.stand.isValid()) {
-                    if (npcEntity(key) instanceof ArmorStand st) {
-                        s.npcs.put(key, new Npc(st));
-                    }
+                PacketNpc pn = live.get(key);
+                if (pn != null && (old == null || old.pn != pn)) {
+                    s.npcs.put(key, new Npc(pn));
+                    pn.show(s.player);
                 }
             }
         }
         boolean talk = cfg.getBoolean("npc.talk-gestures", true);
         for (Map.Entry<String, Npc> en : s.npcs.entrySet()) {
             Npc n = en.getValue();
-            if (!n.stand.isValid()) {
-                continue;
-            }
             String key = en.getKey();
             boolean speaking = key.equals(s.speaker);
             // chi parla guarda il giocatore, l'altro guarda chi parla
             Location target = playerEye;
             if (!s.speaker.isEmpty() && !speaking) {
                 Npc other = s.npcs.get(s.speaker);
-                if (other != null && other.stand.isValid()) {
+                if (other != null) {
                     target = other.base.clone().add(0, 1.62, 0);
                 }
             }
@@ -508,15 +643,13 @@ public final class Tutorial implements Listener, TabExecutor {
             n.yaw += wrap(a[0] - n.yaw) * 0.15f;
             n.pitch += (a[1] - n.pitch) * 0.15f;
 
-            // testa: inclinazione verso chi guarda + sì/no con la testa
-            double headX = Math.toRadians(Math.max(-40, Math.min(40, n.pitch)));
-            double headY = 0;
+            float headYaw = n.yaw;
+            float headPitch = n.pitch;
             if (speaking) {
-                headY += Math.toRadians(Math.sin(t * 1.7 + key.length()) * 4.0);
-                headX += Math.toRadians(Math.sin(t * 2.3) * 3.0);
-                if (talk && t >= n.nextSwing) {
-                    n.arm = ThreadLocalRandom.current().nextBoolean() ? "swingR" : "swingL";
-                    n.armStart = t;
+                headYaw += (float) (Math.sin(t * 1.7 + key.length()) * 4.0);
+                headPitch += (float) (Math.sin(t * 2.3) * 3.0);
+                if (talk && t >= n.nextSwing && n.hand.isEmpty()) {
+                    n.pn.swing(ThreadLocalRandom.current().nextBoolean());
                     n.nextSwing = t + 1.8 + ThreadLocalRandom.current().nextDouble() * 2.7;
                 }
             }
@@ -525,97 +658,50 @@ public final class Tutorial implements Listener, TabExecutor {
                 if (prog >= 1.0) {
                     n.head = "";
                 } else if (n.head.equals("nod")) {
-                    headX += Math.toRadians(Math.sin(prog * Math.PI * 4) * 16.0);
+                    headPitch += (float) (Math.sin(prog * Math.PI * 4) * 18.0);
                 } else {
-                    headY += Math.toRadians(Math.sin(prog * Math.PI * 6) * 25.0);
+                    headYaw += (float) (Math.sin(prog * Math.PI * 6) * 30.0);
                 }
             }
-            n.stand.setHeadPose(new EulerAngle(headX, headY, 0));
-
-            // braccia: un po' di respiro e i gesti
-            double breath = Math.sin(t * 1.4 + key.length()) * 0.04;
-            double rx = Math.toRadians(-10) + breath;
-            double rz = Math.toRadians(10);
-            double lx = Math.toRadians(-10) - breath;
-            double lz = Math.toRadians(-10);
-            if (!n.arm.isEmpty()) {
-                double dur = n.arm.equals("wave") ? 1.5 : 0.7;
-                double prog = (t - n.armStart) / dur;
-                if (prog >= 1.0) {
-                    n.arm = "";
-                } else if (n.arm.equals("wave")) {
-                    double up = Math.min(1.0, prog * 5.0) * Math.min(1.0, (1.0 - prog) * 5.0);
-                    rx = Math.toRadians(-160) * up + rx * (1 - up);
-                    rz = Math.toRadians(25 * Math.sin(prog * Math.PI * 6)) * up + rz * (1 - up);
-                } else if (n.arm.equals("swingL")) {
-                    lx = Math.toRadians(-95 * Math.sin(prog * Math.PI)) + lx * (1 - Math.sin(prog * Math.PI));
-                } else {
-                    rx = Math.toRadians(-95 * Math.sin(prog * Math.PI)) + rx * (1 - Math.sin(prog * Math.PI));
-                }
+            if (n.waveLeft > 0 && t >= n.nextWave) {
+                n.pn.swing(false);
+                n.waveLeft--;
+                n.nextWave = t + 0.32;
             }
-            n.stand.setRightArmPose(new EulerAngle(rx, 0, rz));
-            n.stand.setLeftArmPose(new EulerAngle(lx, 0, lz));
-
-            // corpo: gira verso chi guarda; il saltello alza l'NPC per un attimo
-            Location pos = n.base.clone();
-            pos.setYaw(n.yaw);
+            if (!n.hand.isEmpty() && t - n.handStart >= n.handDur) {
+                endHand(n);
+            }
+            if (s.ticks % 2 == 0) {
+                n.pn.look(headYaw, headPitch);
+            }
             if (n.hopStart >= 0) {
                 double prog = (t - n.hopStart) / 0.6;
                 if (prog >= 1.0) {
                     n.hopStart = -1;
+                    n.pn.lift(0);
                 } else {
-                    pos.setY(pos.getY() + 0.4 * Math.sin(prog * Math.PI));
+                    n.pn.lift(0.45 * Math.sin(prog * Math.PI));
                 }
             }
-            n.stand.teleport(pos);
         }
     }
 
-    private static Color parseColor(String hex, Color fallback) {
-        if (hex == null) {
-            return fallback;
-        }
-        try {
-            return Color.fromRGB(Integer.parseInt(hex.replace("#", "").trim(), 16));
-        } catch (IllegalArgumentException e) {
-            return fallback;
-        }
-    }
-
-    private ItemStack leather(Material mat, Color color) {
-        ItemStack item = new ItemStack(mat);
-        if (item.getItemMeta() instanceof LeatherArmorMeta meta) {
-            meta.setColor(color);
-            item.setItemMeta(meta);
-        }
-        return item;
-    }
-
-    /** Toglie gli armor stand del tutorial (quelli salvati e quelli rimasti in giro con la nostra etichetta). */
-    private int removeStands() {
-        int removed = 0;
+    private int removeNpcs() {
+        int removed = live.size();
+        clearLive();
         for (String key : KEYS) {
-            Entity e = npcEntity(key);
-            if (e != null && e.isValid()) {
-                e.remove();
-                removed++;
-            }
-            data.set("npc." + key + ".uuid", null);
-        }
-        for (World w : Bukkit.getWorlds()) {
-            for (Entity e : w.getEntitiesByClass(ArmorStand.class)) {
-                if (e.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
-                    e.remove();
-                    removed++;
-                }
-            }
+            data.set("npc." + key, null);
         }
         saveData();
         return removed;
     }
 
     private void createNpcs(CommandSender sender) {
-        removeStands();
+        if (!hasPacketEvents()) {
+            sender.sendMessage(msg("no-packetevents"));
+            return;
+        }
+        removeNpcs();
         Location spot = spot();
         for (String key : KEYS) {
             Location pt = point(key, spot != null ? spot.getWorld() : null);
@@ -623,64 +709,20 @@ public final class Tutorial implements Listener, TabExecutor {
                 sender.sendMessage(msg("npc-nopoint", "%name%", key));
                 continue;
             }
-            String name = cfg.getString("npc." + key + ".name", key);
-            String skin = cfg.getString("npc." + key + ".skin", key);
             Location feet = pt.clone().add(0, -1.62, 0);
             if (spot != null) {
                 feet.setYaw(aim(pt, spot.clone().add(0, 1.62, 0))[0]);
             }
-            Color shirt = parseColor(cfg.getString("npc." + key + ".color"), Color.BLUE);
-            Color legs = parseColor(cfg.getString("npc." + key + ".legs"), Color.NAVY);
-            Color boots = parseColor(cfg.getString("npc." + key + ".boots"), Color.BLACK);
-            ArmorStand stand = feet.getWorld().spawn(feet, ArmorStand.class, a -> {
-                a.setArms(true);
-                a.setBasePlate(false);
-                a.setGravity(false);
-                a.setInvulnerable(true);
-                a.setPersistent(true);
-                a.setSilent(true);
-                a.setCanPickupItems(false);
-                a.customName(LEGACY.deserialize(name));
-                a.setCustomNameVisible(cfg.getBoolean("npc.show-name", true));
-                a.getPersistentDataContainer().set(npcKey, PersistentDataType.STRING, key);
-                a.getEquipment().setChestplate(leather(Material.LEATHER_CHESTPLATE, shirt));
-                a.getEquipment().setLeggings(leather(Material.LEATHER_LEGGINGS, legs));
-                a.getEquipment().setBoots(leather(Material.LEATHER_BOOTS, boots));
-                a.getEquipment().setHelmet(new ItemStack(Material.PLAYER_HEAD));
-                for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS,
-                        EquipmentSlot.FEET, EquipmentSlot.HAND, EquipmentSlot.OFF_HAND)) {
-                    a.addEquipmentLock(slot, ArmorStand.LockType.ADDING_OR_CHANGING);
-                    a.addEquipmentLock(slot, ArmorStand.LockType.REMOVING_OR_CHANGING);
-                }
-            });
-            data.set("npc." + key + ".uuid", stand.getUniqueId().toString());
+            data.set("npc." + key + ".world", feet.getWorld().getName());
+            data.set("npc." + key + ".x", Math.round(feet.getX() * 100) / 100.0);
+            data.set("npc." + key + ".y", Math.round(feet.getY() * 100) / 100.0);
+            data.set("npc." + key + ".z", Math.round(feet.getZ() * 100) / 100.0);
+            data.set("npc." + key + ".yaw", Math.round(feet.getYaw() * 10) / 10.0);
             saveData();
-            sender.sendMessage(msg("npc-created", "%name%", name.replaceAll("&.", "")));
-            applySkin(stand, skin);
+            String name = plain(cfg.getString("npc." + key + ".name", key));
+            sender.sendMessage(msg("npc-created", "%name%", name));
+            fetchSkin(key, cfg.getString("npc." + key + ".skin", key), sender);
         }
-    }
-
-    /** La testa con la skin si prende da Mojang in un thread a parte e poi si mette sull'NPC. */
-    private void applySkin(ArmorStand stand, String skinName) {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                var profile = Bukkit.createProfile(skinName);
-                profile.complete(true);
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (!stand.isValid()) {
-                        return;
-                    }
-                    ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-                    if (head.getItemMeta() instanceof SkullMeta meta) {
-                        meta.setPlayerProfile(profile);
-                        head.setItemMeta(meta);
-                    }
-                    stand.getEquipment().setHelmet(head);
-                });
-            } catch (RuntimeException e) {
-                plugin.getLogger().warning("Tutorial: non riesco a prendere la skin " + skinName + ": " + e.getMessage());
-            }
-        });
     }
 
     // ------------------------------------------------------------------
@@ -703,9 +745,6 @@ public final class Tutorial implements Listener, TabExecutor {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent e) {
         if (e.getEntity() instanceof Player p && sessions.containsKey(p.getUniqueId())) {
-            e.setCancelled(true);
-        } else if (e.getEntity() instanceof ArmorStand st
-                && st.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
             e.setCancelled(true);
         }
     }
@@ -735,22 +774,11 @@ public final class Tutorial implements Listener, TabExecutor {
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onStandManipulate(PlayerArmorStandManipulateEvent e) {
-        if (e.getRightClicked().getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
-            e.setCancelled(true);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onStandClick(PlayerInteractAtEntityEvent e) {
-        if (e.getRightClicked().getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
-            e.setCancelled(true);
-        }
-    }
-
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
+        for (PacketNpc n : live.values()) {
+            n.viewers.remove(e.getPlayer().getUniqueId());
+        }
         Session s = sessions.get(e.getPlayer().getUniqueId());
         if (s != null) {
             finish(s, false);
@@ -782,9 +810,9 @@ public final class Tutorial implements Listener, TabExecutor {
             p.teleport(s.back, PlayerTeleportEvent.TeleportCause.PLUGIN);
         }
         for (Npc n : s.npcs.values()) {
-            if (n.stand.isValid()) {
-                n.stand.teleport(n.base);
-            }
+            endHand(n);
+            n.pn.lift(0);
+            n.pn.look(n.base.getYaw(), 0f);
         }
         p.getPersistentDataContainer().set(doneKey, PersistentDataType.BYTE, (byte) 1);
         if (p.isOnline()) {
@@ -913,10 +941,11 @@ public final class Tutorial implements Listener, TabExecutor {
                     sender.sendMessage(msg("info-line", "%name%", name, "%state%", ok ? "&aimpostato" : "&cmanca"));
                 }
                 for (String key : KEYS) {
-                    Entity e = npcEntity(key);
                     sender.sendMessage(msg("info-line", "%name%", "npc " + key,
-                            "%state%", e != null && e.isValid() ? "&apresente" : "&cassente"));
+                            "%state%", live.containsKey(key) ? "&apresente (" + data.getString("npc." + key + ".skin", "?") + ")" : "&cassente"));
                 }
+                sender.sendMessage(msg("info-line", "%name%", "packetevents",
+                        "%state%", hasPacketEvents() ? "&apresente" : "&cmanca"));
             }
             case "npc" -> {
                 if (!admin) {
@@ -930,8 +959,25 @@ public final class Tutorial implements Listener, TabExecutor {
                     sender.sendMessage(msg("no-permission"));
                     return;
                 }
-                int n = removeStands();
+                int n = removeNpcs();
                 sender.sendMessage(msg("npc-removed", "%count%", String.valueOf(n)));
+            }
+            case "skin" -> {
+                if (!admin) {
+                    sender.sendMessage(msg("no-permission"));
+                    return;
+                }
+                if (args.length < 3 || !KEYS.contains(args[1].toLowerCase(Locale.ROOT))) {
+                    sender.sendMessage(msg("usage-skin"));
+                    return;
+                }
+                String key = args[1].toLowerCase(Locale.ROOT);
+                if (!data.contains("npc." + key + ".x")) {
+                    sender.sendMessage(msg("npc-nopoint", "%name%", key));
+                    return;
+                }
+                sender.sendMessage(msg("skin-loading", "%skin%", args[2]));
+                fetchSkin(key, args[2], sender);
             }
             case "reload" -> {
                 if (!admin) {
@@ -939,6 +985,7 @@ public final class Tutorial implements Listener, TabExecutor {
                     return;
                 }
                 load();
+                respawnAll();
                 sender.sendMessage(msg("reloaded"));
             }
             default -> sender.sendMessage(msg("usage"));
@@ -957,11 +1004,13 @@ public final class Tutorial implements Listener, TabExecutor {
             out.add("skip");
             if (admin) {
                 out.addAll(List.of("play", "reset", "setspot", "resetspot", "setpoint", "resetpoint", "info",
-                        "npc", "npcremove", "reload"));
+                        "npc", "npcremove", "skin", "reload"));
             }
         } else if (args.length == 2 && admin) {
             String sub = args[0].toLowerCase(Locale.ROOT);
-            if (sub.equals("setpoint")) {
+            if (sub.equals("skin")) {
+                out.addAll(KEYS);
+            } else if (sub.equals("setpoint")) {
                 out.addAll(POINTS);
             } else if (sub.equals("resetpoint")) {
                 out.addAll(POINTS);
@@ -970,6 +1019,11 @@ public final class Tutorial implements Listener, TabExecutor {
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     out.add(p.getName());
                 }
+            }
+        }
+        if (args.length == 3 && admin && args[0].equalsIgnoreCase("skin")) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                out.add(p.getName());
             }
         }
         String prefix = args.length == 0 ? "" : args[args.length - 1].toLowerCase(Locale.ROOT);

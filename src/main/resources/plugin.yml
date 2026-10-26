@@ -1,7 +1,8 @@
 name: BlockMania
-version: '1.26.0'
+version: '1.27.0'
 main: it.blockmania.BlockMania
 api-version: '1.21'
+softdepend: [packetevents]
 description: Oggetti speciali con modello custom
 commands:
   blockmania:

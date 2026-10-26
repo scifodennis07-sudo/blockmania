@@ -112,6 +112,7 @@ public final class BlockMania extends JavaPlugin {
         rewards.start();
         tutorial = new Tutorial(this);
         tutorial.load();
+        getServer().getScheduler().runTask(this, tutorial::spawnSaved);
         getServer().getPluginManager().registerEvents(tutorial, this);
         PluginCommand tutorialCommand = getCommand("tutorial");
         if (tutorialCommand != null) {
