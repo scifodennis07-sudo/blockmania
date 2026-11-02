@@ -197,10 +197,6 @@ public final class MinesGui implements Listener {
         String[] general = general(player, holder.page, pages);
 
         holder.actions.clear();
-        ItemStack filler = invisible(" ", List.of(), general, true);
-        for (int i = 0; i < SIZE; i++) {
-            inv.setItem(i, filler);
-        }
         for (int slot : slotList(GUI + "slots.close")) {
             put(inv, holder, slot, invisible(c.getString(GUI + "close.name", "&cchiudi"),
                     c.getStringList(GUI + "close.lore"), general, false), "close");
@@ -363,6 +359,7 @@ public final class MinesGui implements Listener {
         if (action == null) {
             return;
         }
+        plugin.guiClick(player);
         int pages = pageCount();
         switch (action) {
             case "close" -> player.closeInventory();

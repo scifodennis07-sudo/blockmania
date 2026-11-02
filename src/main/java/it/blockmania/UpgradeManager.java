@@ -429,10 +429,6 @@ public final class UpgradeManager implements Listener {
         String[] general = general(player, holder.page, pages);
 
         holder.actions.clear();
-        ItemStack filler = invisible(" ", List.of(), general, true);
-        for (int i = 0; i < SIZE; i++) {
-            inv.setItem(i, filler);
-        }
 
         // chiudi, pagine, info
         for (int slot : slotList(GUI + "slots.close")) {
@@ -467,7 +463,6 @@ public final class UpgradeManager implements Listener {
                     put(inv, holder, extra, invisible(c.getString(bp + ".name", "&8in arrivo"),
                             c.getStringList(bp + ".lore"), r, false), null);
                 }
-                put(inv, holder, pos.icon(), invisible(" ", List.of(), r, true), null);
                 continue;
             }
 
@@ -600,6 +595,7 @@ public final class UpgradeManager implements Listener {
         if (action == null) {
             return;
         }
+        plugin.guiClick(player);
         int pages = pageCount();
         switch (action) {
             case "close" -> player.closeInventory();

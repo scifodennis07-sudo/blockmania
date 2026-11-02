@@ -802,7 +802,9 @@ public final class MineTemplates implements Listener {
         if (old != null) {
             endBar(player, old);
         }
-        sessions.put(player.getUniqueId(), new Session(mine, back, info, region));
+        Session ns = new Session(mine, back, info, region);
+        sessions.put(player.getUniqueId(), ns);
+        showBars(ns, player);
         player.teleportAsync(referenceSpawn(region, info, world));
         plugin.send(player, "mine-edit-start", "%mine%", String.valueOf(mine));
     }
@@ -816,6 +818,11 @@ public final class MineTemplates implements Listener {
             return;
         }
         s.dirty = true;
+        showBars(s, player);
+    }
+
+    /** Le due bossbar "salva" e "annulla". */
+    private void showBars(Session s, Player player) {
         String save = plugin.getConfig().getString("mines.edit.bossbar",
                 "{icon:giallo_matita} &epremi {key:shift + f} &eper salvare le modifiche della miniera &f%mine%");
         String cancel = plugin.getConfig().getString("mines.edit.bossbar-cancel",
@@ -999,6 +1006,77 @@ public final class MineTemplates implements Listener {
         warnLeave(player, s);
     }
 
+    /** Vero se il punto e' dentro la miniera personale (o non so dove sia la miniera: in quel caso non blocco). */
+    private boolean insideMine(Location l) {
+        int sx = spacingX();
+        int sz = spacingZ();
+        int idx = Math.floorDiv(l.getBlockX(), sx);
+        int mine = Math.floorDiv(l.getBlockZ(), sz) + 1;
+        if (mine < 1 || mine > mineCount()) {
+            return false;
+        }
+        Info in = info(mine);
+        if (in == null) {
+            return true;
+        }
+        int m = 3;
+        int ox = idx * sx;
+        int oz = (mine - 1) * sz;
+        int oy = baseY();
+        return l.getX() >= ox - m && l.getX() < ox + in.dx() + m
+                && l.getZ() >= oz - m && l.getZ() < oz + in.dz() + m
+                && l.getY() >= oy - 64 && l.getY() < oy + in.dy() + 60;
+    }
+
+    private final Map<UUID, Long> mineWarned = new HashMap<>();
+
+    private boolean mineLocked(Player player) {
+        return minesWorld != null && player.getWorld() == minesWorld
+                && !sessions.containsKey(player.getUniqueId()) && !player.hasPermission("blockmania.build");
+    }
+
+    private void warnMine(Player player) {
+        long now = System.currentTimeMillis();
+        Long last = mineWarned.get(player.getUniqueId());
+        if (last == null || now - last > 2000) {
+            mineWarned.put(player.getUniqueId(), now);
+            plugin.send(player, "mine-leave-blocked");
+        }
+    }
+
+    /** Chi e' in una miniera personale non puo' uscire dalla sua area camminando. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onMineWalk(PlayerMoveEvent event) {
+        Location to = event.getTo();
+        if (to == null || minesWorld == null || to.getWorld() != minesWorld) {
+            return;
+        }
+        Location from = event.getFrom();
+        if (from.getBlockX() == to.getBlockX() && from.getBlockY() == to.getBlockY()
+                && from.getBlockZ() == to.getBlockZ()) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (!mineLocked(player) || insideMine(to) || !insideMine(from)) {
+            return;
+        }
+        event.setTo(from);
+        warnMine(player);
+    }
+
+    /** Neanche con perle o teletrasporti dentro lo stesso mondo si esce dall'area della miniera. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onMineTeleport(PlayerTeleportEvent event) {
+        Location to = event.getTo();
+        Player player = event.getPlayer();
+        if (to == null || minesWorld == null || to.getWorld() != minesWorld || event.getFrom().getWorld() != minesWorld
+                || !mineLocked(player) || insideMine(to) || !insideMine(event.getFrom())) {
+            return;
+        }
+        event.setCancelled(true);
+        warnMine(player);
+    }
+
     /** Se esce dal server senza salvare, le modifiche vengono annullate. */
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
@@ -1029,6 +1107,12 @@ public final class MineTemplates implements Listener {
 
     private void save(Player player, Session s) {
         if (!s.dirty) {
+            // niente da salvare: si esce quando si vuole (come annullare, ma senza rifare la miniera)
+            sessions.remove(player.getUniqueId());
+            endBar(player, s);
+            if (s.back != null && s.back.getWorld() != null) {
+                player.teleport(s.back);
+            }
             plugin.send(player, "mine-edit-nochange");
             return;
         }

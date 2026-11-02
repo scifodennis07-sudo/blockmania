@@ -169,6 +169,7 @@ public final class BlockVariantsGui implements Listener {
         if (action == null) {
             return;
         }
+        plugin.guiClick(player);
         int max = plugin.getMaxBlock();
         if (action.equals("close")) {
             plugin.playConfiguredSound(player.getLocation(), "variants-gui.sounds.page");

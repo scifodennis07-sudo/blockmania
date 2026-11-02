@@ -62,6 +62,8 @@ public final class Rewards implements Listener {
     private static final char DIGIT_SHADOW_BASE = '';
     /** Da pixel dell'immagine a pixel del titolo (la stessa misura usata per il numero pagina: centro barra 95 -> 73). */
     private static final int IMG = -22;
+    private static final char TINY_BASE = '\uEA00';         // lettere piccole (5 pixel) nelle barre verdi
+    private static final char TINY_SHADOW_BASE = '\uEB00';
     /** Percorso dei 15 livelli: riga e colonna di ogni casella. */
     private static final int[][] PATH = {{2, 1}, {3, 1}, {4, 1}, {4, 2}, {4, 3}, {3, 3}, {2, 3}, {2, 4}, {2, 5},
             {3, 5}, {4, 5}, {4, 6}, {4, 7}, {3, 7}, {2, 7}};
@@ -297,28 +299,39 @@ public final class Rewards implements Listener {
         player.getPersistentDataContainer().set(claimKey(type), PersistentDataType.STRING, sb.toString());
     }
 
-    /** La ricompensa del livello n: i livelli bassi danno coin, poi blockcoin, poi gli assegni sempre piu' rari. */
-    Reward rewardOf(String type, int level) {
+    /** Le ricompense del livello n (anche 3 o 4 insieme): coin, blockcoin e assegni sempre piu' ricchi. */
+    List<Reward> rewardsOf(String type, int level) {
         int scaled = (int) Math.max(1, Math.ceil(level * 100.0 / levelsOf(type)));
         double mult = plugin.getConfig().getDouble(GUI + "types." + type + ".multiplier", 1.0);
         int prev = 0;
-        String kind = "coin";
-        int amount = 100;
-        for (Map<?, ?> map : plugin.getConfig().getMapList(GUI + "tiers")) {
-            int upto = num(map.get("upto"), 100);
-            kind = String.valueOf(map.get("type") == null ? "coin" : map.get("type")).toLowerCase(Locale.ROOT);
-            int base = num(map.get("amount"), 1);
-            int step = num(map.get("step"), 0);
-            amount = Math.max(1, base + step * Math.max(0, scaled - prev - 1));
+        List<Reward> out = new ArrayList<>();
+        for (Map<?, ?> tier : plugin.getConfig().getMapList(GUI + "tiers")) {
+            int upto = num(tier.get("upto"), 100);
+            out.clear();
+            if (tier.get("items") instanceof List<?> items) {
+                for (Object o : items) {
+                    if (!(o instanceof Map<?, ?> map)) {
+                        continue;
+                    }
+                    String kind = String.valueOf(map.get("type") == null ? "coin" : map.get("type")).toLowerCase(Locale.ROOT);
+                    int base = num(map.get("amount"), 1);
+                    int step = num(map.get("step"), 0);
+                    int amount = Math.max(1, base + step * Math.max(0, scaled - prev - 1));
+                    if (mult != 1.0) {
+                        amount = Math.max(1, (int) Math.round(amount * mult));
+                    }
+                    out.add(new Reward(kind, amount));
+                }
+            }
             if (scaled <= upto) {
                 break;
             }
             prev = upto;
         }
-        if (mult != 1.0 && !kind.startsWith("cheque_")) {
-            amount = Math.max(1, (int) Math.round(amount * mult));
+        if (out.isEmpty()) {
+            out.add(new Reward("coin", 100));
         }
-        return new Reward(kind, amount);
+        return out;
     }
 
     private static int num(Object o, int def) {
@@ -336,6 +349,21 @@ public final class Rewards implements Listener {
         var c = plugin.getConfig();
         String name = c.getString(GUI + "reward-names." + r.type(), r.type());
         return name.replace("%amount%", String.valueOf(r.amount()));
+    }
+
+    /** Tutte le ricompense su una riga: "100 coin, 20 blockcoin, ...". */
+    private String rewardNames(List<Reward> list) {
+        List<String> names = new ArrayList<>();
+        for (Reward r : list) {
+            names.add(rewardName(r));
+        }
+        return String.join(", ", names);
+    }
+
+    private void give(Player player, List<Reward> list) {
+        for (Reward r : list) {
+            give(player, r);
+        }
     }
 
     /** Da' la ricompensa al giocatore (coin, blockcoin oppure assegni nell'inventario). */
@@ -423,9 +451,9 @@ public final class Rewards implements Listener {
         }
         bits.set(level);
         saveClaims(player, type, bits);
-        Reward rw = rewardOf(type, level);
+        List<Reward> rw = rewardsOf(type, level);
         give(player, rw);
-        plugin.send(player, "reward-claimed", "%level%", String.valueOf(level), "%reward%", rewardName(rw));
+        plugin.send(player, "reward-claimed", "%level%", String.valueOf(level), "%reward%", rewardNames(rw));
         plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.claim");
         if (!type.equals("pass") && expPerClaim() > 0) {
             int before = reached(player, "pass");
@@ -540,10 +568,6 @@ public final class Rewards implements Listener {
     private void fillBase(Inventory inv, Holder holder, String[] r, boolean backClose) {
         var c = plugin.getConfig();
         holder.actions.clear();
-        ItemStack filler = pane(invisibleCmd(), " ", List.of(), r, true);
-        for (int i = 0; i < SIZE; i++) {
-            inv.setItem(i, filler);
-        }
         String closeName = backClose ? c.getString(GUI + "back.name", "&cindietro")
                 : c.getString(GUI + "close.name", "&cchiudi");
         boolean sub = holder.kind.equals("levels");
@@ -678,7 +702,7 @@ public final class Rewards implements Listener {
         String[] mine = {"%number%", String.valueOf(level),
                 "%need%", String.valueOf(need),
                 "%missing%", String.valueOf(Math.max(0, need - have)),
-                "%reward%", rewardName(rewardOf(type, level)),
+                "%reward%", rewardNames(rewardsOf(type, level)),
                 "%state%", state};
         String[] out = new String[mine.length + general.length];
         System.arraycopy(mine, 0, out, 0, mine.length);
@@ -734,7 +758,16 @@ public final class Rewards implements Listener {
             String[] r = levelRepl(player, type, level, general);
             int cmd = claimed ? iconCmd("barrel-empty", 514) : ready ? iconCmd("barrel-gold", 511) : iconCmd("chest", 510);
             String name = c.getString(GUI + "level-states." + key + ".name", "&flivello %number%");
-            List<String> lore = loreOf(GUI + "level-states." + key + ".lore", List.of());
+            List<String> lore = new ArrayList<>();
+            for (String line : loreOf(GUI + "level-states." + key + ".lore", List.of())) {
+                if (line.contains("%reward_lines%")) {
+                    for (Reward rw : rewardsOf(type, level)) {
+                        lore.add(line.replace("%reward_lines%", rewardName(rw)));
+                    }
+                } else {
+                    lore.add(line);
+                }
+            }
             put(inv, holder, slotOf(type, i), pane(cmd, name, lore, r, false), ready ? "claim:" + level : null);
         }
     }
@@ -818,6 +851,44 @@ public final class Rewards implements Listener {
         t.at(start, color + letters(text, base), font(), textAdvance(text));
     }
 
+    private static int tinyAdvance(String text) {
+        int total = 0;
+        for (char ch : text.toCharArray()) {
+            total += ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
+        }
+        return total;
+    }
+
+    private static String tinyLetters(String text, char base) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            if (ch < 128 && Character.isLetterOrDigit(ch)) {
+                sb.append((char) (base + ch));
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Testo piccolo (minuscolo, 5 pixel) centrato su centerX con l'ombra. */
+    private void centeredTiny(GuiTitle t, String text, int centerX) {
+        int adv = tinyAdvance(text);
+        int start = centerX - Math.max(0, adv - 1) / 2;
+        if (plugin.getConfig().getBoolean(GUI + "text-shadow", true)) {
+            t.at(start + 1, GuiTitle.shadowCode(plugin) + tinyLetters(text, TINY_SHADOW_BASE), font(), adv);
+        }
+        t.at(start, "&f" + tinyLetters(text, TINY_BASE), font(), adv);
+    }
+
+    /** Numero pagina (1/7) nella barra in basso dei percorsi. */
+    private void navNumber(GuiTitle t, int page, int pages) {
+        String plain = (page + 1) + "/" + pages;
+        int center = plugin.getConfig().getInt(GUI + "page-center", 73);
+        int start = center - GuiTitle.widthOf(plugin, "nav", plain) / 2;
+        t.number(start, "nav", "nav-shadow", plugin.getConfig().getBoolean(GUI + "text-shadow", true), plain, font());
+    }
+
     private void numberAt(GuiTitle t, int row, String text, int centerX) {
         String set = "lvl" + row;
         int start = centerX - GuiTitle.widthOf(plugin, set, text) / 2;
@@ -830,8 +901,8 @@ public final class Rewards implements Listener {
             return;
         }
         StringBuilder sb = new StringBuilder("&f");
+        int color = n <= 2 ? 0 : n <= 5 ? 1 : 2;   // tutte le tacchette hanno lo stesso colore
         for (int k = 0; k < Math.min(7, n); k++) {
-            int color = k < 2 ? 0 : k < 5 ? 1 : 2;
             sb.append((char) (TICK_BASE + 0x10 * color + (row - 1)));
         }
         t.at(xImage + IMG, sb.toString(), font(), 4 * Math.min(7, n));
@@ -860,11 +931,11 @@ public final class Rewards implements Listener {
             int row = rowOf(i);
             int group = groupOf(i);
             ticks(t, row, group == 0 ? 35 : 125, tickCount(player, type));
-            int center = (group == 0 ? 77 : 167) + IMG;
+            int center = (group == 0 ? 76 : 166) + IMG;
             if (type.equals("daily")) {
                 boolean ready = dailyReady(player);
                 centeredText(t, ready ? c.getString(GUI + "daily.yes", "SI") : c.getString(GUI + "daily.no", "NO"),
-                        CELL_BASE, CELL_SHADOW_BASE, ready ? "&a" : "&c", center + 1);
+                        CELL_BASE, CELL_SHADOW_BASE, ready ? "&a" : "&c", center - 2);
             } else {
                 numberAt(t, row, String.valueOf(reached(player, type)), center);
             }
@@ -877,12 +948,13 @@ public final class Rewards implements Listener {
         return t.build();
     }
 
-    private Component titleLevels(Player player, String type) {
+    private Component titleLevels(Player player, String type, int page) {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(c.getString(GUI + (type.equals("pass") ? "image-pass" : "image-levels"), type.equals("pass") ? "㴂" : "㴁"));
         String text = c.getString(GUI + "bar-text.level", "livello %n%").replace("%n%", String.valueOf(reached(player, type)))
-                .toUpperCase(Locale.ROOT);
-        centeredText(t, text, BAR2_BASE, BAR2_SHADOW_BASE, "&f", c.getInt(GUI + "bar-center", 73));
+                .toLowerCase(Locale.ROOT);
+        centeredTiny(t, text, c.getInt(GUI + "bar-center", 73));
+        navNumber(t, page, pagesOf(type));
         return t.build();
     }
 
@@ -890,8 +962,8 @@ public final class Rewards implements Listener {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(c.getString(GUI + (dailyClaimedToday(player) || !dailyReady(player) ? "image-daily-wait" : "image-daily-ready"), "㴄"));
         String text = c.getString(GUI + "bar-text.daily", "giorno %n%").replace("%n%", String.valueOf(daysClaimed(player)))
-                .toUpperCase(Locale.ROOT);
-        centeredText(t, text, TEXT_BASE, TEXT_SHADOW_BASE, "&f", c.getInt(GUI + "bar-center", 73));
+                .toLowerCase(Locale.ROOT);
+        centeredTiny(t, text, c.getInt(GUI + "bar-center", 73));
         return t.build();
     }
 
@@ -928,7 +1000,7 @@ public final class Rewards implements Listener {
         int reach = reached(player, type);
         holder.page = page >= 0 ? page : Math.max(0, (Math.max(1, reach) - 1) / perPage(type));
         holder.page = Math.min(holder.page, pagesOf(type) - 1);
-        Inventory inv = Bukkit.createInventory(holder, SIZE, titleLevels(player, type));
+        Inventory inv = Bukkit.createInventory(holder, SIZE, titleLevels(player, type, holder.page));
         holder.inventory = inv;
         fillLevels(inv, holder, player);
         player.openInventory(inv);
@@ -967,7 +1039,7 @@ public final class Rewards implements Listener {
         if (action == null) {
             return;
         }
-        plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.click");
+        plugin.guiClick(player);
         if (action.equals("close")) {
             player.closeInventory();
         } else if (action.equals("back")) {

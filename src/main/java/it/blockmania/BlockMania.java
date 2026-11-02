@@ -280,12 +280,33 @@ public final class BlockMania extends JavaPlugin {
             c.set("rewards-gui", null);
             c.set("items-gui", null);
         }
+        if (done < 13) {
+            // suono "error" per tutti gli errori, niente suono di cassa all'apertura, click uguale per tutte le gui,
+            // ricompense con piu' premi insieme e messaggio in chat
+            c.set("rewards-gui", null);
+            c.set("items-gui.categories", null);
+            c.set("items-gui.sounds", null);
+            c.set("messages.upgrade-max", null);
+            for (String path : c.getKeys(true)) {
+                if (!path.endsWith(".sound") || !c.isString(path)) {
+                    continue;
+                }
+                String v = c.getString(path, "");
+                if ("entity.villager.no".equals(v)) {
+                    c.set(path, "error");
+                } else if ("block.chest.open".equals(v)) {
+                    c.set(path, "");
+                } else if ("ui.button.click".equals(v) && path.endsWith("page.sound")) {
+                    c.set(path, "");
+                }
+            }
+        }
         if (done >= 1) {
-            c.set("tuning-version", 12);
+            c.set("tuning-version", 13);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 12);
+        c.set("tuning-version", 13);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -306,7 +327,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 12);
+        c.set("tuning-version", 13);
         saveConfig();
     }
 
@@ -985,7 +1006,7 @@ public final class BlockMania extends JavaPlugin {
             String soundKey = type.equalsIgnoreCase("error") ? "error" : type.equalsIgnoreCase("success") ? "success" : "";
             if (!soundKey.isEmpty()) {
                 String sname = getConfig().getString("message-sounds." + soundKey + ".sound", "");
-                if (sname != null && !sname.isBlank()) {
+                if (sname != null && !sname.isBlank() && (!soundKey.equals("error") || errorFree())) {
                     listener.playSound(listener.getLocation(), sname,
                             (float) getConfig().getDouble("message-sounds." + soundKey + ".volume", 1.0),
                             (float) getConfig().getDouble("message-sounds." + soundKey + ".pitch", 1.0));
@@ -1080,9 +1101,34 @@ public final class BlockMania extends JavaPlugin {
         if (name == null || name.isBlank() || location.getWorld() == null) {
             return;
         }
+        if (name.equals("error") && !errorFree()) {
+            return;
+        }
         float volume = (float) getConfig().getDouble(path + ".volume", 1.0);
         float pitch = (float) getConfig().getDouble(path + ".pitch", 1.0);
         location.getWorld().playSound(location, name, volume, pitch);
+    }
+
+    private long lastErrorMs;
+
+    /** Vero se il suono "error" puo' partire (cosi' un errore con messaggio + suono della gui non suona due volte). */
+    private boolean errorFree() {
+        long now = System.currentTimeMillis();
+        if (now - lastErrorMs < 120) {
+            return false;
+        }
+        lastErrorMs = now;
+        return true;
+    }
+
+    /** Click di un tasto in una gui: parte un tick dopo e salta se nello stesso momento e' suonato un errore. */
+    public void guiClick(Player player) {
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!player.isOnline() || System.currentTimeMillis() - lastErrorMs < 120) {
+                return;
+            }
+            playConfiguredSound(player.getLocation(), "gui-click");
+        });
     }
 
     /** Suona tutti i suoni di una sezione del config (ogni voce ha sound / volume / pitch). */

@@ -349,6 +349,7 @@ public final class ItemsGui implements Listener {
         if (action == null) {
             return;
         }
+        plugin.guiClick(player);
         List<Map<?, ?>> cats = categories();
         int pages = Math.max(1, (holder.entries.size() + perPage() - 1) / perPage());
 

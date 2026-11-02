@@ -1,0 +1,107 @@
+# Scena del tutorial (generata dagli audio). at = secondo; look = denny|andrew|center|away:GRADI[,INCLINAZIONE]; turn = secondi per girarsi;
+# talk = chi parla (l'altro lo guarda); text = sottotitolo ("" lo toglie); do = animazioni "npc:clip"
+length: 86.38
+steps:
+  - {at: 0.0, look: "away:120", turn: 0.1, talk: "denny"}
+  - {at: 0.6, look: "away:120", turn: 0.1, talk: "denny"}
+  - {at: 0.6, text: "&bDenny&7: Ehi, ciao? ... Ehi?"}
+  - {at: 0.7, do: ["denny:wave"]}
+  - {at: 1.35, look: "away:-110,-6", turn: 0.9}
+  - {at: 2.0, look: "away:110,8", turn: 0.6}
+  - {at: 2.79, talk: ""}
+  - {at: 3.09, look: "away:75,-3", turn: 0.7, talk: "andrew"}
+  - {at: 3.09, text: "&cAndrew&7: Ma questo è cieco?"}
+  - {at: 3.29, do: ["andrew:shake_head"]}
+  - {at: 4.48, talk: ""}
+  - {at: 4.93, talk: "denny"}
+  - {at: 4.93, text: "&bDenny&7: Eh? ... Ah, eccoti!"}
+  - {at: 5.68, look: "denny", turn: 0.5}
+  - {at: 5.68, do: ["denny:hop"]}
+  - {at: 5.83, do: ["denny:wave"]}
+  - {at: 6.96, talk: ""}
+  - {at: 7.11, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 7.11, text: "&cAndrew&7: Siamo qui! Davanti a te!"}
+  - {at: 7.41, do: ["andrew:point"]}
+  - {at: 9.7, talk: ""}
+  - {at: 9.85, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 9.85, text: "&bDenny&7: Sono qui! Guardami... ahah!"}
+  - {at: 10.05, do: ["denny:point_self"]}
+  - {at: 12.64, do: ["denny:hop"]}
+  - {at: 13.54, talk: ""}
+  - {at: 13.74, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 13.74, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo."}
+  - {at: 14.04, do: ["andrew:facepalm"]}
+  - {at: 17.11, talk: ""}
+  - {at: 17.51, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 17.51, text: "&bDenny&7: Lascia perdere Andrew, fa così con tutti quelli nuovi."}
+  - {at: 17.71, do: ["denny:shake_head"]}
+  - {at: 20.96, text: "&bDenny&7: Bene! Ti do il benvenuto su BlockMania."}
+  - {at: 21.23, do: ["denny:spread"]}
+  - {at: 23.73, talk: ""}
+  - {at: 23.83, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 23.83, text: "&cAndrew&7: Sì sì, benvenuto."}
+  - {at: 24.13, do: ["andrew:shrug"]}
+  - {at: 25.02, text: "&cAndrew&7: Non toccare niente senza chiedere."}
+  - {at: 27.6, talk: ""}
+  - {at: 27.8, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 27.8, text: "&bDenny&7: Ma dai, Andrew! Lascialo respirare!"}
+  - {at: 28.1, do: ["denny:warn_finger"]}
+  - {at: 30.48, text: "&bDenny&7: Ah, scusa, che maleducato..."}
+  - {at: 32.62, text: "&bDenny&7: non mi sono nemmeno presentato."}
+  - {at: 34.04, do: ["denny:point_self"]}
+  - {at: 35.0, text: "&bDenny&7: Io sono Denny, piacere!"}
+  - {at: 37.14, talk: ""}
+  - {at: 37.34, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 37.34, text: "&cAndrew&7: Bravo, Denny. Dopo dieci secondi. Un record."}
+  - {at: 37.64, do: ["andrew:clap"]}
+  - {at: 42.37, talk: ""}
+  - {at: 42.57, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 42.57, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\"."}
+  - {at: 42.77, do: ["denny:warn_finger"]}
+  - {at: 46.57, talk: ""}
+  - {at: 46.72, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 46.72, text: "&cAndrew&7: E io sono Andrew. Purtroppo."}
+  - {at: 46.92, do: ["andrew:sigh"]}
+  - {at: 50.39, talk: ""}
+  - {at: 50.79, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 50.79, text: "&bDenny&7: Saremo noi i tuoi tutor:"}
+  - {at: 51.19, do: ["denny:point_self"]}
+  - {at: 52.16, text: "&bDenny&7: ti guideremo qui nel server, ti spiegheremo come"}
+  - {at: 54.39, do: ["denny:spread"]}
+  - {at: 54.9, text: "&bDenny&7: iniziare, come muoverti e qualche strategia che ti"}
+  - {at: 57.76, text: "&bDenny&7: farà risparmiare un sacco di tempo."}
+  - {at: 58.64, do: ["denny:nod"]}
+  - {at: 60.14, talk: ""}
+  - {at: 60.34, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 60.34, text: "&cAndrew&7: Io intanto ti guardo."}
+  - {at: 60.54, do: ["andrew:crossed_arms"]}
+  - {at: 61.73, text: "&cAndrew&7: Giusto per essere sicuro che non rompi niente."}
+  - {at: 65.01, talk: ""}
+  - {at: 65.16, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 65.16, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone."}
+  - {at: 65.46, do: ["denny:tilt"]}
+  - {at: 68.57, talk: ""}
+  - {at: 68.72, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 68.72, text: "&cAndrew&7: Ripetilo e me ne vado."}
+  - {at: 68.82, do: ["andrew:warn_finger"]}
+  - {at: 70.83, talk: ""}
+  - {at: 71.08, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 71.08, text: "&bDenny&7: Allora... sei pronto?"}
+  - {at: 71.28, do: ["denny:hop"]}
+  - {at: 73.11, talk: ""}
+  - {at: 73.26, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 73.26, text: "&cAndrew&7: Ma figurati, no. Guarda che faccia."}
+  - {at: 73.36, do: ["andrew:shake_head"]}
+  - {at: 76.41, talk: ""}
+  - {at: 76.71, look: "denny", turn: 0.5, talk: "denny"}
+  - {at: 76.71, text: "&bDenny&7: Beh... che domanda stupida!"}
+  - {at: 77.21, do: ["denny:spread"]}
+  - {at: 78.54, text: "&bDenny&7: Se sei qui, vuol dire che sei nato pronto."}
+  - {at: 80.83, do: ["denny:cheer"]}
+  - {at: 81.37, text: "&bDenny&7: Andiamo, allora!"}
+  - {at: 82.73, talk: ""}
+  - {at: 82.93, look: "andrew", turn: 0.5, talk: "andrew"}
+  - {at: 82.93, text: "&cAndrew&7: Che pazienza... Andiamo."}
+  - {at: 82.93, do: ["andrew:sigh"]}
+  - {at: 85.98, talk: ""}
+  - {at: 85.98, text: "", look: "center", turn: 0.8}

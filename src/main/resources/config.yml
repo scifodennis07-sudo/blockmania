@@ -119,7 +119,15 @@ glyphs:
   lvl4-shadow: "\uE5B0"
   lvl5: "\uE540"
   lvl5-shadow: "\uE5C0"
+  nav: "\uE480"             # numero pagina nella barra in basso dei percorsi (1/7)
+  nav-shadow: "\uE490"
   shadow-color: "#3F3F3F"     # colore dell'ombra dei numeri
+
+# suono di ogni click su un tasto di una gui (non vale per l'inventario)
+gui-click:
+  sound: "click"
+  volume: 0.8
+  pitch: 1.0
 
 # suono di ogni messaggio: errori = "error", messaggi giusti (success) = "ding" (suoni custom del resource pack)
 message-sounds:
@@ -313,21 +321,24 @@ rewards-gui:
       name: "&7livello &e%number%"
       lore:
         - ""
-        - "&7ricompensa: &e%reward%"
+        - "&7ricompense:"
+        - "&8 - &e%reward_lines%"
         - "&7serve: &f%need%"
         - "&8bloccato"
     ready:
       name: "&alivello &e%number% &acompletato"
       lore:
         - ""
-        - "&7ricompensa: &e%reward%"
+        - "&7ricompense:"
+        - "&8 - &e%reward_lines%"
         - ""
         - "&eclicca per ritirare"
     claimed:
       name: "&8livello &e%number% &8ritirato"
       lore:
         - ""
-        - "&7ricompensa: &e%reward%"
+        - "&7ricompense:"
+        - "&8 - &e%reward_lines%"
   daily:
     coin: 1000
     minutes: 30                 # minuti giocati (non AFK) prima di poter ritirare
@@ -356,19 +367,68 @@ rewards-gui:
         lore:
           - ""
           - "&7torna domani dopo mezzanotte"
-  # ricompensa per livello (su 100 livelli: negli altri si scala). "upto" = fino a questo livello, "amount" = quanti al
-  # primo livello della fascia, "step" = quanti in piu' a ogni livello successivo. Tipi: coin, blockcoin, cheque_<tipo>
-  # (standardball, doubleball, ghostball, explosionball, coin, blockcoin, power)
+  # ricompense per livello (su 100 livelli: negli altri si scala). Ogni fascia ("upto" = fino a questo livello) da' piu'
+  # premi insieme (items): "amount" = quanti al primo livello della fascia, "step" = quanti in piu' a ogni livello
+  # successivo. Tipi: coin, blockcoin, cheque_<tipo> (standardball, doubleball, ghostball, explosionball, coin,
+  # blockcoin, power). Il battlepass moltiplica tutto (types.pass.multiplier).
   tiers:
-    - {upto: 10, type: coin, amount: 100, step: 50}
-    - {upto: 20, type: blockcoin, amount: 50, step: 25}
-    - {upto: 30, type: cheque_standardball, amount: 1, step: 0}
-    - {upto: 40, type: cheque_doubleball, amount: 1, step: 0}
-    - {upto: 50, type: cheque_ghostball, amount: 1, step: 0}
-    - {upto: 60, type: cheque_explosionball, amount: 1, step: 0}
-    - {upto: 70, type: cheque_coin, amount: 1, step: 0}
-    - {upto: 80, type: cheque_blockcoin, amount: 1, step: 0}
-    - {upto: 100, type: cheque_power, amount: 1, step: 0}
+    - upto: 10
+      items:
+        - {type: coin, amount: 300, step: 100}
+        - {type: blockcoin, amount: 20, step: 10}
+    - upto: 20
+      items:
+        - {type: coin, amount: 1500, step: 150}
+        - {type: blockcoin, amount: 150, step: 20}
+        - {type: cheque_standardball, amount: 1, step: 0}
+    - upto: 30
+      items:
+        - {type: coin, amount: 3500, step: 250}
+        - {type: blockcoin, amount: 350, step: 30}
+        - {type: cheque_standardball, amount: 2, step: 0}
+        - {type: cheque_doubleball, amount: 1, step: 0}
+    - upto: 40
+      items:
+        - {type: coin, amount: 6500, step: 400}
+        - {type: blockcoin, amount: 650, step: 40}
+        - {type: cheque_doubleball, amount: 2, step: 0}
+        - {type: cheque_ghostball, amount: 1, step: 0}
+    - upto: 50
+      items:
+        - {type: coin, amount: 11000, step: 600}
+        - {type: blockcoin, amount: 1050, step: 60}
+        - {type: cheque_ghostball, amount: 1, step: 0}
+        - {type: cheque_coin, amount: 1, step: 0}
+    - upto: 60
+      items:
+        - {type: coin, amount: 17000, step: 800}
+        - {type: blockcoin, amount: 1650, step: 80}
+        - {type: cheque_explosionball, amount: 1, step: 0}
+        - {type: cheque_blockcoin, amount: 1, step: 0}
+    - upto: 70
+      items:
+        - {type: coin, amount: 25000, step: 1200}
+        - {type: blockcoin, amount: 2450, step: 100}
+        - {type: cheque_explosionball, amount: 1, step: 0}
+        - {type: cheque_coin, amount: 2, step: 0}
+    - upto: 80
+      items:
+        - {type: coin, amount: 37000, step: 1500}
+        - {type: blockcoin, amount: 3450, step: 150}
+        - {type: cheque_power, amount: 1, step: 0}
+        - {type: cheque_explosionball, amount: 2, step: 0}
+    - upto: 90
+      items:
+        - {type: coin, amount: 52000, step: 2000}
+        - {type: blockcoin, amount: 4950, step: 200}
+        - {type: cheque_power, amount: 1, step: 0}
+        - {type: cheque_ghostball, amount: 2, step: 0}
+    - upto: 100
+      items:
+        - {type: coin, amount: 72000, step: 3000}
+        - {type: blockcoin, amount: 6950, step: 250}
+        - {type: cheque_power, amount: 2, step: 0}
+        - {type: cheque_explosionball, amount: 3, step: 0}
   reward-names:
     coin: "%amount% coin"
     blockcoin: "%amount% blockcoin"
@@ -382,7 +442,7 @@ rewards-gui:
   # suoni: "click" e "error" sono suoni custom del resource pack (sounds.json, cartella sounds/custom)
   sounds:
     open:
-      sound: "block.chest.open"
+      sound: ""
       volume: 0.6
       pitch: 1.2
     click:
@@ -712,12 +772,12 @@ messages:
     text: "hai gia ritirato la ricompensa di oggi"
   daily-claimed:
     type: success
-    channel: actionbar
-    text: "ricompensa giornaliera ritirata: %coin% coin (giorno %day%)"
+    channel: chat
+    text: "hai ricevuto %coin% coin con la ricompensa giornaliera (giorno %day%)"
   reward-claimed:
     type: success
-    channel: actionbar
-    text: "livello %level% ritirato: %reward%"
+    channel: chat
+    text: "hai ricevuto: %reward% (livello %level%)"
   reward-exp:
     type: info
     channel: actionbar
@@ -746,10 +806,14 @@ messages:
     type: error
     channel: actionbar
     text: "non puoi uscire dalla miniera: salva con shift + F o annulla con shift + Q"
+  mine-leave-blocked:
+    type: error
+    channel: actionbar
+    text: "non puoi uscire dall'area della miniera"
   mine-edit-nochange:
     type: info
     channel: chat
-    text: "non hai fatto nessuna modifica da salvare"
+    text: "non hai fatto nessuna modifica: sei uscito dalla modifica"
   mine-edit-cancelled:
     type: info
     channel: chat
@@ -949,9 +1013,9 @@ messages:
     icon: "{icon:rosso_lucchetto}"
     text: "per potenziare %upgrade% oltre il livello %level% devi sbloccare la miniera successiva"
   upgrade-max:
-    type: warning
+    type: error
     channel: actionbar
-    icon: "{icon:giallo_stella}"
+    icon: "{icon:rosso_x}"
     text: "il potenziamento %upgrade% e' gia al livello massimo"
   upgrade-no-funds:
     type: error
@@ -1271,7 +1335,7 @@ shops:
         volume: 0.8
         pitch: 1.2
       error:
-        sound: "entity.villager.no"
+        sound: "error"
         volume: 0.8
         pitch: 1.0
   doubleball:
@@ -1296,7 +1360,7 @@ shops:
         volume: 0.8
         pitch: 1.2
       error:
-        sound: "entity.villager.no"
+        sound: "error"
         volume: 0.8
         pitch: 1.0
   ghostball:
@@ -1321,7 +1385,7 @@ shops:
         volume: 0.8
         pitch: 1.2
       error:
-        sound: "entity.villager.no"
+        sound: "error"
         volume: 0.8
         pitch: 1.0
   explosionball:
@@ -1346,7 +1410,7 @@ shops:
         volume: 0.8
         pitch: 1.2
       error:
-        sound: "entity.villager.no"
+        sound: "error"
         volume: 0.8
         pitch: 1.0
   sell:
@@ -1458,11 +1522,11 @@ upgrades:
   gui:
     sounds:
       open:
-        sound: "block.chest.open"
+        sound: ""
         volume: 0.6
         pitch: 1.2
       page:
-        sound: "ui.button.click"
+        sound: ""
         volume: 0.6
         pitch: 1.2
       success:
@@ -1470,7 +1534,7 @@ upgrades:
         volume: 0.6
         pitch: 1.5
       error:
-        sound: "entity.villager.no"
+        sound: "error"
         volume: 0.8
         pitch: 1.0
 
@@ -1862,15 +1926,15 @@ mines-gui:
       volume: 0.8
       pitch: 1.2
     error:
-      sound: "entity.villager.no"
+      sound: "error"
       volume: 0.8
       pitch: 1.0
     open:
-      sound: "block.chest.open"
+      sound: ""
       volume: 0.6
       pitch: 1.2
     page:
-      sound: "ui.button.click"
+      sound: ""
       volume: 0.6
       pitch: 1.2
 
@@ -1910,11 +1974,11 @@ items-gui:
 
   sounds:
     open:
-      sound: "block.chest.open"
+      sound: ""
       volume: 0.6
       pitch: 1.2
     page:
-      sound: "ui.button.click"
+      sound: ""
       volume: 0.6
       pitch: 1.2
     give:
@@ -1979,7 +2043,7 @@ items-gui:
     - id: stick
       type: items
       material: STICK
-      cmds: "1-2"
+      cmds: "1-9"
       name: "&fstick"
       lore:
         - ""
@@ -1995,7 +2059,7 @@ items-gui:
     - id: glass_pane
       type: items
       material: GLASS_PANE
-      cmds: "1,2,3,4,10,999"
+      cmds: "1-20,101-332,501-514,999"
       name: "&fpannello"
       lore:
         - ""
@@ -2045,11 +2109,11 @@ variants-gui:
 
   sounds:
     open:
-      sound: "block.chest.open"
+      sound: ""
       volume: 0.6
       pitch: 1.2
     page:
-      sound: "ui.button.click"
+      sound: ""
       volume: 0.6
       pitch: 1.2
 
@@ -2417,3 +2481,16 @@ effects:
 npc:
   look-range: 10.0      # blocchi: guardano chi e' piu' vicino di cosi'
   greet-range: 5.0      # blocchi: salutano chi si avvicina (una volta al minuto per giocatore)
+
+# ----------------------------------------------------------------------
+#  TUTORIAL (/tutorial): la scena con Denny e Andrew (tempi in tutorial-scene.yml, dentro il plugin)
+#  Preparazione (una volta, da admin): vai dove devono stare gli NPC e scrivi /tutorial npc,
+#  poi vai dove deve stare il giocatore (guardando verso di loro) e scrivi /tutorial setspot.
+#  /tutorial skip salta la scena.
+# ----------------------------------------------------------------------
+tutorial:
+  auto-start: true          # parte da sola per chi entra la prima volta
+  auto-start-delay: 80      # tick (20 = 1 secondo) dopo l'ingresso
+  sound: "tutorial1"        # l'audio nel resource pack
+  volume: 1.0
+  sway: 0.8                 # oscillazione leggera della testa (0 = niente)
