@@ -18,6 +18,7 @@ steps:
   - {at: 5.68, look: "denny", turn: 0.5}
   - {at: 5.68, do: ["denny:hop"]}
   - {at: 5.83, do: ["denny:wave"]}
+  - {at: 6.1, do: ["denny:@player"]}
   - {at: 6.96, talk: ""}
   - {at: 7.11, look: "andrew", turn: 0.5, talk: "andrew"}
   - {at: 7.11, text: "&cAndrew&7: Siamo qui! Davanti a te!"}
@@ -31,10 +32,13 @@ steps:
   - {at: 13.74, look: "andrew", turn: 0.5, talk: "andrew"}
   - {at: 13.74, text: "&cAndrew&7: Che ridere. Davvero. Sto morendo."}
   - {at: 14.04, do: ["andrew:facepalm"]}
+  - {at: 15.6, do: ["denny:@andrew"]}
   - {at: 17.11, talk: ""}
   - {at: 17.51, look: "denny", turn: 0.5, talk: "denny"}
   - {at: 17.51, text: "&bDenny&7: Lascia perdere Andrew, fa così con tutti quelli nuovi."}
   - {at: 17.71, do: ["denny:shake_head"]}
+  - {at: 19.0, do: ["denny:pat_shoulder"]}
+  - {at: 20.4, do: ["denny:@home"]}
   - {at: 20.96, text: "&bDenny&7: Bene! Ti do il benvenuto su BlockMania."}
   - {at: 21.23, do: ["denny:spread"]}
   - {at: 23.73, talk: ""}
@@ -46,6 +50,7 @@ steps:
   - {at: 27.8, look: "denny", turn: 0.5, talk: "denny"}
   - {at: 27.8, text: "&bDenny&7: Ma dai, Andrew! Lascialo respirare!"}
   - {at: 28.1, do: ["denny:warn_finger"]}
+  - {at: 28.0, do: ["andrew:look_around"]}
   - {at: 30.48, text: "&bDenny&7: Ah, scusa, che maleducato..."}
   - {at: 32.62, text: "&bDenny&7: non mi sono nemmeno presentato."}
   - {at: 34.04, do: ["denny:point_self"]}
@@ -58,6 +63,8 @@ steps:
   - {at: 42.57, look: "denny", turn: 0.5, talk: "denny"}
   - {at: 42.57, text: "&bDenny&7: Se continui così ti presento io come \"quello simpatico\"."}
   - {at: 42.77, do: ["denny:warn_finger"]}
+  - {at: 44.0, do: ["denny:@andrew"]}
+  - {at: 45.6, do: ["denny:@home"]}
   - {at: 46.57, talk: ""}
   - {at: 46.72, look: "andrew", turn: 0.5, talk: "andrew"}
   - {at: 46.72, text: "&cAndrew&7: E io sono Andrew. Purtroppo."}
@@ -68,6 +75,8 @@ steps:
   - {at: 51.19, do: ["denny:point_self"]}
   - {at: 52.16, text: "&bDenny&7: ti guideremo qui nel server, ti spiegheremo come"}
   - {at: 54.39, do: ["denny:spread"]}
+  - {at: 55.0, do: ["andrew:@player"]}
+  - {at: 58.3, do: ["andrew:@home"]}
   - {at: 54.9, text: "&bDenny&7: iniziare, come muoverti e qualche strategia che ti"}
   - {at: 57.76, text: "&bDenny&7: farà risparmiare un sacco di tempo."}
   - {at: 58.64, do: ["denny:nod"]}
@@ -80,10 +89,12 @@ steps:
   - {at: 65.16, look: "denny", turn: 0.5, talk: "denny"}
   - {at: 65.16, text: "&bDenny&7: Non ci far caso. In realtà è un tenerone."}
   - {at: 65.46, do: ["denny:tilt"]}
+  - {at: 66.5, do: ["denny:@andrew"]}
   - {at: 68.57, talk: ""}
   - {at: 68.72, look: "andrew", turn: 0.5, talk: "andrew"}
   - {at: 68.72, text: "&cAndrew&7: Ripetilo e me ne vado."}
   - {at: 68.82, do: ["andrew:warn_finger"]}
+  - {at: 70.0, do: ["denny:@home"]}
   - {at: 70.83, talk: ""}
   - {at: 71.08, look: "denny", turn: 0.5, talk: "denny"}
   - {at: 71.08, text: "&bDenny&7: Allora... sei pronto?"}
@@ -98,6 +109,8 @@ steps:
   - {at: 77.21, do: ["denny:spread"]}
   - {at: 78.54, text: "&bDenny&7: Se sei qui, vuol dire che sei nato pronto."}
   - {at: 80.83, do: ["denny:cheer"]}
+  - {at: 83.2, do: ["denny:@andrew"]}
+  - {at: 84.4, do: ["denny:pat_shoulder"]}
   - {at: 81.37, text: "&bDenny&7: Andiamo, allora!"}
   - {at: 82.73, talk: ""}
   - {at: 82.93, look: "andrew", turn: 0.5, talk: "andrew"}

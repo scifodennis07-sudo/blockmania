@@ -215,7 +215,7 @@ rewards-gui:
     - "&7livello raggiunto: &f%level%&8/&f%max%"
     - "&7ritirati: &f%claimed%"
     - "&7da ritirare: &e%unclaimed%"
-    - "&7prossimo livello: &f%have%&8/&f%next%"
+    - "&7prossimo livello: &f%have_text%&8/&f%next_text%"
   pass:
     info-lore:
       - "&7exp: &f%exp%"
@@ -226,6 +226,7 @@ rewards-gui:
   types:
     broken:
       name: "&fblocchi spaccati"
+      need: "spacca &f%need%&7 blocchi in tutto"
       base: 100
       growth: 0.05
       lore:
@@ -236,6 +237,7 @@ rewards-gui:
         - "&eclicca per aprire"
     hits:
       name: "&fblocchi colpiti"
+      need: "colpisci &f%need%&7 blocchi in tutto"
       base: 150
       growth: 0.05
       lore:
@@ -246,6 +248,7 @@ rewards-gui:
         - "&eclicca per aprire"
     bc_earned:
       name: "&fblockcoin guadagnati"
+      need: "guadagna &f%need%&7 blockcoin in tutto"
       base: 100
       growth: 0.05
       lore:
@@ -256,6 +259,7 @@ rewards-gui:
         - "&eclicca per aprire"
     bc_spent:
       name: "&fblockcoin spesi"
+      need: "spendi &f%need%&7 blockcoin in tutto"
       base: 100
       growth: 0.05
       lore:
@@ -266,7 +270,8 @@ rewards-gui:
         - "&eclicca per aprire"
     coin_earned:
       name: "&fcoin guadagnati"
-      base: 1000
+      need: "guadagna &f%need%&7 coin in tutto"
+      base: 100
       growth: 0.05
       lore:
         - "&7ne hai guadagnati &f%have%"
@@ -276,7 +281,8 @@ rewards-gui:
         - "&eclicca per aprire"
     coin_spent:
       name: "&fcoin spesi"
-      base: 1000
+      need: "spendi &f%need%&7 coin in tutto"
+      base: 100
       growth: 0.05
       lore:
         - "&7ne hai spesi &f%have%"
@@ -286,6 +292,7 @@ rewards-gui:
         - "&eclicca per aprire"
     platinum:
       name: "&fminiere platinate"
+      need: "platina &f%need%&7 miniere"
       levels: 20                # una miniera platinata = un livello
       base: 1
       growth: 0
@@ -297,10 +304,14 @@ rewards-gui:
         - "&eclicca per aprire"
     play:
       name: "&ftempo di gioco"
-      base: 10                  # minuti
+      need: "gioca per un totale di &f%need%"
+      base: 10                  # minuti (non usato se c'e' "list")
       growth: 0.05
+      # tempo TOTALE di gioco (in minuti) per ogni livello: 1h, 6h, 12h, 24h, 48h... poi +48h a ogni livello
+      list: [60, 360, 720, 1440, 2880]
+      after-step: 2880
       lore:
-        - "&7hai giocato &f%have%&7 minuti"
+        - "&7hai giocato &f%have_text%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -309,6 +320,7 @@ rewards-gui:
       name: "&fricompensa giornaliera"
     pass:
       name: "&fbattlepass"
+      need: "raggiungi &f%need%&7 exp"
       multiplier: 2             # le ricompense del battlepass sono il doppio
       lore:
         - "&7exp: &f%exp%"
@@ -323,7 +335,8 @@ rewards-gui:
         - ""
         - "&7ricompense:"
         - "&8 - &e%reward_lines%"
-        - "&7serve: &f%need%"
+        - "&7serve: %need_text%"
+        - "&8ti manca: &f%missing_text%"
         - "&8bloccato"
     ready:
       name: "&alivello &e%number% &acompletato"
@@ -340,7 +353,7 @@ rewards-gui:
         - "&7ricompense:"
         - "&8 - &e%reward_lines%"
   daily:
-    coin: 1000
+    coin: 25
     minutes: 30                 # minuti giocati (non AFK) prima di poter ritirare
     yes: "SI"
     no: "NO"
@@ -374,59 +387,59 @@ rewards-gui:
   tiers:
     - upto: 10
       items:
-        - {type: coin, amount: 300, step: 100}
-        - {type: blockcoin, amount: 20, step: 10}
+        - {type: coin, amount: 10, step: 3}
+        - {type: blockcoin, amount: 3, step: 1}
     - upto: 20
       items:
-        - {type: coin, amount: 1500, step: 150}
-        - {type: blockcoin, amount: 150, step: 20}
+        - {type: coin, amount: 50, step: 6}
+        - {type: blockcoin, amount: 15, step: 2}
         - {type: cheque_standardball, amount: 1, step: 0}
     - upto: 30
       items:
-        - {type: coin, amount: 3500, step: 250}
-        - {type: blockcoin, amount: 350, step: 30}
+        - {type: coin, amount: 130, step: 12}
+        - {type: blockcoin, amount: 40, step: 4}
         - {type: cheque_standardball, amount: 2, step: 0}
         - {type: cheque_doubleball, amount: 1, step: 0}
     - upto: 40
       items:
-        - {type: coin, amount: 6500, step: 400}
-        - {type: blockcoin, amount: 650, step: 40}
+        - {type: coin, amount: 300, step: 25}
+        - {type: blockcoin, amount: 90, step: 8}
         - {type: cheque_doubleball, amount: 2, step: 0}
         - {type: cheque_ghostball, amount: 1, step: 0}
     - upto: 50
       items:
-        - {type: coin, amount: 11000, step: 600}
-        - {type: blockcoin, amount: 1050, step: 60}
+        - {type: coin, amount: 650, step: 50}
+        - {type: blockcoin, amount: 190, step: 15}
         - {type: cheque_ghostball, amount: 1, step: 0}
         - {type: cheque_coin, amount: 1, step: 0}
     - upto: 60
       items:
-        - {type: coin, amount: 17000, step: 800}
-        - {type: blockcoin, amount: 1650, step: 80}
+        - {type: coin, amount: 1300, step: 100}
+        - {type: blockcoin, amount: 400, step: 30}
         - {type: cheque_explosionball, amount: 1, step: 0}
         - {type: cheque_blockcoin, amount: 1, step: 0}
     - upto: 70
       items:
-        - {type: coin, amount: 25000, step: 1200}
-        - {type: blockcoin, amount: 2450, step: 100}
+        - {type: coin, amount: 2600, step: 200}
+        - {type: blockcoin, amount: 800, step: 60}
         - {type: cheque_explosionball, amount: 1, step: 0}
         - {type: cheque_coin, amount: 2, step: 0}
     - upto: 80
       items:
-        - {type: coin, amount: 37000, step: 1500}
-        - {type: blockcoin, amount: 3450, step: 150}
+        - {type: coin, amount: 5000, step: 400}
+        - {type: blockcoin, amount: 1600, step: 120}
         - {type: cheque_power, amount: 1, step: 0}
         - {type: cheque_explosionball, amount: 2, step: 0}
     - upto: 90
       items:
-        - {type: coin, amount: 52000, step: 2000}
-        - {type: blockcoin, amount: 4950, step: 200}
+        - {type: coin, amount: 10000, step: 800}
+        - {type: blockcoin, amount: 3200, step: 240}
         - {type: cheque_power, amount: 1, step: 0}
         - {type: cheque_ghostball, amount: 2, step: 0}
     - upto: 100
       items:
-        - {type: coin, amount: 72000, step: 3000}
-        - {type: blockcoin, amount: 6950, step: 250}
+        - {type: coin, amount: 20000, step: 1600}
+        - {type: blockcoin, amount: 6400, step: 480}
         - {type: cheque_power, amount: 2, step: 0}
         - {type: cheque_explosionball, amount: 3, step: 0}
   reward-names:
@@ -487,15 +500,15 @@ cheques:
     cmd: 7
     name: "&6&lassegno coin"
     label: "coin"
-    min: 500
-    max: 2000
+    min: 20
+    max: 80
     lore: ["", "&7tasto destro: ricevi un po' di &fcoin"]
   blockcoin:
     cmd: 8
     name: "&2&lassegno blockcoin"
     label: "blockcoin"
-    min: 100
-    max: 500
+    min: 10
+    max: 50
     lore: ["", "&7tasto destro: ricevi un po' di &fblockcoin"]
   power:
     cmd: 9
@@ -538,7 +551,7 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca il nome dell'oggetto, uso: %usage%, disponibili: %items%"
+    text: "scrivi il nome dell'oggetto che vuoi, scegli tra: %items%"
   unknown-item:
     type: error
     channel: actionbar
@@ -548,17 +561,17 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca il codice del blocco, uso: %usage% (da 1-1 a %max%-1)"
+    text: "scrivi il codice del blocco, da 1-1 a %max%-1"
   invalid-block:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "codice blocco non valido: %value%, scrivilo come numero-1, da 1-1 a %max%-1"
+    text: "codice blocco non valido: %value%, scrivi un numero seguito da -1, da 1-1 a %max%-1"
   missing-action:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca l'azione, scegli tra: %actions%, uso: %usage%"
+    text: "scrivi cosa vuoi fare: get (aggiungi), remove (togli), see (guarda), reset (azzera)"
   invalid-action:
     type: error
     channel: actionbar
@@ -568,7 +581,7 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca il tipo (%types% oppure all), uso: %usage%"
+    text: "scrivi il tipo, scegli tra: %types% oppure all"
   unknown-ammo:
     type: error
     channel: actionbar
@@ -578,7 +591,7 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca il numero, uso: %usage%"
+    text: "scrivi %what% vuoi %verb%, poi (se vuoi) il nome del player"
   invalid-number:
     type: error
     channel: actionbar
@@ -593,7 +606,7 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "da console devi indicare il giocatore, uso: %usage%"
+    text: "da console scrivi il nome del player"
   given:
     type: success
     channel: actionbar
@@ -621,7 +634,7 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca cosa fare, uso: %usage%. Scegli tra: %actions%"
+    text: "scrivi cosa vuoi fare con i blocchi, scegli tra: %actions%"
   block-sub-invalid:
     type: error
     channel: actionbar
@@ -677,15 +690,15 @@ messages:
   limits-usage:
     type: error
     channel: chat
-    text: "uso: /bm limits <on|off|see> [player]  (off = nessuna limitazione, per lo staff)"
+    text: "scrivi cosa vuoi fare: on (attiva), off (nessun limite), see (guarda), poi (se vuoi) il nome del player"
   power-usage:
     type: error
     channel: chat
-    text: "uso: /bm power <give|see|reset|set <n>|uses <n>> [player]"
+    text: "scrivi cosa vuoi fare: give, see, reset, set <numero> oppure uses <numero>, poi (se vuoi) il nome del player"
   stamina-usage:
     type: error
     channel: chat
-    text: "uso: /bm stamina <see|refill|empty|set <0-100>|infinite|locked|normal> [player]"
+    text: "scrivi cosa vuoi fare: see, refill, empty, set <0-100>, infinite, locked o normal, poi (se vuoi) il nome del player"
   stamina-state:
     type: success
     channel: chat
@@ -693,7 +706,7 @@ messages:
   mines-usage:
     type: error
     channel: chat
-    text: "uso: /bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>"
+    text: "scrivi cosa vuoi fare: wand, pos1, pos2, set, replace, undo, createmines <n>, deletemines <n>, changemines <n>, editmines <n>, remove <n>, area [n] o list"
   mine-tpl-number:
     type: error
     channel: chat
@@ -790,6 +803,38 @@ messages:
     type: info
     channel: chat
     text: "tipologie: %types%"
+  mines-need-number:
+    type: error
+    channel: chat
+    text: "scrivi il numero della miniera su cui vuoi lavorare (da 1 a %max%)"
+  rw-need-sub:
+    type: error
+    channel: chat
+    text: "scrivi cosa vuoi fare: exp (esperienza del pass), livello (livelli di un tipo) oppure tipi (lista dei tipi)"
+  rw-need-exp-action:
+    type: error
+    channel: chat
+    text: "scrivi cosa vuoi fare con l'exp: give (dai), take (togli), set (imposta), get (guarda) o reset (azzera)"
+  rw-need-amount:
+    type: error
+    channel: chat
+    text: "scrivi quanta exp (un numero intero), poi (se vuoi) il nome del player"
+  rw-need-type:
+    type: error
+    channel: chat
+    text: "scrivi il tipo di ricompensa, scegli tra: %types%"
+  rw-need-lvl-action:
+    type: error
+    channel: chat
+    text: "scrivi cosa vuoi fare: add (aggiungi livelli), remove (togli), set (imposta), get (guarda) o reset (azzera)"
+  rw-need-levels:
+    type: error
+    channel: chat
+    text: "scrivi quanti livelli (un numero intero), poi (se vuoi) il nome del player"
+  rw-need-player:
+    type: error
+    channel: chat
+    text: "da console scrivi il nome del player"
   rw-usage:
     type: error
     channel: chat
@@ -988,7 +1033,7 @@ messages:
     type: error
     channel: actionbar
     icon: "{icon:rosso_domanda}"
-    text: "manca il tipo di negozio (ammo oppure sell), uso: %usage%"
+    text: "scrivi il tipo di negozio che vuoi creare"
   invalid-shop:
     type: error
     channel: actionbar
@@ -1081,7 +1126,7 @@ help:
     mines:
       permission: blockmania.build
       usage: "/bm mines <wand|pos1|pos2|set|replace|remove|undo|createmines <n>|deletemines <n>|changemines <n>|editmines <n>|area [n]|list>"
-      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/remove/undo come /bm block. createmines n = la zona scelta diventa la miniera n, deletemines n = la elimina, changemines n = la sostituisce, area = il mondo staff con tutte le miniere insieme, editmines n = ti porta nella miniera n per modificarla (shift + F salva, shift + Q annulla)"
+      description: "costruzione delle miniere. wand/pos1/pos2/set/replace/undo come /bm block, remove n = elimina la miniera n. createmines n = la zona scelta diventa la miniera n, deletemines n = la elimina, changemines n = la sostituisce, area = il mondo staff con tutte le miniere insieme, editmines n = ti porta nella miniera n per modificarla (shift + F salva, shift + Q annulla)"
       example: "/bm mines createmines 1"
     stamina:
       permission: blockmania.stats
@@ -2481,6 +2526,9 @@ effects:
 npc:
   look-range: 10.0      # blocchi: guardano chi e' piu' vicino di cosi'
   greet-range: 5.0      # blocchi: salutano chi si avvicina (una volta al minuto per giocatore)
+  alive: true           # camminano, vanno dal giocatore, si fanno le pacche tra loro (false = stanno fermi)
+  wander-radius: 3.5    # blocchi: quanto si allontanano dal loro punto quando passeggiano
+  flip: true            # correzione del giro di 180 gradi degli ItemDisplay (se vedi gli NPC di schiena mettilo false)
 
 # ----------------------------------------------------------------------
 #  TUTORIAL (/tutorial): la scena con Denny e Andrew (tempi in tutorial-scene.yml, dentro il plugin)

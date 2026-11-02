@@ -251,6 +251,14 @@ public final class Rewards implements Listener {
             return (long) level * expPerLevel();
         }
         var c = plugin.getConfig();
+        List<Integer> list = c.getIntegerList(GUI + "types." + type + ".list");
+        if (!list.isEmpty()) {
+            if (level <= list.size()) {
+                return list.get(level - 1);
+            }
+            int step = c.getInt(GUI + "types." + type + ".after-step", list.get(list.size() - 1));
+            return (long) list.get(list.size() - 1) + (long) step * (level - list.size());
+        }
         double base = c.getDouble(GUI + "types." + type + ".base", 100);
         double growth = c.getDouble(GUI + "types." + type + ".growth", 0.05);
         return Math.max(1, Math.round(base * (level + growth * level * level)));
@@ -468,6 +476,24 @@ public final class Rewards implements Listener {
     //  Testi e oggetti della GUI
     // ------------------------------------------------------------------
 
+    /** Un valore leggibile: per il tempo di gioco ore e minuti (1h, 6h, 1h 30min), per gli altri il numero. */
+    private String fmtValue(String type, long v) {
+        if (!type.equals("play")) {
+            return String.valueOf(v);
+        }
+        long h = v / 60;
+        long m = v % 60;
+        if (h == 0) {
+            return m + "min";
+        }
+        return m == 0 ? h + "h" : h + "h " + m + "min";
+    }
+
+    private String needText(String type, long need) {
+        String pattern = plugin.getConfig().getString(GUI + "types." + type + ".need", "serve &f%need%");
+        return pattern.replace("%need%", fmtValue(type, need));
+    }
+
     private String typeName(String type) {
         return plugin.getConfig().getString(GUI + "types." + type + ".name", type);
     }
@@ -497,8 +523,11 @@ public final class Rewards implements Listener {
                     "%claimed%", String.valueOf(claimed),
                     "%unclaimed%", String.valueOf(Math.max(0, reach - claimed)),
                     "%have%", String.valueOf(have),
+                    "%have_text%", fmtValue(type, have),
                     "%next%", reach >= levels ? "-" : String.valueOf(threshold(type, reach + 1)),
+                    "%next_text%", reach >= levels ? "-" : fmtValue(type, threshold(type, reach + 1)),
                     "%left%", reach >= levels ? "0" : String.valueOf(Math.max(0, threshold(type, reach + 1) - have)),
+                    "%left_text%", reach >= levels ? "0" : fmtValue(type, Math.max(0, threshold(type, reach + 1) - have)),
                     "%exp%", String.valueOf(plugin.getAmmo().getCounter(player, "rw_exp")),
                     "%exp_level%", String.valueOf(expPerLevel())));
         }
@@ -701,7 +730,9 @@ public final class Rewards implements Listener {
         String state = bits.get(level) ? "claimed" : level <= reach ? "ready" : "locked";
         String[] mine = {"%number%", String.valueOf(level),
                 "%need%", String.valueOf(need),
+                "%need_text%", needText(type, need),
                 "%missing%", String.valueOf(Math.max(0, need - have)),
+                "%missing_text%", fmtValue(type, Math.max(0, need - have)),
                 "%reward%", rewardNames(rewardsOf(type, level)),
                 "%state%", state};
         String[] out = new String[mine.length + general.length];
@@ -768,7 +799,7 @@ public final class Rewards implements Listener {
                     lore.add(line);
                 }
             }
-            put(inv, holder, slotOf(type, i), pane(cmd, name, lore, r, false), ready ? "claim:" + level : null);
+            put(inv, holder, slotOf(type, i), pane(cmd, name, lore, r, false), ready ? "claim:" + level : "deny");
         }
     }
 
@@ -881,6 +912,40 @@ public final class Rewards implements Listener {
         t.at(start, "&f" + tinyLetters(text, TINY_BASE), font(), adv);
     }
 
+    /** Barra verde: il testo e' piccolo (tiny) ma il numero resta normale. pattern contiene %n%. */
+    private void barText(GuiTitle t, String pattern, int number, int centerX) {
+        int at = pattern.indexOf("%n%");
+        String before = (at < 0 ? pattern : pattern.substring(0, at)).toLowerCase(Locale.ROOT);
+        String after = at < 0 ? "" : pattern.substring(at + 3).toLowerCase(Locale.ROOT);
+        String num = at < 0 ? "" : String.valueOf(number);
+        int wBefore = tinyAdvance(before);
+        int wNum = num.isEmpty() ? 0 : textAdvance(num);
+        int wAfter = tinyAdvance(after);
+        int total = wBefore + wNum + wAfter - 1;
+        int x = centerX - total / 2;
+        boolean shadow = plugin.getConfig().getBoolean(GUI + "text-shadow", true);
+        if (!before.isEmpty()) {
+            if (shadow) {
+                t.at(x + 1, GuiTitle.shadowCode(plugin) + tinyLetters(before, TINY_SHADOW_BASE), font(), wBefore);
+            }
+            t.at(x, "&f" + tinyLetters(before, TINY_BASE), font(), wBefore);
+        }
+        x += wBefore;
+        if (!num.isEmpty()) {
+            if (shadow) {
+                t.at(x + 1, GuiTitle.shadowCode(plugin) + letters(num, BAR2_SHADOW_BASE), font(), wNum);
+            }
+            t.at(x, "&f" + letters(num, BAR2_BASE), font(), wNum);
+            x += wNum;
+        }
+        if (!after.isEmpty()) {
+            if (shadow) {
+                t.at(x + 1, GuiTitle.shadowCode(plugin) + tinyLetters(after, TINY_SHADOW_BASE), font(), wAfter);
+            }
+            t.at(x, "&f" + tinyLetters(after, TINY_BASE), font(), wAfter);
+        }
+    }
+
     /** Numero pagina (1/7) nella barra in basso dei percorsi. */
     private void navNumber(GuiTitle t, int page, int pages) {
         String plain = (page + 1) + "/" + pages;
@@ -951,9 +1016,7 @@ public final class Rewards implements Listener {
     private Component titleLevels(Player player, String type, int page) {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(c.getString(GUI + (type.equals("pass") ? "image-pass" : "image-levels"), type.equals("pass") ? "㴂" : "㴁"));
-        String text = c.getString(GUI + "bar-text.level", "livello %n%").replace("%n%", String.valueOf(reached(player, type)))
-                .toLowerCase(Locale.ROOT);
-        centeredTiny(t, text, c.getInt(GUI + "bar-center", 73));
+        barText(t, c.getString(GUI + "bar-text.level", "livello %n%"), reached(player, type), c.getInt(GUI + "bar-center", 73));
         navNumber(t, page, pagesOf(type));
         return t.build();
     }
@@ -961,9 +1024,7 @@ public final class Rewards implements Listener {
     private Component titleDaily(Player player) {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(c.getString(GUI + (dailyClaimedToday(player) || !dailyReady(player) ? "image-daily-wait" : "image-daily-ready"), "㴄"));
-        String text = c.getString(GUI + "bar-text.daily", "giorno %n%").replace("%n%", String.valueOf(daysClaimed(player)))
-                .toLowerCase(Locale.ROOT);
-        centeredTiny(t, text, c.getInt(GUI + "bar-center", 73));
+        barText(t, c.getString(GUI + "bar-text.daily", "giorno %n%"), daysClaimed(player), c.getInt(GUI + "bar-center", 73));
         return t.build();
     }
 
@@ -1039,6 +1100,10 @@ public final class Rewards implements Listener {
         if (action == null) {
             return;
         }
+        if (action.equals("deny")) {
+            plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.error");
+            return;
+        }
         plugin.guiClick(player);
         if (action.equals("close")) {
             player.closeInventory();
@@ -1089,10 +1154,36 @@ public final class Rewards implements Listener {
         List<String> out = new ArrayList<>();
         for (String t : TYPES) {
             if (!t.equals("daily")) {
-                out.add(t);
+                out.add(italianType(t));
             }
         }
         return out;
+    }
+
+    private static final String[][] IT_TYPES = {
+        {"broken", "rotti"}, {"hits", "colpi"}, {"bc_earned", "bc_guadagnati"}, {"bc_spent", "bc_spesi"},
+        {"coin_earned", "coin_guadagnati"}, {"coin_spent", "coin_spesi"}, {"platinum", "platino"},
+        {"play", "tempo"}, {"daily", "giornaliera"}, {"pass", "pass"}};
+
+    /** Nome italiano di un tipo di ricompensa (quello che si scrive nei comandi). */
+    public static String italianType(String type) {
+        for (String[] p : IT_TYPES) {
+            if (p[0].equals(type)) {
+                return p[1];
+            }
+        }
+        return type;
+    }
+
+    /** Accetta il nome italiano o quello interno e ritorna quello interno. */
+    public static String typeFromName(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        for (String[] p : IT_TYPES) {
+            if (p[1].equals(n) || p[0].equals(n)) {
+                return p[0];
+            }
+        }
+        return n;
     }
 
     /** Imposta il livello raggiunto portando il contatore al valore giusto. */
@@ -1132,12 +1223,16 @@ public final class Rewards implements Listener {
             plugin.sendCommand(sender, "no-permission");
             return;
         }
+        if (args.length < 2) {
+            plugin.sendCommand(sender, "rw-need-sub");
+            return;
+        }
         String sub = args[1].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "tipi", "types" -> plugin.sendCommand(sender, "rw-types", "%types%", String.join(", ", adminTypes()));
             case "exp" -> adminExp(sender, args);
             case "livello", "level", "lvl" -> adminLevel(sender, args);
-            default -> plugin.sendCommand(sender, "rw-usage");
+            default -> plugin.sendCommand(sender, "rw-need-sub");
         }
     }
 
@@ -1152,13 +1247,13 @@ public final class Rewards implements Listener {
         if (sender instanceof Player p) {
             return p;
         }
-        plugin.sendCommand(sender, "rw-usage");
+        plugin.sendCommand(sender, "rw-need-player");
         return null;
     }
 
     private void adminExp(CommandSender sender, String[] args) {
         if (args.length < 3) {
-            plugin.sendCommand(sender, "rw-usage");
+            plugin.sendCommand(sender, "rw-need-exp-action");
             return;
         }
         String action = args[2].toLowerCase(Locale.ROOT);
@@ -1166,13 +1261,13 @@ public final class Rewards implements Listener {
         int amount = 0;
         if (!noAmount) {
             if (args.length < 4) {
-                plugin.sendCommand(sender, "rw-usage");
+                plugin.sendCommand(sender, "rw-need-amount");
                 return;
             }
             try {
                 amount = Math.max(0, Integer.parseInt(args[3]));
             } catch (NumberFormatException ex) {
-                plugin.sendCommand(sender, "rw-usage");
+                plugin.sendCommand(sender, "rw-need-amount");
                 return;
             }
         }
@@ -1190,7 +1285,7 @@ public final class Rewards implements Listener {
             case "get", "see" -> {
             }
             default -> {
-                plugin.sendCommand(sender, "rw-usage");
+                plugin.sendCommand(sender, "rw-need-exp-action");
                 return;
             }
         }
@@ -1199,11 +1294,19 @@ public final class Rewards implements Listener {
     }
 
     private void adminLevel(CommandSender sender, String[] args) {
-        if (args.length < 4) {
-            plugin.sendCommand(sender, "rw-usage");
+        if (args.length < 3) {
+            plugin.sendCommand(sender, "rw-need-type", "%types%", String.join(", ", adminTypes()));
             return;
         }
-        String type = args[2].toLowerCase(Locale.ROOT);
+        String type = typeFromName(args[2]);
+        if (args.length < 4 && known(type) && !type.equals("daily")) {
+            plugin.sendCommand(sender, "rw-need-lvl-action");
+            return;
+        }
+        if (args.length < 4) {
+            plugin.sendCommand(sender, "rw-types", "%types%", String.join(", ", adminTypes()));
+            return;
+        }
         if (!known(type) || type.equals("daily")) {
             plugin.sendCommand(sender, "rw-types", "%types%", String.join(", ", adminTypes()));
             return;
@@ -1213,13 +1316,13 @@ public final class Rewards implements Listener {
         int amount = 0;
         if (!noAmount) {
             if (args.length < 5) {
-                plugin.sendCommand(sender, "rw-usage");
+                plugin.sendCommand(sender, "rw-need-levels");
                 return;
             }
             try {
                 amount = Math.max(0, Integer.parseInt(args[4]));
             } catch (NumberFormatException ex) {
-                plugin.sendCommand(sender, "rw-usage");
+                plugin.sendCommand(sender, "rw-need-levels");
                 return;
             }
         }
@@ -1236,7 +1339,7 @@ public final class Rewards implements Listener {
             case "get", "see" -> {
             }
             default -> {
-                plugin.sendCommand(sender, "rw-usage");
+                plugin.sendCommand(sender, "rw-need-lvl-action");
                 return;
             }
         }

@@ -301,12 +301,26 @@ public final class BlockMania extends JavaPlugin {
                 }
             }
         }
+        if (done < 14) {
+            // ricompense molto piu' basse, descrizioni dei livelli, messaggi dei comandi che dicono cosa scrivere
+            c.set("rewards-gui", null);
+            for (String k : new String[]{"missing-item", "missing-block", "invalid-block", "missing-action", "missing-type",
+                    "missing-number", "missing-player", "block-sub-missing", "limits-usage", "power-usage", "stamina-usage",
+                    "mines-usage", "missing-shop", "mines-need-number", "rw-need-sub", "rw-need-exp-action",
+                    "rw-need-amount", "rw-need-type", "rw-need-lvl-action", "rw-need-levels", "rw-need-player"}) {
+                c.set("messages." + k, null);
+            }
+            c.set("cheques.coin.min", null);
+            c.set("cheques.coin.max", null);
+            c.set("cheques.blockcoin.min", null);
+            c.set("cheques.blockcoin.max", null);
+        }
         if (done >= 1) {
-            c.set("tuning-version", 13);
+            c.set("tuning-version", 14);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 13);
+        c.set("tuning-version", 14);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);

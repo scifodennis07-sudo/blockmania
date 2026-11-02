@@ -26,6 +26,10 @@ final class ModelNpc {
     final String key;
     final String skin;
     final Location feet;
+    /** Dove torna quando ha finito. */
+    final Location home;
+    /** Se true compensa il giro di 180 gradi che Minecraft applica agli oggetti degli ItemDisplay. */
+    static boolean flip = true;
     /** Direzione del corpo (gradi, convenzione del rig). */
     double yaw;
     private double headYaw;
@@ -46,6 +50,9 @@ final class ModelNpc {
     private double lookZ;
     private boolean looking;
     private boolean talking;
+    private boolean facing;
+    private double faceX;
+    private double faceZ;
 
     private record Gesture(String clip, double start, double speed, double until) {
     }
@@ -54,6 +61,10 @@ final class ModelNpc {
         this.key = key;
         this.skin = skin;
         this.feet = feet.clone();
+        // l'entita' non deve ruotare: la rotazione e' tutta nella trasformazione delle parti
+        this.feet.setYaw(0f);
+        this.feet.setPitch(0f);
+        this.home = this.feet.clone();
         this.yaw = yaw;
         this.rig = rig;
         this.idleOffset = Math.abs(key.hashCode() % 100) / 100.0 * 4.0;
@@ -113,6 +124,7 @@ final class ModelNpc {
     // ---------- comandi di scena ----------
 
     void play(String clip, double speed) {
+        clip = NpcRig.internal(clip);
         if (!rig.hasClip(clip)) {
             return;
         }
@@ -136,6 +148,30 @@ final class ModelNpc {
 
     void stopLooking() {
         looking = false;
+    }
+
+    /** Il corpo si gira (piano) verso un punto quando e' fermo. */
+    void faceTo(double x, double z) {
+        faceX = x;
+        faceZ = z;
+        facing = true;
+    }
+
+    void stopFacing() {
+        facing = false;
+    }
+
+    boolean walkingNow() {
+        return walking;
+    }
+
+    void stopWalking() {
+        walking = false;
+    }
+
+    /** Gradi (convenzione del rig) per guardare un punto dalla posizione attuale. */
+    double yawTowards(double x, double z) {
+        return Math.toDegrees(Math.atan2(x - feet.getX(), -(z - feet.getZ())));
     }
 
     void talking(boolean on) {
@@ -170,9 +206,19 @@ final class ModelNpc {
                 walking = false;
             } else {
                 double st = Math.min(d, walkSpeed * dt);
-                feet.add(dx / d * st, 0, dz / d * st);
-                phase += st / (36.0 / 16.0);
-                moving = true;
+                double nx = feet.getX() + dx / d * st;
+                double nz = feet.getZ() + dz / d * st;
+                double ny = groundY(nx, nz);
+                if (Double.isNaN(ny)) {
+                    walking = false; // c'e' un ostacolo o un vuoto: si ferma
+                    st = 0;
+                } else {
+                    feet.setX(nx);
+                    feet.setY(ny);
+                    feet.setZ(nz);
+                    phase += st / (36.0 / 16.0);
+                    moving = true;
+                }
                 double want = Math.toDegrees(Math.atan2(dx, -dz));
                 yaw += wrap(want - yaw) * (1 - Math.exp(-dt * 9));
                 for (ItemDisplay part : parts.values()) {
@@ -181,6 +227,10 @@ final class ModelNpc {
                     }
                 }
             }
+        }
+        if (facing && !moving) {
+            double want = yawTowards(faceX, faceZ);
+            yaw += wrap(want - yaw) * (1 - Math.exp(-dt * 5));
         }
         wmove += ((moving ? 1.0 : 0.0) - wmove) * (1 - Math.exp(-dt * 12));
         // testa verso chi guardiamo (il corpo la segue piano se si gira troppo)
@@ -202,6 +252,26 @@ final class ModelNpc {
         headPitch += (wantPitch - headPitch) * (1 - Math.exp(-dt * 7));
         gestures.removeIf(g -> g.until() <= time);
         apply();
+    }
+
+    /** Altezza dei piedi in (x, z): sale/scende di un blocco, ritorna NaN se c'e' un muro o un vuoto. */
+    private double groundY(double x, double z) {
+        var w = feet.getWorld();
+        int bx = (int) Math.floor(x);
+        int bz = (int) Math.floor(z);
+        if (w == null || !w.isChunkLoaded(bx >> 4, bz >> 4)) {
+            return Double.NaN;
+        }
+        int by = (int) Math.floor(feet.getY() + 0.01);
+        int[] tries = {0, 1, -1, -2};
+        for (int dy : tries) {
+            int y = by + dy;
+            if (w.getBlockAt(bx, y, bz).isPassable() && w.getBlockAt(bx, y + 1, bz).isPassable()
+                    && !w.getBlockAt(bx, y - 1, bz).isPassable()) {
+                return dy == 0 ? feet.getY() : y;
+            }
+        }
+        return Double.NaN;
     }
 
     // ---------- posa ----------
@@ -262,6 +332,10 @@ final class ModelNpc {
             double[][] r = {{m[0], m[1], m[2]}, {m[3], m[4], m[5]}, {m[6], m[7], m[8]}};
             double[][] w = {{ca, 0, sa}, {0, 1, 0}, {-sa, 0, ca}};
             double[][] rr = mul(w, r);
+            if (flip) {
+                // Minecraft gira l'oggetto di 180 gradi attorno a Y prima della trasformazione: si annulla qui
+                rr = mul(rr, new double[][]{{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}});
+            }
             double tx = m[9] / 16.0;
             double ty = m[10] / 16.0;
             double tz = m[11] / 16.0;

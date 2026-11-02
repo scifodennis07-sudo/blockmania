@@ -82,20 +82,58 @@ final class NpcRig {
         return cubeBones;
     }
 
+    private static final String[][] IT = {
+        {"idle", "riposo"}, {"walk", "cammina"}, {"talk", "parla"}, {"wave", "saluta"}, {"hop", "salta"},
+        {"spread", "braccia_aperte"}, {"facepalm", "facepalm"}, {"pat_shoulder", "pacca"},
+        {"handshake", "stretta_mano"}, {"clap", "applaudi"}, {"shrug", "spalle"},
+        {"crossed_arms", "braccia_conserte"}, {"warn_finger", "dito_ammonisce"}, {"beckon", "chiama"},
+        {"point", "indica"}, {"cheer", "esulta"}, {"nod", "annuisci"}, {"shake_head", "scuoti_testa"},
+        {"sigh", "sospira"}, {"tilt", "inclina_testa"}, {"point_self", "indica_se"}, {"crouch", "accucciati"},
+        {"offer_hand", "porgi_mano"}, {"hug", "abbraccia"}, {"look_around", "guardati_intorno"},
+        {"scratch_head", "gratta_testa"}, {"stretch", "stiracchiati"}, {"high_five", "dai_cinque"},
+        {"laugh", "ridi"}, {"fist_bump", "pugno"}};
+
+    /** Nome italiano di un'animazione (quello che si scrive nei comandi). */
+    static String italian(String clip) {
+        for (String[] p : IT) {
+            if (p[0].equals(clip)) {
+                return p[1];
+            }
+        }
+        return clip;
+    }
+
+    /** Accetta il nome italiano o quello interno e ritorna quello interno. */
+    static String internal(String name) {
+        String n = name.toLowerCase(java.util.Locale.ROOT);
+        for (String[] p : IT) {
+            if (p[1].equals(n) || p[0].equals(n)) {
+                return p[0];
+            }
+        }
+        return n;
+    }
+
     boolean hasClip(String name) {
-        return lengths.containsKey(name);
+        return lengths.containsKey(internal(name));
     }
 
     List<String> clipNames() {
-        return new ArrayList<>(lengths.keySet());
+        List<String> out = new ArrayList<>();
+        for (String c : lengths.keySet()) {
+            out.add(italian(c));
+        }
+        return out;
     }
 
     double length(String clip) {
+        clip = internal(clip);
         double[] l = lengths.get(clip);
         return l == null ? 1.0 : l[0];
     }
 
     boolean loops(String clip) {
+        clip = internal(clip);
         double[] l = lengths.get(clip);
         return l != null && l[1] > 0;
     }
@@ -138,6 +176,7 @@ final class NpcRig {
 
     /** I valori di una clip al tempo t: osso -> canale (rotation / position) -> x, y, z. */
     Map<String, Map<String, double[]>> eval(String clip, double t) {
+        clip = internal(clip);
         Map<String, Map<String, double[]>> out = new LinkedHashMap<>();
         Map<String, Map<String, double[]>> times = keyTimes.get(clip);
         if (times == null) {

@@ -259,9 +259,9 @@ public final class BlockManiaCommand implements TabExecutor {
 
     // ---------- /blockmania mines <wand|pos1|pos2|set|replace|remove|undo|createmines|deletemines|changemines|editmines|area|list> ----------
 
-    private static final List<String> MINES_EDIT = List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo");
-    private static final List<String> MINES_ACTIONS = List.of("wand", "pos1", "pos2", "set", "replace", "remove", "undo",
-            "createmines", "deletemines", "changemines", "editmines", "area", "list");
+    private static final List<String> MINES_EDIT = List.of("wand", "pos1", "pos2", "set", "replace", "undo");
+    private static final List<String> MINES_ACTIONS = List.of("wand", "pos1", "pos2", "set", "replace", "undo",
+            "createmines", "deletemines", "remove", "changemines", "editmines", "area", "list");
 
     private void minesCmd(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.build")) {
@@ -313,12 +313,12 @@ public final class BlockManiaCommand implements TabExecutor {
         try {
             number = Integer.parseInt(args.length > 2 ? args[2] : "");
         } catch (NumberFormatException ex) {
-            plugin.sendCommand(sender, "mines-usage");
+            plugin.sendCommand(sender, "mines-need-number", "%max%", String.valueOf(tpl.mineCount()));
             return;
         }
         switch (sub) {
             case "createmines" -> tpl.createMines(player, number);
-            case "deletemines" -> tpl.deleteMines(player, number);
+            case "deletemines", "remove" -> tpl.deleteMines(player, number);
             case "changemines" -> tpl.changeMines(player, number);
             default -> tpl.editMines(player, number);
         }
@@ -795,7 +795,16 @@ public final class BlockManiaCommand implements TabExecutor {
         int playerIndex = amountIndex;
         if (needsAmount) {
             if (args.length <= amountIndex) {
-                plugin.sendCommand(sender, "missing-number", "%usage%", usage(usageKey), "%action%", action);
+                String sn = stats.isEmpty() ? "" : stats.get(0).name();
+                String what = switch (sn) {
+                    case "mine" -> "quante miniere";
+                    case "blockshell" -> "quante blockshell";
+                    case "blockcoin" -> "quanti blockcoin";
+                    case "coin" -> "quanti coin";
+                    default -> "quanti";
+                };
+                plugin.sendCommand(sender, "missing-number", "%what%", what,
+                        "%verb%", action.equals("get") ? "aggiungere" : "rimuovere");
                 return;
             }
             amount = parseAmount(args[amountIndex]);
