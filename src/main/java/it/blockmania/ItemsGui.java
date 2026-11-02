@@ -220,20 +220,13 @@ public final class ItemsGui implements Listener {
         var c = plugin.getConfig();
         GuiTitle t = new GuiTitle(plugin);
         t.text(c.getString(P + "title.text", "&8oggetti"), c.getString(P + "title.font", ""), P + "title");
-        if (c.getBoolean(P + "title.numbers.enabled", true)) {
-            int center = c.getInt(P + "title.numbers.center", 156);
-            boolean shadow = c.getBoolean(P + "title.numbers.shadow", true);
-            String font = c.getString(P + "title.numbers.font", "");
-            String current = String.valueOf(page + 1);
-            String total = String.valueOf(pages);
-            String topSet = c.getString(P + "title.numbers.current-set", "top");
-            String topShadow = c.getString(P + "title.numbers.current-shadow-set", "top-shadow");
-            String bottomSet = c.getString(P + "title.numbers.total-set", "bottom");
-            String bottomShadow = c.getString(P + "title.numbers.total-shadow-set", "bottom-shadow");
-            t.number(center - GuiTitle.widthOf(plugin, topSet, current) / 2, topSet, topShadow, shadow, current, font);
-            t.number(center - GuiTitle.widthOf(plugin, bottomSet, total) / 2, bottomSet, bottomShadow, shadow,
-                    total, font);
-        }
+        String plain = (page + 1) + "/" + pages;
+        String set = c.getString(P + "title.number.set", "main");
+        String shadowSet = c.getString(P + "title.number.shadow-set", "main-shadow");
+        int center = c.getInt(P + "title.number.center", 73);
+        int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
+        t.number(start, set, shadowSet, c.getBoolean(P + "title.number.shadow", true), plain,
+                c.getString(P + "title.number.font", ""));
         return t.build();
     }
 
@@ -306,7 +299,12 @@ public final class ItemsGui implements Listener {
                     c.getStringList(P + "empty-category.lore"), r), null);
         }
 
-        // frecce e numero di pagina (colonna a destra)
+        for (int slot : slots("info")) {
+            put(inv, holder, slot, invisible(c.getString(P + "info.name", "&f%category%"),
+                    c.getStringList(P + "info.lore"), r), null);
+        }
+
+        // frecce e numero di pagina (barra in alto)
         for (int slot : slots("up")) {
             put(inv, holder, slot, invisible(c.getString(P + "up.name", "&7pagina precedente"),
                     c.getStringList(P + "up.lore"), r), "up");

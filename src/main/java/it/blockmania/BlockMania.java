@@ -275,12 +275,17 @@ public final class BlockMania extends JavaPlugin {
             c.set("rewards-gui", null);
             c.set("items-gui.block-lore", null);
         }
+        if (done < 12) {
+            // nuove GUI: ricompense (pagina principale, percorsi, battlepass) e lista oggetti con i tasti in basso
+            c.set("rewards-gui", null);
+            c.set("items-gui", null);
+        }
         if (done >= 1) {
-            c.set("tuning-version", 11);
+            c.set("tuning-version", 12);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 11);
+        c.set("tuning-version", 12);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -301,7 +306,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 11);
+        c.set("tuning-version", 12);
         saveConfig();
     }
 

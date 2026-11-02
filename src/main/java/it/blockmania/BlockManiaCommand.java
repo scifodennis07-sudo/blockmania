@@ -104,7 +104,9 @@ public final class BlockManiaCommand implements TabExecutor {
             case "getblock" -> getBlock(sender, args, 1);
             case "cheque", "assegno" -> cheque(sender, args);
             case "ricompense", "rewards" -> {
-                if (sender instanceof Player p && p.hasPermission("blockmania.use")) {
+                if (args.length > 1) {
+                    plugin.getRewards().admin(sender, args);
+                } else if (sender instanceof Player p && p.hasPermission("blockmania.use")) {
                     plugin.getRewards().open(p);
                 } else if (!(sender instanceof Player)) {
                     sender.sendMessage("solo i giocatori possono aprire le ricompense");
@@ -745,8 +747,8 @@ public final class BlockManiaCommand implements TabExecutor {
             ammo.setAmmo(target, t, 0);
         }
         ammo.setShell(target, 0);
-        ammo.setBlockCoin(target, 0);
-        ammo.setCoin(target, 0);
+        ammo.setBlockCoinQuiet(target, 0);
+        ammo.setCoinQuiet(target, 0);
         ammo.setMine(target, 0);
         plugin.getUpgrades().resetLevels(target);
         plugin.sendCommand(sender, "reset-all", "%player%", target.getName());
@@ -775,9 +777,9 @@ public final class BlockManiaCommand implements TabExecutor {
         AmmoManager ammo = plugin.getAmmo();
         Stat stat = switch (which) {
             case "blockshell" -> new Stat("blockshell", ammo::getShell, ammo::setShell, p -> ammo.getShellMax(p));
-            case "blockcoin" -> new Stat("blockcoin", ammo::getBlockCoin, ammo::setBlockCoin, p -> Integer.MAX_VALUE);
+            case "blockcoin" -> new Stat("blockcoin", ammo::getBlockCoin, ammo::setBlockCoinQuiet, p -> Integer.MAX_VALUE);
             case "mine" -> new Stat("mine", ammo::getMine, ammo::setMine, p -> Integer.MAX_VALUE);
-            default -> new Stat("coin", ammo::getCoin, ammo::setCoin, p -> Integer.MAX_VALUE);
+            default -> new Stat("coin", ammo::getCoin, ammo::setCoinQuiet, p -> Integer.MAX_VALUE);
         };
         runStats(sender, action, List.of(stat), args, 2, which);
     }
@@ -918,6 +920,9 @@ public final class BlockManiaCommand implements TabExecutor {
         boolean canGet = sender.hasPermission("blockmania.get");
         boolean canStats = sender.hasPermission("blockmania.stats");
 
+        if (args.length >= 2 && (args[0].equalsIgnoreCase("ricompense") || args[0].equalsIgnoreCase("rewards"))) {
+            return canStats ? plugin.getRewards().adminComplete(args) : result;
+        }
         if (args.length >= 2 && args[0].equalsIgnoreCase("tutorial")) {
             return plugin.getTutorial().complete(sender, java.util.Arrays.copyOfRange(args, 1, args.length));
         }

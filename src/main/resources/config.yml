@@ -109,6 +109,16 @@ glyphs:
   bottom-shadow: "\uE450"
   bar: "\uE460"              # numero al centro della barra delle varianti (shopitem-2.png)
   bar-shadow: "\uE470"
+  lvl1: "\uE500"           # numeri del livello nella pagina ricompense (una riga per ogni casella)
+  lvl1-shadow: "\uE580"
+  lvl2: "\uE510"
+  lvl2-shadow: "\uE590"
+  lvl3: "\uE520"
+  lvl3-shadow: "\uE5A0"
+  lvl4: "\uE530"
+  lvl4-shadow: "\uE5B0"
+  lvl5: "\uE540"
+  lvl5-shadow: "\uE5C0"
   shadow-color: "#3F3F3F"     # colore dell'ombra dei numeri
 
 # suono di ogni messaggio: errori = "error", messaggi giusti (success) = "ding" (suoni custom del resource pack)
@@ -124,19 +134,32 @@ message-sounds:
 
 # ----------------------------------------------------------------------
 #  RICOMPENSE  (/bm ricompense)
-#  A sinistra le 5 sezioni, al centro la ricompensa del prossimo livello. Ogni sezione ha 100 livelli
-#  (la giornaliera no). Gli sfondi sono le immagini ricompense.png (0%), ricompense-2 ... ricompense-12 (100%)
-#  e ricompense-13 (giornaliera da ritirare) / ricompense-14 (gia' ritirata).
+#  Pagina principale (ricompense.png): 10 tipologie con livello e tacchette. Un clic apre il percorso dei livelli
+#  (ricompense-2.png: 15 livelli a pagina), il battlepass (ricompense-3.png: 7 livelli a pagina, 1 livello ogni
+#  1500 exp) oppure la giornaliera (ricompense-4.png verde = da ritirare, ricompense-5.png rossa = non ancora).
+#  Chiuso = bloccato, barile con l'oro = completato da ritirare, barile vuoto = gia' ritirato.
+#  Ogni ricompensa ritirata (tranne giornaliera e battlepass) da' exp al battlepass.
+#
+#  PER AGGIUNGERE UNA PAGINA alla principale: fai un'immagine come ricompense.png, mettila nel default.json con un
+#  carattere nuovo e aggiungi qui sotto in "pages" una voce con image e le 10 tipologie (prima le 5 a sinistra, poi le 5
+#  a destra, dall'alto in basso). Tipologie: broken, hits, bc_earned, bc_spent, coin_earned, coin_spent, platinum,
+#  play, daily, pass. Tacchette e numeri del livello restano sempre nella stessa posizione.
 #  Il livello n si completa quando il totale arriva a  base * (n + growth * n * n).
 # ----------------------------------------------------------------------
 rewards-gui:
-  levels: 100
-  progress-images: 12
-  images: ["\u3d00", "\u3d01", "\u3d02", "\u3d03", "\u3d04", "\u3d05", "\u3d06", "\u3d07", "\u3d08", "\u3d09", "\u3d0a", "\u3d0b"]
-  image-daily-ready: "\u3d0c"
-  image-daily-claimed: "\u3d0d"
-  bar-center: 88               # centro (in pixel) della barra in alto, dove sta scritto "giorno N" / "livello N"
-  bar-shadow: true
+  exp-per-level: 1500           # exp per ogni livello del battlepass
+  exp-per-claim: 500            # exp per ogni ricompensa ritirata (tranne giornaliera e battlepass)
+  image-main: "\u3d00"
+  image-levels: "\u3d01"
+  image-pass: "\u3d02"
+  image-daily-ready: "\u3d03"
+  image-daily-wait: "\u3d04"
+  pages:
+    - image: "\u3d00"
+      types: [broken, hits, bc_earned, bc_spent, coin_earned, coin_spent, platinum, play, daily, pass]
+  page-center: 73               # centro (pixel) del numero pagina nella barra in alto
+  bar-center: 73                # centro (pixel) del testo nelle barre verdi (livello N / giorno N)
+  text-shadow: true
   bar-text:
     daily: "giorno %n%"
     level: "livello %n%"
@@ -144,128 +167,183 @@ rewards-gui:
     material: GLASS_PANE
     cmd: 999
   title:
-    text: "&f{shift:-15}%image%"
     font: ""
     widths:
       "\u3d00": 179
-      "\u3d01": 179
-      "\u3d02": 179
-      "\u3d03": 179
-      "\u3d04": 179
-      "\u3d05": 179
-      "\u3d06": 179
-      "\u3d07": 179
-      "\u3d08": 179
-      "\u3d09": 179
-      "\u3d0a": 179
-      "\u3d0b": 179
-      "\u3d0c": 179
-      "\u3d0d": 179
     advance: 0
   slots:
     close: [0, 1]
     info: [7, 8]
-    bar: [2, 3, 4, 5, 6]
-    categories: [9, 18, 27, 36, 45]
-    # percorso dei livelli (5 alla volta): ricompensa, baule, spunta/lucchetto, frecce per scorrere
-    rewards: [20, 21, 22, 23, 24]
-    chests: [29, 30, 31, 32, 33]
-    status: [38, 39, 40, 41, 42]
-    prev: [47]
-    next: [51]
-  cmds:                        # modelli (glass_pane) delle icone
-    broken: 501
-    hits: 502
-    spent: 503
-    play: 504
-    daily: 505
-    coin: 506
-    blockcoin: 507
-    lock: 508
-    check: 509
-    chest: 510                 # baule chiuso (livello da aprire)
-    chest-open: 511            # baule aperto (livello ritirato)
-    prev: 512
-    next: 513
-  selected-prefix: "&a▶ "
+    main-prev: [2]
+    main-bar: [3, 4, 5]
+    main-next: [6]
+    close-sub: [10, 11]
+    info-sub: [15, 16]
+    level-bar: [12, 13, 14]
+    nav-prev: [47]
+    nav-bar: [48, 49, 50]
+    nav-next: [51]
+  cmds:                         # modelli (glass_pane) delle icone
+    chest: 510                  # baule chiuso (livello bloccato)
+    barrel-gold: 511            # barile aperto con l'oro (completato, da ritirare)
+    barrel-empty: 514           # barile aperto vuoto (ritirato)
   close:
     name: "&cchiudi"
+  back:
+    name: "&cindietro"
   info:
     name: "&6informazioni"
     lore:
       - "&7completa i livelli per ricevere ricompense"
       - "&7sempre piu' forti"
-      - "&8la giornaliera si ritira dopo &f%need%&8 minuti di gioco"
-  categories:
+      - "&8ogni ricompensa ritirata da' exp al battlepass"
+  page:
+    name: "&7pagina &f%page%&8/&f%pages%"
+  page-prev:
+    name: "&7pagina precedente"
+  page-next:
+    name: "&7pagina successiva"
+  level-info-lore:
+    - "&7livello raggiunto: &f%level%&8/&f%max%"
+    - "&7ritirati: &f%claimed%"
+    - "&7da ritirare: &e%unclaimed%"
+    - "&7prossimo livello: &f%have%&8/&f%next%"
+  pass:
+    info-lore:
+      - "&7exp: &f%exp%"
+      - "&7livello raggiunto: &f%level%&8/&f%max%"
+      - "&7ogni livello servono &f%exp_level%&7 exp"
+      - "&7si ottengono ritirando le ricompense"
+      - "&7da ritirare: &e%unclaimed%"
+  types:
     broken:
       name: "&fblocchi spaccati"
-      hint: "&8clicca per aprire"
       base: 100
       growth: 0.05
       lore:
         - "&7ne hai spaccati &f%have%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
     hits:
       name: "&fblocchi colpiti"
-      hint: "&8clicca per aprire"
       base: 150
       growth: 0.05
       lore:
         - "&7ne hai colpiti &f%have%"
-    spent:
-      name: "&fcoin spesi"
-      hint: "&8clicca per aprire"
-      base: 200
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
+    bc_earned:
+      name: "&fblockcoin guadagnati"
+      base: 100
+      growth: 0.05
+      lore:
+        - "&7ne hai guadagnati &f%have%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
+    bc_spent:
+      name: "&fblockcoin spesi"
+      base: 100
       growth: 0.05
       lore:
         - "&7ne hai spesi &f%have%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
+    coin_earned:
+      name: "&fcoin guadagnati"
+      base: 1000
+      growth: 0.05
+      lore:
+        - "&7ne hai guadagnati &f%have%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
+    coin_spent:
+      name: "&fcoin spesi"
+      base: 1000
+      growth: 0.05
+      lore:
+        - "&7ne hai spesi &f%have%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
+    platinum:
+      name: "&fminiere platinate"
+      levels: 20                # una miniera platinata = un livello
+      base: 1
+      growth: 0
+      lore:
+        - "&7ne hai platinate &f%have%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
     play:
       name: "&ftempo di gioco"
-      hint: "&8clicca per aprire"
-      base: 10                 # minuti
+      base: 10                  # minuti
       growth: 0.05
       lore:
         - "&7hai giocato &f%have%&7 minuti"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
     daily:
       name: "&fricompensa giornaliera"
-      hint: "&8clicca per aprire"
-      lore: []
+    pass:
+      name: "&fbattlepass"
+      multiplier: 2             # le ricompense del battlepass sono il doppio
+      lore:
+        - "&7exp: &f%exp%"
+        - "&7livello: &f%level%&8/&f%max%"
+        - "&7da ritirare: &e%unclaimed%"
+        - ""
+        - "&eclicca per aprire"
   level-states:
-    done:
-      name: "&alivello &e%level% &aritirato"
+    locked:
+      name: "&7livello &e%number%"
       lore:
         - ""
         - "&7ricompensa: &e%reward%"
+        - "&7serve: &f%need%"
+        - "&8bloccato"
     ready:
-      name: "&alivello &e%level% &acompletato"
+      name: "&alivello &e%number% &acompletato"
       lore:
         - ""
         - "&7ricompensa: &e%reward%"
         - ""
         - "&eclicca per ritirare"
-    progress:
-      name: "&flivello &e%level%"
+    claimed:
+      name: "&8livello &e%number% &8ritirato"
       lore:
         - ""
         - "&7ricompensa: &e%reward%"
-        - "&7progresso: &f%have%&8/&f%need% &8(&f%percent%%&8)"
-        - "&7ne mancano &f%left%"
-    locked:
-      name: "&7livello &e%level%"
-      lore:
-        - ""
-        - "&7ricompensa: &e%reward%"
-        - "&7serve: &f%need%"
-        - "&8prima completa il livello &f%before%"
   daily:
     coin: 1000
-    minutes: 30                # minuti giocati (non AFK) prima di poter ritirare
+    minutes: 30                 # minuti giocati (non AFK) prima di poter ritirare
+    yes: "SI"
+    no: "NO"
+    info-lore:
+      - "&7gioca &f%need%&7 minuti per ritirarla"
+      - "&7ne puoi ritirare una al giorno"
     states:
       wait:
         name: "&fricompensa giornaliera"
         lore:
           - ""
           - "&7ricompensa: &e%coin_reward% coin"
-          - "&7gioca ancora &f%minutes%&8/&f%need%&7 minuti"
+          - "&7gioca ancora &f%left%&7 minuti"
+          - "&8giocati &f%minutes%&8/&f%need%"
       ready:
         name: "&aricompensa giornaliera"
         lore:
@@ -278,8 +356,8 @@ rewards-gui:
         lore:
           - ""
           - "&7torna domani dopo mezzanotte"
-  # ricompensa per livello. "upto" = fino a questo livello, "amount" = quanti al primo livello della fascia,
-  # "step" = quanti in piu' a ogni livello successivo. Tipi: coin, blockcoin, cheque_<tipo>
+  # ricompensa per livello (su 100 livelli: negli altri si scala). "upto" = fino a questo livello, "amount" = quanti al
+  # primo livello della fascia, "step" = quanti in piu' a ogni livello successivo. Tipi: coin, blockcoin, cheque_<tipo>
   # (standardball, doubleball, ghostball, explosionball, coin, blockcoin, power)
   tiers:
     - {upto: 10, type: coin, amount: 100, step: 50}
@@ -640,6 +718,22 @@ messages:
     type: success
     channel: actionbar
     text: "livello %level% ritirato: %reward%"
+  reward-exp:
+    type: info
+    channel: actionbar
+    text: "+%exp% exp battlepass"
+  rw-value:
+    type: success
+    channel: chat
+    text: "%player%: %what% = %value%"
+  rw-types:
+    type: info
+    channel: chat
+    text: "tipologie: %types%"
+  rw-usage:
+    type: error
+    channel: chat
+    text: "uso: /bm ricompense exp <give|take|set|get|reset> [numero] [giocatore]  oppure  /bm ricompense livello <tipo> <add|remove|set|get|reset> [numero] [giocatore]  oppure  /bm ricompense tipi"
   cheque-ammo:
     type: success
     channel: actionbar
@@ -1807,11 +1901,12 @@ items-gui:
 
   slots:
     close: [0, 1]
-    categories: [2, 3, 4, 5, 6, 7, 8]
-    up: [17, 26]               # freccia su (pagina precedente)
-    page: [35]                 # al centro: il numero di pagina
-    down: [44, 53]             # freccia giu' (pagina successiva)
-    grid: [9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51, 52]
+    categories: [45, 47, 49, 51, 53]   # i 5 tasti blu in basso (cambiano tipo)
+    up: [2]                    # freccia sinistra (pagina precedente)
+    page: [3, 4, 5]            # la barra al centro: il numero e' nel titolo
+    down: [6]                  # freccia destra (pagina successiva)
+    info: [7, 8]               # la i arancione
+    grid: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]
 
   sounds:
     open:
@@ -1841,6 +1936,11 @@ items-gui:
   down:
     name: "&7pagina successiva"
     lore:
+      - "&8pagina &f%page%&8/&f%pages%"
+  info:
+    name: "&f%category%"
+    lore:
+      - "&8%count% oggetti"
       - "&8pagina &f%page%&8/&f%pages%"
   empty-category:
     name: "&8in arrivo"
@@ -1908,35 +2008,20 @@ items-gui:
       lore:
         - ""
         - "&7palle con il modello custom"
-    - id: free1
-      type: none
-      name: "&8in arrivo"
-      lore:
-        - ""
-        - "&7categoria non ancora impostata"
-    - id: free2
-      type: none
-      name: "&8in arrivo"
-      lore:
-        - ""
-        - "&7categoria non ancora impostata"
 
-  # TITOLO: sfondo disegnato + numeri verticali (1 sopra, 2 sotto) nella casella a destra
+  # TITOLO: sfondo disegnato + numero pagina (1/5) nella barra in alto
   title:
     text: "&f{shift:-15}\u3c04"
     font: ""
     widths:
-      "\u3c04": 179           # larghezza dell'immagine oggetti.png + 1
+      "\u3c04": 179
     advance: 0
-    numbers:
-      enabled: true
-      center: 156             # centro dei numeri verso destra, in pixel dall'inizio del titolo
+    number:
+      set: main
+      shadow-set: main-shadow
       shadow: true
-      current-set: top        # numero della pagina attuale (in alto)
-      current-shadow-set: top-shadow
-      total-set: bottom       # numero delle pagine totali (in basso)
-      total-shadow-set: bottom-shadow
       font: ""
+      center: 73
 
 # ----------------------------------------------------------------------
 #  GUI DELLE VARIANTI (clic destro su un note block in /bm items)
@@ -2325,3 +2410,10 @@ effects:
       sound: "entity.vex.ambient"
       volume: 1.0
       pitch: 1.6
+
+# ----------------------------------------------------------------------
+#  NPC Denny e Andrew (vedi tutorial.yml)
+# ----------------------------------------------------------------------
+npc:
+  look-range: 10.0      # blocchi: guardano chi e' piu' vicino di cosi'
+  greet-range: 5.0      # blocchi: salutano chi si avvicina (una volta al minuto per giocatore)

@@ -1,8 +1,7 @@
 name: BlockMania
-version: '1.30.0'
+version: '1.34.0'
 main: it.blockmania.BlockMania
 api-version: '1.21'
-softdepend: [packetevents]
 description: Oggetti speciali con modello custom
 commands:
   blockmania:
@@ -10,7 +9,7 @@ commands:
     usage: /<command> get <oggetto> [giocatore]
     aliases: [bm]
   tutorial:
-    description: Tutorial con i due NPC
+    description: Denny e Andrew (NPC animati)
     usage: /<command> [skip]
   mines:
     description: Apre la GUI delle miniere

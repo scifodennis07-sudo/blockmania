@@ -266,6 +266,13 @@ public final class AmmoManager {
     }
 
     public void setBlockCoin(Player player, int value) {
+        int before = getValue(player, BLOCKCOIN);
+        setValue(player, BLOCKCOIN, value);
+        track(player, "rw_bcin", "rw_bcout", before, Math.max(0, value));
+    }
+
+    /** Come setBlockCoin ma senza contare nelle statistiche delle ricompense (comandi admin e reset). */
+    public void setBlockCoinQuiet(Player player, int value) {
         setValue(player, BLOCKCOIN, value);
     }
 
@@ -274,7 +281,25 @@ public final class AmmoManager {
     }
 
     public void setCoin(Player player, int value) {
+        int before = getValue(player, COIN);
         setValue(player, COIN, value);
+        track(player, "rw_coinin", null, before, Math.max(0, value));
+    }
+
+    /** Come setCoin ma senza contare nelle statistiche delle ricompense (comandi admin e reset). */
+    public void setCoinQuiet(Player player, int value) {
+        setValue(player, COIN, value);
+    }
+
+    /** Conta quanto e' stato guadagnato (in) e speso (out) per le ricompense. */
+    private void track(Player player, String in, String out, int before, int after) {
+        if (after > before) {
+            long total = (long) getValue(player, in) + (after - before);
+            setValue(player, in, (int) Math.min(Integer.MAX_VALUE, total));
+        } else if (after < before && out != null) {
+            long total = (long) getValue(player, out) + (before - after);
+            setValue(player, out, (int) Math.min(Integer.MAX_VALUE, total));
+        }
     }
 
     /** Miniera del giocatore (parte da 1). Serve a sapere fino a che livello puo' potenziare. */
