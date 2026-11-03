@@ -90,8 +90,44 @@ public final class BlockManiaCommand implements TabExecutor {
     //  Comando principale
     // ------------------------------------------------------------------
 
+    private AdminCommand admin;
+
+    void setAdmin(AdminCommand admin) {
+        this.admin = admin;
+    }
+
+    private static final java.util.Set<String> STAFF_SUBS = java.util.Set.of("reload", "get", "getblock", "cheque",
+            "assegno", "block", "ball", "blockcoin", "blockshell", "coin", "mine", "upgrade", "resetall", "shop", "items",
+            "bgtest", "limits", "power", "stamina", "mines", "guidebug");
+
+    /** Parti di /bm che sono dello staff anche se il comando e' di tutti (ricompense exp..., tutorial setpoint...). */
+    private static boolean staffOnly(String[] args) {
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        if (STAFF_SUBS.contains(sub)) {
+            return true;
+        }
+        if (sub.equals("ricompense") || sub.equals("rewards") || sub.equals("tutorial")) {
+            return args.length > 1 && !(sub.equals("tutorial") && args[1].equalsIgnoreCase("skip"));
+        }
+        return false;
+    }
+
+    /** /bm e' per i giocatori. I comandi dello staff sono in /adminmania (la console puo' ancora usarli qui). */
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length > 0 && !(sender instanceof org.bukkit.command.ConsoleCommandSender) && staffOnly(args)) {
+            if (admin != null && admin.level(sender) > 0) {
+                sender.sendMessage(plugin.text("&7questo comando ora è nel comando dello staff, scrivi: &f"
+                        + AdminCommand.suggestion(args)));
+            } else {
+                plugin.sendCommand(sender, "unknown-subcommand", "%value%", args[0]);
+            }
+            return true;
+        }
+        return run(sender, command, label, args);
+    }
+
+    boolean run(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
             help(sender);
             return true;
@@ -158,6 +194,9 @@ public final class BlockManiaCommand implements TabExecutor {
         ConfigurationSection commands = c.getConfigurationSection("help.commands");
         if (commands != null) {
             for (String key : commands.getKeys(false)) {
+                if (!List.of("help", "ricompense", "afk", "tutorial").contains(key)) {
+                    continue;
+                }
                 String path = "help.commands." + key;
                 String permission = c.getString(path + ".permission", "");
                 if (!permission.isEmpty() && !sender.hasPermission(permission)) {
@@ -923,8 +962,21 @@ public final class BlockManiaCommand implements TabExecutor {
         }
     }
 
+    /** Il tab di /bm: solo i comandi dei giocatori. */
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        List<String> result = new ArrayList<>();
+        if (args.length == 1) {
+            result.addAll(List.of("help", "ricompense", "afk", "tutorial"));
+        } else if (args.length == 2 && args[0].equalsIgnoreCase("tutorial")) {
+            result.add("skip");
+        }
+        String typed = args[args.length - 1].toLowerCase(Locale.ROOT);
+        result.removeIf(x -> !x.startsWith(typed));
+        return result;
+    }
+
+    List<String> legacyTab(CommandSender sender, Command command, String alias, String[] args) {
         List<String> result = new ArrayList<>();
         boolean canGet = sender.hasPermission("blockmania.get");
         boolean canStats = sender.hasPermission("blockmania.stats");

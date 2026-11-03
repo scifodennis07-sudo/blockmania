@@ -50,6 +50,8 @@ final class ModelNpc {
     private double lookZ;
     private boolean looking;
     private boolean talking;
+    private Player viewer;
+    private org.bukkit.plugin.Plugin owner;
     private boolean facing;
     private double faceX;
     private double faceZ;
@@ -68,6 +70,12 @@ final class ModelNpc {
         this.yaw = yaw;
         this.rig = rig;
         this.idleOffset = Math.abs(key.hashCode() % 100) / 100.0 * 4.0;
+    }
+
+    /** L'NPC lo vede solo questo giocatore (cosi' piu' persone possono fare il tutorial insieme senza vedersi). */
+    void viewer(org.bukkit.plugin.Plugin owner, Player viewer) {
+        this.owner = owner;
+        this.viewer = viewer;
     }
 
     // ---------- entita' ----------
@@ -106,7 +114,13 @@ final class ModelNpc {
                 e.setInterpolationDuration(3);
                 e.setTeleportDuration(3);
                 e.setShadowRadius(0f);
+                if (viewer != null) {
+                    e.setVisibleByDefault(false);
+                }
             });
+            if (viewer != null && viewer.isOnline()) {
+                viewer.showEntity(owner, d);
+            }
             parts.put(bone, d);
         }
         apply();

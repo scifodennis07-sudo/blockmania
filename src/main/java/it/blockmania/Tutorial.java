@@ -1,7 +1,10 @@
 package it.blockmania;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.SoundCategory;
@@ -12,6 +15,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Interaction;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -23,6 +27,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerStopSpectatingEntityEvent;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -32,8 +37,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,10 +46,12 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Denny e Andrew: due NPC "a cubi" con le animazioni del rig (ItemDisplay col modello del resource pack).
- * Stanno fermi con l'animazione di riposo, guardano chi si avvicina e salutano. /tutorial fa partire la scena:
- * il giocatore resta fermo, la visuale segue chi parla a tempo con l'audio (tutorial-scene.yml), con i sottotitoli
- * e le animazioni degli NPC.
+ * Il tutorial con Denny e Andrew. Gli NPC non esistono finche' qualcuno non fa partire la scena: compaiono solo
+ * per quel giocatore (nessun altro li vede, quindi piu' persone possono fare il tutorial nello stesso posto).
+ * La scena: schermo nero in dissolvenza, il giocatore va nel posto della scena, gli NPC compaiono, la dissolvenza
+ * si toglie e parte la scena (tutorial-scene.yml: visuale, sottotitoli, animazioni e camminate a tempo con l'audio);
+ * a fine scena di nuovo dissolvenza al nero e il giocatore torna dov'era. Bande nere da film su e giu',
+ * niente mirino, niente bossbar.
  */
 public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
 
@@ -58,7 +65,11 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         final Player player;
         final Location back;
         final Location spot;
-        final long startNanos = System.nanoTime();
+        final long createdNanos = System.nanoTime();
+        long startNanos;
+        /** 0 = dissolvenza al nero, 1 = scena, 2 = dissolvenza finale. */
+        int stage;
+        long endNanos;
         int next;
         float yaw;
         float pitch;
@@ -66,11 +77,17 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         float targetPitch;
         double turn = 0.4;
         long lastNanos = System.nanoTime();
+        double acc;
         int ticks;
+        int lastLevel = -1;
         Component sub;
         BukkitTask task;
         boolean invulnerable;
         float walkSpeed;
+        GameMode mode;
+        Interaction cam;
+        final Map<String, ModelNpc> npcs = new LinkedHashMap<>();
+        final List<int[]> tickets = new ArrayList<>();
 
         Session(Player player, Location back, Location spot) {
             this.player = player;
@@ -88,13 +105,9 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
     private final NamespacedKey seenKey;
     private List<Step> steps = new ArrayList<>();
     private double sceneLength;
-    private final Map<String, ModelNpc> live = new LinkedHashMap<>();
-    private final Map<String, Double> greeted = new LinkedHashMap<>();
     private NpcRig rig;
     private File dataFile;
     private YamlConfiguration data;
-    private BukkitTask task;
-    private long lastNanos;
 
     public Tutorial(BlockMania plugin) {
         this.plugin = plugin;
@@ -102,7 +115,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
     }
 
     // ------------------------------------------------------------------
-    //  File: tutorial-data.yml tiene la posizione degli NPC (npc.<nome>.world/x/y/z/yaw)
+    //  File: tutorial-data.yml tiene i punti (npc.<nome>.world/x/y/z/yaw/slim, spot.*)
     // ------------------------------------------------------------------
 
     public void load() {
@@ -148,32 +161,15 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         }
     }
 
-    /** Da chiamare quando i mondi sono pronti: rimette in piedi gli NPC salvati. */
+    /** Chiamato all'avvio: gli NPC non si mettono in piedi, compaiono solo quando parte una scena. */
     public void spawnSaved() {
-        stop();
         ModelNpc.flip = plugin.getConfig().getBoolean("npc.flip", true);
-        for (String key : KEYS) {
-            Location feet = savedFeet(key);
-            if (feet != null) {
-                put(key, feet, data.getDouble("npc." + key + ".yaw"));
-            }
-        }
-        lastNanos = System.nanoTime();
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 2L, 2L);
     }
 
     public void stop() {
         for (Session sess : new ArrayList<>(sessions.values())) {
-            endScene(sess, false);
+            endScene(sess, true);
         }
-        if (task != null) {
-            task.cancel();
-            task = null;
-        }
-        for (ModelNpc n : live.values()) {
-            n.remove();
-        }
-        live.clear();
     }
 
     /** Braccia sottili (slim) o larghe (large): scelta con /tutorial skin, di base Andrew e' slim. */
@@ -193,327 +189,14 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         return new Location(w, c.getDouble("x"), c.getDouble("y"), c.getDouble("z"));
     }
 
-    /**
-     * Il yaw salvato e' quello di Minecraft (0 = sud); il rig guarda verso -Z con yaw 0, quindi si toglie 180.
-     */
-    private void put(String key, Location feet, double mcYaw) {
-        ModelNpc old = live.remove(key);
-        if (old != null) {
-            old.remove();
-        }
-        String model = key + (isSlim(key) ? "_slim" : "_large");
-        ModelNpc n = new ModelNpc(key, model, feet, mcYaw - 180.0, rig);
-        live.put(key, n);
-        if (n.chunkLoaded()) {
-            n.spawn();
-        }
+    private boolean ready() {
+        Location a = savedFeet("denny");
+        Location b = savedFeet("andrew");
+        return a != null && b != null && a.getWorld() == b.getWorld();
     }
 
     // ------------------------------------------------------------------
-    //  Vita degli NPC
-    // ------------------------------------------------------------------
-
-    private void tick() {
-        long now = System.nanoTime();
-        double dt = Math.min(0.25, (now - lastNanos) / 1.0e9);
-        lastNanos = now;
-        double clock = now / 1.0e9;
-        for (ModelNpc n : live.values()) {
-            if (n.chunkLoaded() && !n.alive()) {
-                n.spawn();
-            }
-        }
-        if (sessions.isEmpty() && plugin.getConfig().getBoolean("npc.alive", true)) {
-            think(clock);
-        }
-        for (ModelNpc n : live.values()) {
-            if (n.chunkLoaded()) {
-                n.tick(dt);
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    //  Cervello degli NPC: camminano, vanno dal giocatore, chiacchierano tra loro
-    // ------------------------------------------------------------------
-
-    private static final class Brain {
-        String mode = "idle";
-        double next = 2 + Math.random() * 4;
-        double until;
-        double start;
-        double lastApproach = -1000;
-        double lastRetarget;
-        Player target;
-    }
-
-    private record DuoDef(String a, String b, double dist) {
-    }
-
-    private static final class Duo {
-        DuoDef def;
-        boolean swap;
-        String phase = "walk";
-        double start;
-        double t;
-    }
-
-    private static final List<DuoDef> DUOS = List.of(
-            new DuoDef("handshake", "handshake", 1.3), new DuoDef("high_five", "high_five", 1.35),
-            new DuoDef("hug", "hug", 0.95), new DuoDef("fist_bump", "fist_bump", 1.25),
-            new DuoDef("pat_shoulder", "laugh", 1.0), new DuoDef("shrug", "nod", 1.8),
-            new DuoDef("facepalm", "laugh", 1.6), new DuoDef("clap", "cheer", 1.6),
-            new DuoDef("point", "look_around", 1.7), new DuoDef("warn_finger", "shrug", 1.4));
-    private static final List<String> SOLO = List.of("look_around", "scratch_head", "stretch", "shrug", "sigh",
-            "tilt", "nod", "crossed_arms", "look_around", "tilt");
-    private final Map<String, Brain> brains = new HashMap<>();
-    private Duo duo;
-
-    private static double rnd(double a, double b) {
-        return a + Math.random() * (b - a);
-    }
-
-    private void think(double clock) {
-        if (duo != null) {
-            runDuo(clock);
-            return;
-        }
-        for (ModelNpc n : live.values()) {
-            if (!n.chunkLoaded() || !n.alive()) {
-                continue;
-            }
-            Brain b = brains.computeIfAbsent(n.key, k -> new Brain());
-            Player near = n.nearest(plugin.getConfig().getDouble("npc.look-range", 10.0));
-            if (near != null && !near.getWorld().equals(n.feet.getWorld())) {
-                near = null;
-            }
-            switch (b.mode) {
-                case "idle" -> brainIdle(n, b, clock, near);
-                case "wander" -> {
-                    if (near != null) {
-                        Location eye = near.getEyeLocation();
-                        n.lookAt(eye.getX(), eye.getY(), eye.getZ());
-                    }
-                    if (!n.walkingNow() || clock > b.until) {
-                        n.stopWalking();
-                        b.mode = "idle";
-                        b.next = clock + rnd(2, 6);
-                    }
-                }
-                case "toPlayer" -> brainToPlayer(n, b, clock);
-                case "chat" -> brainChat(n, b, clock);
-                case "home" -> {
-                    if (!n.walkingNow() || clock > b.until) {
-                        n.stopWalking();
-                        n.stopFacing();
-                        b.mode = "idle";
-                        b.next = clock + rnd(3, 7);
-                    }
-                }
-                default -> b.mode = "idle";
-            }
-        }
-    }
-
-    private void brainIdle(ModelNpc n, Brain b, double clock, Player near) {
-        if (near != null) {
-            Location eye = near.getEyeLocation();
-            n.lookAt(eye.getX(), eye.getY(), eye.getZ());
-            Double last = greeted.get(n.key + near.getUniqueId());
-            double greetRange = plugin.getConfig().getDouble("npc.greet-range", 5.0);
-            if (!n.busy() && near.getLocation().distanceSquared(n.feet) < greetRange * greetRange
-                    && (last == null || clock - last > 60.0)) {
-                greeted.put(n.key + near.getUniqueId(), clock);
-                n.play("wave", 1.0);
-            }
-        } else {
-            n.stopLooking();
-        }
-        if (clock < b.next || n.busy()) {
-            return;
-        }
-        if (near != null && n.feet.distanceSquared(near.getLocation()) > 9 && clock - b.lastApproach > 45
-                && Math.random() < 0.6) {
-            b.mode = "toPlayer";
-            b.target = near;
-            b.start = clock;
-            b.until = clock + 18;
-            b.lastApproach = clock;
-            b.lastRetarget = -10;
-            return;
-        }
-        double r = Math.random();
-        if (r < 0.2 && startDuo(clock)) {
-            return;
-        }
-        if (r < 0.6) {
-            double radius = plugin.getConfig().getDouble("npc.wander-radius", 3.5);
-            double ang = Math.random() * Math.PI * 2;
-            double dist = rnd(1.0, radius);
-            n.walkTo(n.home.getX() + Math.cos(ang) * dist, n.home.getZ() + Math.sin(ang) * dist, rnd(1.0, 1.5));
-            b.mode = "wander";
-            b.until = clock + 10;
-            return;
-        }
-        n.play(SOLO.get((int) (Math.random() * SOLO.size())), 1.0);
-        b.next = clock + rnd(3, 8);
-    }
-
-    private void brainToPlayer(ModelNpc n, Brain b, double clock) {
-        Player p = b.target;
-        if (p == null || !p.isOnline() || !p.getWorld().equals(n.feet.getWorld()) || clock > b.until
-                || p.getLocation().distanceSquared(n.feet) > 400) {
-            toHome(n, b, clock);
-            return;
-        }
-        Location pl = p.getLocation();
-        Location eye = p.getEyeLocation();
-        n.lookAt(eye.getX(), eye.getY(), eye.getZ());
-        double dx = n.feet.getX() - pl.getX();
-        double dz = n.feet.getZ() - pl.getZ();
-        double d = Math.hypot(dx, dz);
-        if (d < 2.4) {
-            n.stopWalking();
-            n.faceTo(pl.getX(), pl.getZ());
-            b.mode = "chat";
-            b.start = clock;
-            b.until = clock + rnd(8, 16);
-            b.next = clock;
-            n.play(Math.random() < 0.6 ? "wave" : "nod", 1.0);
-            return;
-        }
-        if (clock - b.lastRetarget > 0.5) {
-            b.lastRetarget = clock;
-            n.walkTo(pl.getX() + dx / d * 2.0, pl.getZ() + dz / d * 2.0, 1.8);
-        }
-    }
-
-    private void brainChat(ModelNpc n, Brain b, double clock) {
-        Player p = b.target;
-        if (p == null || !p.isOnline() || !p.getWorld().equals(n.feet.getWorld()) || clock > b.until) {
-            n.talking(false);
-            toHome(n, b, clock);
-            return;
-        }
-        Location pl = p.getLocation();
-        Location eye = p.getEyeLocation();
-        n.lookAt(eye.getX(), eye.getY(), eye.getZ());
-        n.faceTo(pl.getX(), pl.getZ());
-        if (n.feet.distanceSquared(pl) > 16) {
-            n.talking(false);
-            b.mode = "toPlayer";
-            b.until = clock + 10;
-            b.lastRetarget = -10;
-            return;
-        }
-        n.talking(((int) ((clock - b.start) / 2.5)) % 2 == 0);
-        if (clock >= b.next && !n.busy()) {
-            n.play(List.of("nod", "tilt", "point_self", "spread", "shrug", "laugh", "point").get((int) (Math.random() * 7)), 1.0);
-            b.next = clock + rnd(3, 6);
-        }
-    }
-
-    private void toHome(ModelNpc n, Brain b, double clock) {
-        n.talking(false);
-        n.walkTo(n.home.getX(), n.home.getZ(), 1.3);
-        b.mode = "home";
-        b.until = clock + 15;
-    }
-
-    private boolean startDuo(double clock) {
-        ModelNpc a = live.get("denny");
-        ModelNpc c = live.get("andrew");
-        if (a == null || c == null || !a.alive() || !c.alive() || !a.chunkLoaded() || !c.chunkLoaded()
-                || a.feet.getWorld() != c.feet.getWorld() || a.feet.distanceSquared(c.feet) > 196) {
-            return false;
-        }
-        Brain ba = brains.computeIfAbsent("denny", k -> new Brain());
-        Brain bc = brains.computeIfAbsent("andrew", k -> new Brain());
-        if (!ba.mode.equals("idle") || !bc.mode.equals("idle") || a.busy() || c.busy()) {
-            return false;
-        }
-        Duo d = new Duo();
-        d.def = DUOS.get((int) (Math.random() * DUOS.size()));
-        d.swap = Math.random() < 0.5;
-        d.start = clock;
-        double mx = (a.feet.getX() + c.feet.getX()) / 2;
-        double mz = (a.feet.getZ() + c.feet.getZ()) / 2;
-        double dx = c.feet.getX() - a.feet.getX();
-        double dz = c.feet.getZ() - a.feet.getZ();
-        double len = Math.hypot(dx, dz);
-        if (len < 0.01) {
-            dx = 1;
-            dz = 0;
-            len = 1;
-        }
-        dx /= len;
-        dz /= len;
-        double h = d.def.dist() / 2;
-        a.walkTo(mx - dx * h, mz - dz * h, 1.4);
-        c.walkTo(mx + dx * h, mz + dz * h, 1.4);
-        ba.mode = "duo";
-        bc.mode = "duo";
-        duo = d;
-        return true;
-    }
-
-    private void endDuo(double clock) {
-        duo = null;
-        for (String k : KEYS) {
-            ModelNpc n = live.get(k);
-            Brain b = brains.computeIfAbsent(k, x -> new Brain());
-            if (n != null) {
-                n.stopFacing();
-                n.stopLooking();
-                n.talking(false);
-                n.walkTo(n.home.getX(), n.home.getZ(), 1.3);
-            }
-            b.mode = "home";
-            b.until = clock + 15;
-        }
-    }
-
-    private void runDuo(double clock) {
-        ModelNpc a = live.get("denny");
-        ModelNpc c = live.get("andrew");
-        if (a == null || c == null || !a.alive() || !c.alive()) {
-            endDuo(clock);
-            return;
-        }
-        switch (duo.phase) {
-            case "walk" -> {
-                if ((!a.walkingNow() && !c.walkingNow()) || clock - duo.start > 10) {
-                    a.stopWalking();
-                    c.stopWalking();
-                    a.faceTo(c.feet.getX(), c.feet.getZ());
-                    c.faceTo(a.feet.getX(), a.feet.getZ());
-                    a.lookAt(c.feet.getX(), c.feet.getY() + 1.62, c.feet.getZ());
-                    c.lookAt(a.feet.getX(), a.feet.getY() + 1.62, a.feet.getZ());
-                    duo.phase = "face";
-                    duo.t = clock + 0.8;
-                }
-            }
-            case "face" -> {
-                if (clock >= duo.t) {
-                    String ca = duo.swap ? duo.def.b() : duo.def.a();
-                    String cb = duo.swap ? duo.def.a() : duo.def.b();
-                    a.play(ca, 1.0);
-                    c.play(cb, 1.0);
-                    duo.phase = "act";
-                    duo.t = clock + Math.max(rig.length(ca), rig.length(cb)) + 0.5;
-                }
-            }
-            case "act" -> {
-                if (clock >= duo.t) {
-                    endDuo(clock);
-                }
-            }
-            default -> endDuo(clock);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    //  Comandi:  /tutorial   /tutorial npc   /tutorial npcremove   /tutorial anim <npc> <clip>
+    //  Comandi
     // ------------------------------------------------------------------
 
     @Override
@@ -522,9 +205,23 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         return true;
     }
 
+    private void savePoint(Player p, String key) {
+        Location at = p.getLocation();
+        data.set("npc." + key + ".world", at.getWorld().getName());
+        data.set("npc." + key + ".x", Math.round(at.getX() * 100) / 100.0);
+        data.set("npc." + key + ".y", Math.round(at.getY() * 100) / 100.0);
+        data.set("npc." + key + ".z", Math.round(at.getZ() * 100) / 100.0);
+        data.set("npc." + key + ".yaw", Math.round(at.getYaw() * 10) / 10.0);
+        saveData();
+    }
+
     public void handle(CommandSender sender, String[] args) {
         String sub = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
         boolean admin = sender.hasPermission("blockmania.tutorial.admin");
+        if (!sub.isEmpty() && !sub.equals("skip") && !admin) {
+            sender.sendMessage("§cnon hai il permesso");
+            return;
+        }
         switch (sub) {
             case "" -> {
                 if (sender instanceof Player p) {
@@ -539,10 +236,6 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
                 }
             }
             case "setpoint", "setspot" -> {
-                if (!admin) {
-                    sender.sendMessage("§cnon hai il permesso");
-                    return;
-                }
                 if (!(sender instanceof Player p)) {
                     sender.sendMessage("§csolo i giocatori possono salvare un punto");
                     return;
@@ -559,41 +252,37 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
                     data.set("spot.yaw", Math.round(l.getYaw() * 10) / 10.0);
                     data.set("spot.pitch", Math.round(l.getPitch() * 10) / 10.0);
                     saveData();
-                    sender.sendMessage("§aposto del giocatore salvato (durante la scena starà qui e guarderà dove guardi tu adesso)");
+                    sender.sendMessage("§aposto del giocatore salvato (nella scena starà qui e guarderà dove guardi tu adesso)");
                 } else if (KEYS.contains(w)) {
-                    placeNpc(p, w);
-                    sender.sendMessage("§a" + w + " messo qui, guarda dove guardi tu adesso");
+                    savePoint(p, w);
+                    sender.sendMessage("§apunto di " + w + " salvato, guarderà dove guardi tu adesso. Non compare ora: compare solo quando parte il tutorial (/tutorial per provarlo)");
                 } else {
                     sender.sendMessage("§cpunto sconosciuto: scrivi denny, andrew oppure giocatore");
                 }
             }
-            case "resetpoint", "resetspot" -> {
-                if (!admin) {
-                    sender.sendMessage("§cnon hai il permesso");
-                    return;
-                }
+            case "resetpoint", "resetspot", "npcremove", "remove" -> {
                 String w = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : (sub.equals("resetspot") ? "giocatore" : "");
                 if (w.equals("giocatore") || w.equals("player")) {
                     data.set("spot", null);
                     saveData();
                     sender.sendMessage("§aposto del giocatore tolto");
-                } else if (KEYS.contains(w)) {
-                    ModelNpc n = live.remove(w);
-                    if (n != null) {
-                        n.remove();
+                } else if (KEYS.contains(w) || w.equals("all")) {
+                    for (String k : KEYS) {
+                        if (w.equals("all") || w.equals(k)) {
+                            data.set("npc." + k + ".world", null);
+                            data.set("npc." + k + ".x", null);
+                            data.set("npc." + k + ".y", null);
+                            data.set("npc." + k + ".z", null);
+                            data.set("npc." + k + ".yaw", null);
+                        }
                     }
-                    data.set("npc." + w, null);
                     saveData();
-                    sender.sendMessage("§a" + w + " tolto");
+                    sender.sendMessage("§apunto tolto");
                 } else {
-                    sender.sendMessage("§cscrivi quale punto togliere: denny, andrew oppure giocatore");
+                    sender.sendMessage("§cscrivi quale punto togliere: denny, andrew, giocatore oppure all");
                 }
             }
             case "skin" -> {
-                if (!admin) {
-                    sender.sendMessage("§cnon hai il permesso");
-                    return;
-                }
                 if (args.length < 2 || !KEYS.contains(args[1].toLowerCase(Locale.ROOT))) {
                     sender.sendMessage("§cscrivi di quale NPC vuoi cambiare la skin: denny oppure andrew");
                     return;
@@ -615,36 +304,11 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
                 }
                 data.set("npc." + key + ".slim", slim);
                 saveData();
-                ModelNpc old = live.get(key);
-                if (old != null) {
-                    Location at = old.feet.clone();
-                    put(key, old.home.clone(), data.getDouble("npc." + key + ".yaw"));
-                    live.get(key).feet.setX(at.getX());
-                    live.get(key).feet.setZ(at.getZ());
-                }
-                sender.sendMessage("§a" + key + " ora ha la skin " + (slim ? "slim" : "large"));
-            }
-            case "npcremove", "remove" -> {
-                if (!admin) {
-                    sender.sendMessage("§cnon hai il permesso");
-                    return;
-                }
-                String key = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "";
-                for (String k : KEYS) {
-                    if (key.isEmpty() || key.equals(k) || key.equals("all")) {
-                        ModelNpc n = live.remove(k);
-                        if (n != null) {
-                            n.remove();
-                        }
-                        data.set("npc." + k, null);
-                    }
-                }
-                saveData();
-                sender.sendMessage("§aNPC tolti");
+                sender.sendMessage("§a" + key + " avrà la skin " + (slim ? "slim" : "large") + " dal prossimo tutorial");
             }
             case "anim", "animazione" -> {
-                if (!admin) {
-                    sender.sendMessage("§cnon hai il permesso");
+                if (!(sender instanceof Player p) || !sessions.containsKey(p.getUniqueId())) {
+                    sender.sendMessage("§cgli NPC esistono solo durante il tutorial: avvialo con /tutorial e poi scrivi il comando");
                     return;
                 }
                 if (args.length < 2) {
@@ -661,7 +325,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
                     return;
                 }
                 int count = 0;
-                for (ModelNpc n : live.values()) {
+                for (ModelNpc n : sessions.get(p.getUniqueId()).npcs.values()) {
                     if (args[1].equalsIgnoreCase("all") || args[1].equalsIgnoreCase("tutti") || args[1].equalsIgnoreCase(n.key)) {
                         n.play(clip, 1.0);
                         count++;
@@ -670,65 +334,9 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
                 sender.sendMessage(count == 0 ? "§cnessun NPC con quel nome (denny, andrew o all)" : "§aanimazione " + NpcRig.italian(clip));
             }
             case "clips", "animazioni" -> sender.sendMessage("§7animazioni: §f" + String.join(", ", rig.clipNames()));
-            default -> sender.sendMessage("§7scrivi cosa vuoi fare: §f/tutorial §8(parte la scena)§7, §f/tutorial skip§7, §f/tutorial setpoint <denny|andrew|giocatore>§7, §f/tutorial resetpoint <...>§7, §f/tutorial skin <denny|andrew> <slim|large>§7, §f/tutorial npc§7, §f/tutorial npcremove§7, §f/tutorial anim <npc> <animazione>§7, §f/tutorial animazioni");
+            default -> sender.sendMessage("§7scrivi cosa vuoi fare: §f/tutorial §8(parte la scena)§7, §f/tutorial skip§7, §f/tutorial setpoint <denny|andrew|giocatore>§7, §f/tutorial resetpoint <...>§7, §f/tutorial skin <denny|andrew> <slim|large>§7, §f/tutorial animazioni");
         }
     }
-
-    /** Mette un NPC dove sta il giocatore, rivolto dove guarda il giocatore. */
-    private void placeNpc(Player p, String key) {
-        Location at = p.getLocation();
-        float yaw = at.getYaw();
-        data.set("npc." + key + ".world", at.getWorld().getName());
-        data.set("npc." + key + ".x", Math.round(at.getX() * 100) / 100.0);
-        data.set("npc." + key + ".y", Math.round(at.getY() * 100) / 100.0);
-        data.set("npc." + key + ".z", Math.round(at.getZ() * 100) / 100.0);
-        data.set("npc." + key + ".yaw", Math.round(yaw * 10) / 10.0);
-        put(key, at, yaw);
-        saveData();
-        if (task == null) {
-            lastNanos = System.nanoTime();
-            task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 2L, 2L);
-        }
-    }
-
-    /** Mette l'NPC dove sta il giocatore, con la faccia verso di lui (sposta anche l'altro se non ne indichi uno). */
-    private void createHere(Player p, String which) {
-        List<String> keys = which.isEmpty() ? KEYS : List.of(which);
-        for (String key : keys) {
-            if (!KEYS.contains(key)) {
-                p.sendMessage("§cnome sconosciuto: denny o andrew");
-                return;
-            }
-        }
-        Location feet = p.getLocation();
-        // se ne metto due, uno a sinistra e uno a destra di dove guardo
-        double yawRad = Math.toRadians(feet.getYaw());
-        double rx = Math.cos(yawRad);
-        double rz = Math.sin(yawRad);
-        for (int i = 0; i < keys.size(); i++) {
-            String key = keys.get(i);
-            Location at = feet.clone();
-            if (keys.size() > 1) {
-                double side = i == 0 ? -0.8 : 0.8;
-                at.add(rx * side, 0, rz * side);
-            }
-            // il giocatore guarda in avanti: l'NPC guarda verso di lui
-            float npcYaw = feet.getYaw() + 180f;
-            data.set("npc." + key + ".world", at.getWorld().getName());
-            data.set("npc." + key + ".x", Math.round(at.getX() * 100) / 100.0);
-            data.set("npc." + key + ".y", Math.round(at.getY() * 100) / 100.0);
-            data.set("npc." + key + ".z", Math.round(at.getZ() * 100) / 100.0);
-            data.set("npc." + key + ".yaw", Math.round(npcYaw * 10) / 10.0);
-            put(key, at, npcYaw);
-        }
-        saveData();
-        if (task == null) {
-            lastNanos = System.nanoTime();
-            task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 2L, 2L);
-        }
-        p.sendMessage("§aNPC creati");
-    }
-
 
     // ------------------------------------------------------------------
     //  La scena
@@ -751,48 +359,116 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         return sessions.containsKey(player.getUniqueId());
     }
 
+    private boolean cinematic() {
+        return plugin.getConfig().getBoolean("tutorial.cinematic", true);
+    }
+
     public void startScene(Player p) {
         if (sessions.containsKey(p.getUniqueId())) {
             return;
         }
-        if (steps.isEmpty() || live.size() < 2) {
-            p.sendMessage("§7il tutorial non e' ancora pronto (mancano Denny e Andrew: /tutorial npc)");
+        if (steps.isEmpty() || !ready()) {
+            p.sendMessage("§7il tutorial non è ancora pronto (mancano i punti di Denny e Andrew: /tutorial setpoint denny e andrew)");
             return;
         }
-        ModelNpc d = live.get("denny");
-        if (d == null || d.feet.getWorld() == null) {
-            return;
-        }
+        World world = savedFeet("denny").getWorld();
         Location spot = spotLocation();
-        if (spot == null || spot.getWorld() != d.feet.getWorld()) {
+        if (spot == null || spot.getWorld() != world) {
             spot = p.getLocation().clone();
-            if (spot.getWorld() != d.feet.getWorld()) {
-                p.sendMessage("§7vai dove ci sono Denny e Andrew e riscrivi /tutorial");
+            if (spot.getWorld() != world) {
+                p.sendMessage("§7vai dove ci sono i punti di Denny e Andrew e riscrivi /tutorial (oppure salva il posto del giocatore con /tutorial setpoint giocatore)");
                 return;
             }
         }
         p.getPersistentDataContainer().set(seenKey, PersistentDataType.BYTE, (byte) 1);
         Session s = new Session(p, p.getLocation().clone(), spot);
         sessions.put(p.getUniqueId(), s);
-        p.teleport(spot);
         s.invulnerable = p.isInvulnerable();
         p.setInvulnerable(true);
         s.walkSpeed = p.getWalkSpeed();
         p.setWalkSpeed(0f);
-        p.addPotionEffect(new PotionEffect(PotionEffectType.JUMP_BOOST, (int) (sceneLength * 20) + 100, 200, false, false, false));
+        plugin.getBars().hideAll(p, true);
+        s.task = Bukkit.getScheduler().runTaskTimer(plugin, () -> sceneTick(s), 1L, 1L);
+    }
+
+    /** Sotto lo schermo nero: il giocatore va al posto della scena, compaiono gli NPC, parte l'audio. */
+    private void beginRun(Session s) {
+        Player p = s.player;
+        Location spot = s.spot;
+        s.stage = 1;
+        s.startNanos = System.nanoTime();
+        s.lastNanos = s.startNanos;
+        p.teleport(spot);
+        p.addPotionEffect(new PotionEffect(PotionEffectType.JUMP_BOOST, (int) (sceneLength * 20) + 200, 200, false, false, false));
+        // gli NPC: li vede solo questo giocatore
+        for (String key : KEYS) {
+            Location feet = savedFeet(key);
+            if (feet == null) {
+                continue;
+            }
+            int cx = feet.getBlockX() >> 4;
+            int cz = feet.getBlockZ() >> 4;
+            feet.getWorld().addPluginChunkTicket(cx, cz, plugin);
+            s.tickets.add(new int[]{cx, cz});
+            ModelNpc n = new ModelNpc(key, key + (isSlim(key) ? "_slim" : "_large"), feet,
+                    data.getDouble("npc." + key + ".yaw") - 180.0, rig);
+            n.viewer(plugin, p);
+            n.spawn();
+            Location eye = spot.clone().add(0, 1.62, 0);
+            n.lookAt(eye.getX(), eye.getY(), eye.getZ());
+            s.npcs.put(key, n);
+        }
+        if (cinematic()) {
+            s.mode = p.getGameMode();
+            s.cam = spot.getWorld().spawn(spot, Interaction.class, e -> {
+                e.setInteractionHeight(1.906f);
+                e.setInteractionWidth(0.1f);
+                e.setPersistent(false);
+                e.setVisibleByDefault(false);
+                e.setRotation(spot.getYaw(), spot.getPitch());
+            });
+            p.showEntity(plugin, s.cam);
+            p.setGameMode(GameMode.SPECTATOR);
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (s.cam != null && s.cam.isValid() && p.isOnline() && sessions.get(p.getUniqueId()) == s) {
+                    p.setSpectatorTarget(s.cam);
+                }
+            }, 3L);
+        }
         p.playSound(p.getLocation(), plugin.getConfig().getString("tutorial.sound", "tutorial1"), SoundCategory.MASTER,
                 (float) plugin.getConfig().getDouble("tutorial.volume", 1.0), 1f);
-        brains.clear();
-        duo = null;
-        for (ModelNpc n : live.values()) {
-            Location eye = spot.clone().add(0, 1.62, 0);
-            n.stopWalking();
-            n.stopFacing();
-            n.talking(false);
-            n.walkTo(n.home.getX(), n.home.getZ(), 2.0);
-            n.lookAt(eye.getX(), eye.getY(), eye.getZ());
+    }
+
+    // ---- dissolvenza e bande da film (title) ----
+
+    private static final String FADE_FONT = "";
+
+    private void showFx(Player p, int level, boolean bars) {
+        int style = plugin.getConfig().getInt("tutorial.bars", 2);
+        Component top = bars && style >= 1 && style <= 5
+                ? Component.text(String.valueOf((char) (0xF800 + style)), NamedTextColor.WHITE) : Component.empty();
+        Component bottom = level > 0
+                ? Component.text(String.valueOf((char) (0xF810 + Math.min(8, level) - 1)), NamedTextColor.WHITE) : Component.empty();
+        if (top == Component.empty() && bottom == Component.empty()) {
+            p.clearTitle();
+            return;
         }
-        s.task = Bukkit.getScheduler().runTaskTimer(plugin, () -> sceneTick(s), 1L, 1L);
+        p.showTitle(Title.title(top, bottom, Title.Times.times(Duration.ZERO, Duration.ofSeconds(4), Duration.ZERO)));
+    }
+
+    /** Alla fine: dal nero torna a vedersi il posto dove il giocatore era. */
+    private void fadeBackIn(Player p) {
+        showFx(p, 8, false);
+        int[] k = {8};
+        Bukkit.getScheduler().runTaskTimer(plugin, task -> {
+            k[0]--;
+            if (!p.isOnline() || k[0] <= 0) {
+                p.clearTitle();
+                task.cancel();
+                return;
+            }
+            showFx(p, k[0], false);
+        }, 3L, 3L);
     }
 
     private double[] angles(Location from, double tx, double ty, double tz) {
@@ -815,8 +491,8 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
     }
 
     private void setLook(Session s, String look, double turn) {
-        ModelNpc d = live.get("denny");
-        ModelNpc a = live.get("andrew");
+        ModelNpc d = s.npcs.get("denny");
+        ModelNpc a = s.npcs.get("andrew");
         if (d == null || a == null || look == null || look.isBlank()) {
             return;
         }
@@ -853,8 +529,8 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
             setLook(s, st.look(), st.turn());
         }
         if (st.talk() != null) {
-            ModelNpc d = live.get("denny");
-            ModelNpc a = live.get("andrew");
+            ModelNpc d = s.npcs.get("denny");
+            ModelNpc a = s.npcs.get("andrew");
             if (d != null && a != null) {
                 Location eye = s.spot.clone().add(0, 1.62, 0);
                 String who = st.talk();
@@ -882,9 +558,9 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         for (String act : st.actions()) {
             String[] parts = act.split(":");
             if (parts.length >= 2) {
-                ModelNpc n = live.get(parts[0]);
+                ModelNpc n = s.npcs.get(parts[0]);
                 if (n != null && parts[1].startsWith("@")) {
-                    moveNpc(n, parts[1].substring(1), s);
+                    moveNpc(s, n, parts[1].substring(1));
                 } else if (n != null) {
                     double speed = 1.0;
                     if (parts.length > 2) {
@@ -901,8 +577,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
     }
 
     /** Azioni di scena "npc:@dove": @andrew / @denny (si affianca all'altro), @player (va verso il giocatore), @home (torna al suo posto). */
-    private void moveNpc(ModelNpc n, String where, Session s) {
-        Location eye = s.spot.clone().add(0, 1.62, 0);
+    private void moveNpc(Session s, ModelNpc n, String where) {
         switch (where) {
             case "home" -> {
                 n.walkTo(n.home.getX(), n.home.getZ(), 1.5);
@@ -917,7 +592,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
                 n.faceTo(s.spot.getX(), s.spot.getZ());
             }
             default -> {
-                ModelNpc other = live.get(where);
+                ModelNpc other = s.npcs.get(where);
                 if (other == null || other == n) {
                     return;
                 }
@@ -937,15 +612,55 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
             return;
         }
         long now = System.nanoTime();
-        double t = (now - s.startNanos) / 1.0e9;
+        double fadeIn = plugin.getConfig().getDouble("tutorial.fade-in", 0.8);
+        double hold = plugin.getConfig().getDouble("tutorial.black-hold", 2.0);
+        double fadeOut = plugin.getConfig().getDouble("tutorial.fade-out", 1.6);
+        double endFade = plugin.getConfig().getDouble("tutorial.end-fade", 1.2);
+        double alpha;
+        if (s.stage == 0) {
+            alpha = Math.min(1.0, (now - s.createdNanos) / 1.0e9 / Math.max(0.05, fadeIn));
+            if (alpha >= 1.0) {
+                beginRun(s);
+            }
+        } else if (s.stage == 1) {
+            double t = (now - s.startNanos) / 1.0e9;
+            alpha = t < hold ? 1.0 : t < hold + fadeOut ? 1.0 - (t - hold) / fadeOut : 0.0;
+            if (t >= sceneLength) {
+                s.stage = 2;
+                s.endNanos = now;
+            } else if (t >= sceneLength - endFade) {
+                alpha = Math.max(alpha, (t - (sceneLength - endFade)) / endFade);
+            }
+            runScene(s, t, now);
+        } else {
+            alpha = 1.0;
+            if ((now - s.endNanos) / 1.0e9 >= 0.3) {
+                endScene(s, true);
+                return;
+            }
+        }
+        int level = (int) Math.round(Math.max(0, Math.min(1, alpha)) * 8);
+        s.ticks++;
+        if (level != s.lastLevel || s.ticks % 60 == 0) {
+            s.lastLevel = level;
+            showFx(p, level, true);
+        }
+    }
+
+    private void runScene(Session s, double t, long now) {
+        Player p = s.player;
         double dt = Math.min(0.2, (now - s.lastNanos) / 1.0e9);
         s.lastNanos = now;
         while (s.next < steps.size() && steps.get(s.next).at() <= t) {
             runStep(s, steps.get(s.next++));
         }
-        if (t >= sceneLength) {
-            endScene(s, true);
-            return;
+        // gli NPC si aggiornano 10 volte al secondo
+        s.acc += dt;
+        if (s.acc >= 0.1) {
+            for (ModelNpc n : s.npcs.values()) {
+                n.tick(s.acc);
+            }
+            s.acc = 0;
         }
         // visuale: si gira dolcemente verso il punto indicato
         double k = 1.0 - Math.exp(-dt * 3.0 / s.turn);
@@ -954,9 +669,12 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         s.pitch += (float) ((s.targetPitch - s.pitch) * k);
         double sway = plugin.getConfig().getDouble("tutorial.sway", 0.8);
         float yaw = s.yaw + (float) (Math.sin(t * 0.9) * sway);
-        float pitch = s.pitch + (float) (Math.sin(t * 0.6 + 1.0) * sway * 0.5);
-        p.setRotation(yaw, Math.max(-89f, Math.min(89f, pitch)));
-        s.ticks++;
+        float pitch = Math.max(-89f, Math.min(89f, s.pitch + (float) (Math.sin(t * 0.6 + 1.0) * sway * 0.5)));
+        if (s.cam != null && s.cam.isValid()) {
+            s.cam.setRotation(yaw, pitch);
+        } else {
+            p.setRotation(yaw, pitch);
+        }
         if (s.sub != null && s.ticks % 30 == 0) {
             p.sendActionBar(s.sub);
         }
@@ -969,8 +687,28 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         if (s.task != null) {
             s.task.cancel();
         }
+        for (ModelNpc n : s.npcs.values()) {
+            n.remove();
+        }
+        s.npcs.clear();
+        for (int[] t : s.tickets) {
+            Location any = savedFeet("denny");
+            if (any != null && any.getWorld() != null) {
+                any.getWorld().removePluginChunkTicket(t[0], t[1], plugin);
+            }
+        }
+        s.tickets.clear();
         Player p = s.player;
+        if (s.cam != null) {
+            s.cam.remove();
+            s.cam = null;
+        }
         if (p.isOnline()) {
+            if (s.mode != null) {
+                p.setSpectatorTarget(null);
+                p.setGameMode(s.mode);
+            }
+            plugin.getBars().hideAll(p, false);
             p.stopSound(plugin.getConfig().getString("tutorial.sound", "tutorial1"));
             p.sendActionBar(Component.empty());
             p.setInvulnerable(s.invulnerable);
@@ -979,20 +717,25 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
             if (teleportBack && s.back.getWorld() != null) {
                 p.teleport(s.back);
             }
-        }
-        brains.clear();
-        duo = null;
-        for (ModelNpc n : live.values()) {
-            n.talking(false);
-            n.stopLooking();
-            n.stopFacing();
-            n.walkTo(n.home.getX(), n.home.getZ(), 1.5);
+            if (s.stage >= 1) {
+                fadeBackIn(p);
+            } else {
+                p.clearTitle();
+            }
         }
     }
 
+    // ------------------------------------------------------------------
+    //  Eventi
+    // ------------------------------------------------------------------
+
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(PlayerMoveEvent event) {
-        if (sessions.isEmpty() || !sessions.containsKey(event.getPlayer().getUniqueId())) {
+        if (sessions.isEmpty()) {
+            return;
+        }
+        Session s = sessions.get(event.getPlayer().getUniqueId());
+        if (s == null || (s.cam != null && s.stage >= 1)) {
             return;
         }
         Location from = event.getFrom();
@@ -1005,6 +748,14 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
             l.setYaw(to.getYaw());
             l.setPitch(to.getPitch());
             event.setTo(l);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onStopSpectating(PlayerStopSpectatingEntityEvent event) {
+        Session s = sessions.get(event.getPlayer().getUniqueId());
+        if (s != null && s.cam != null) {
+            event.setCancelled(true);
         }
     }
 
@@ -1044,11 +795,11 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
     public void onQuit(PlayerQuitEvent event) {
         Session s = sessions.get(event.getPlayer().getUniqueId());
         if (s != null) {
-            endScene(s, true);
+            endScene(s, false);
         }
     }
 
-    /** Chi entra per la prima volta vede la scena da solo (se gli NPC ci sono). */
+    /** Chi entra per la prima volta vede la scena da solo (se i punti ci sono). */
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player p = event.getPlayer();
@@ -1058,8 +809,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         }
         long delay = plugin.getConfig().getLong("tutorial.auto-start-delay", 80L);
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (p.isOnline() && !p.getPersistentDataContainer().has(seenKey, PersistentDataType.BYTE)
-                    && live.size() >= 2) {
+            if (p.isOnline() && !p.getPersistentDataContainer().has(seenKey, PersistentDataType.BYTE) && ready()) {
                 startScene(p);
             }
         }, delay);
@@ -1077,8 +827,8 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         }
         String c0 = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "";
         if (args.length == 1) {
-            out.addAll(List.of("skip", "setpoint", "resetpoint", "skin", "npc", "npcremove", "anim", "animazioni"));
-        } else if (args.length == 2 && (c0.equals("npc") || c0.equals("npcremove") || c0.equals("skin"))) {
+            out.addAll(List.of("skip", "setpoint", "resetpoint", "skin", "anim", "animazioni"));
+        } else if (args.length == 2 && c0.equals("skin")) {
             out.addAll(KEYS);
         } else if (args.length == 2 && (c0.equals("setpoint") || c0.equals("resetpoint"))) {
             out.addAll(KEYS);

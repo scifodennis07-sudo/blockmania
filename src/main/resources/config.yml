@@ -1115,6 +1115,10 @@ help:
       permission: blockmania.use
       usage: "/bm ricompense"
       description: "apre le ricompense: livelli, giornaliera e assegni"
+    tutorial:
+      permission: blockmania.use
+      usage: "/tutorial"
+      description: "rivedi il tutorial con Denny e Andrew, /tutorial skip per saltarlo"
     afk:
       permission: blockmania.use
       usage: "/bm afk"
@@ -2542,3 +2546,91 @@ tutorial:
   sound: "tutorial1"        # l'audio nel resource pack
   volume: 1.0
   sway: 0.8                 # oscillazione leggera della testa (0 = niente)
+  cinematic: true           # camera da film: il giocatore guarda dalla camera (niente mirino, niente mano, niente barra oggetti). false = visuale normale
+  bars: 2                   # bande nere su e giu: 0 = niente, 1-5 = sempre piu' sottili (se non si vedono i sottotitoli o le bande mancano prova un altro numero)
+  fade-in: 0.8              # secondi per diventare nero all'inizio
+  black-hold: 2.0           # secondi di nero dall'inizio dell'audio ('dove sei?') prima di rivedere la scena
+  fade-out: 1.6             # secondi per togliere il nero
+  end-fade: 1.2             # secondi per tornare nero alla fine
+
+# ----------------------------------------------------------------------
+#  ADMINMANIA  (/adminmania, alias /am): tutti i comandi dello staff, divisi in gruppi
+#    economy  coin, blockcoin, blockshell        profile  mine, ball, upgrade, power, stamina, rewards, reset
+#    items    get, block, cheque, list           build    block, mines
+#    shops    (negozi)                            system   reload, limits, bgtest, guidebug, tutorial
+#  RUOLI: si danno con i permessi blockmania.role.<ruolo> (ad esempio con LuckPerms al gruppo giusto).
+#  Vale il ruolo piu' alto che il giocatore ha; gli OP e la console sono Founder.
+#  REPARTI: blockmania.dept.<reparto>. Un reparto apre sempre le azioni che lo elencano in "depts".
+#  AZIONI: gruppo -> azione. min = ruolo minimo. cap = tetto per comando e day = tetto al giorno
+#  (per ruolo: vale il valore del ruolo piu' alto che il giocatore ha raggiunto, -1 = senza tetto).
+#  I tetti valgono per get e remove con un numero. Gruppo + azione:
+#     see (guardare), get (dare), remove (togliere), reset (azzerare), edit (imposta/ricarica...), use (usare)
+# ----------------------------------------------------------------------
+adminmania:
+  self-min: admin               # sotto questo ruolo non si puo' dare/togliere/azzerare niente a se stessi
+  confirm-seconds: 10           # i comandi distruttivi (resetall, eliminare una miniera) vanno scritti due volte entro questo tempo
+  log: true                     # ogni comando staff finisce in plugins/BlockMania/adminmania.log
+  roles:
+    jr-helper: "Jr helper"
+    helper: "Helper"
+    jr-mod: "Jr mod"
+    mod: "Mod"
+    sr-mod: "Sr mod"
+    jr-admin: "Jr admin"
+    admin: "Admin"
+    sr-admin: "Sradmin"
+    co-founder: "Co'founder"
+    founder: "Founder"
+  departments:
+    builder: "Builder"
+    texturemaker: "Texturemaker"
+    developer: "Developer"
+  actions:
+    economy:
+      see: {min: helper}
+      get:
+        min: admin
+        cap: {admin: 10000, sr-admin: 100000, co-founder: -1}
+        day: {admin: 100000, sr-admin: 1000000, co-founder: -1}
+      remove:
+        min: mod
+        cap: {mod: 5000, sr-mod: 20000, jr-admin: 50000, admin: 100000, sr-admin: -1}
+        day: {mod: 20000, sr-mod: 100000, jr-admin: 300000, admin: 1000000, sr-admin: -1}
+      reset: {min: sr-mod}
+    profile:
+      see: {min: helper}
+      get:
+        min: jr-admin
+        cap: {jr-admin: 100, admin: 1000, sr-admin: -1}
+        day: {jr-admin: 500, admin: 5000, sr-admin: -1}
+      remove:
+        min: sr-mod
+        cap: {sr-mod: 10, admin: 100, sr-admin: -1}
+        day: {sr-mod: 50, admin: 500, sr-admin: -1}
+      reset: {min: sr-mod}
+      edit: {min: sr-mod}
+      resetall: {min: co-founder}
+    items:
+      list: {min: jr-mod}
+      get: {min: sr-admin}
+      cheque: {min: sr-admin}
+    build:
+      use:
+        min: sr-admin
+        depts: [builder]
+    shops:
+      use:
+        min: admin
+        depts: [builder]
+    system:
+      see: {min: jr-mod}
+      limits: {min: admin}
+      reload:
+        min: founder
+        depts: [developer]
+      debug:
+        min: founder
+        depts: [developer, texturemaker]
+      tutorial:
+        min: founder
+        depts: [developer, texturemaker]

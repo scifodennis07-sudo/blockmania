@@ -91,6 +91,13 @@ public final class BlockMania extends JavaPlugin {
             BlockManiaCommand handler = new BlockManiaCommand(this);
             command.setExecutor(handler);
             command.setTabCompleter(handler);
+            AdminCommand adminHandler = new AdminCommand(this, handler);
+            handler.setAdmin(adminHandler);
+            PluginCommand adminCommand = getCommand("adminmania");
+            if (adminCommand != null) {
+                adminCommand.setExecutor(adminHandler);
+                adminCommand.setTabCompleter(adminHandler);
+            }
         }
         getServer().getPluginManager().registerEvents(new LauncherListener(this), this);
         getServer().getPluginManager().registerEvents(new CustomBlockListener(this), this);

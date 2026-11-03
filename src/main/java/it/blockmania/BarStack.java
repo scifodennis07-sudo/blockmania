@@ -43,6 +43,20 @@ public final class BarStack {
     }
 
     private final Map<UUID, State> states = new HashMap<>();
+    private final java.util.Set<UUID> hidden = new java.util.HashSet<>();
+
+    /** Nasconde (o rimostra) tutte le barre a un giocatore, ad esempio durante il tutorial. */
+    public void hideAll(Player player, boolean hide) {
+        if (hide) {
+            hidden.add(player.getUniqueId());
+        } else {
+            hidden.remove(player.getUniqueId());
+        }
+        State st = states.get(player.getUniqueId());
+        if (st != null) {
+            layout(player, st);
+        }
+    }
     private long counter = 0;
 
     private State state(Player player) {
@@ -140,6 +154,9 @@ public final class BarStack {
             }
         }
 
+        if (hidden.contains(player.getUniqueId())) {
+            desired.clear();
+        }
         int first = 0;
         while (first < st.shown.size() && first < desired.size() && st.shown.get(first) == desired.get(first)) {
             first++;

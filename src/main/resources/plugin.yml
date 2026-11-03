@@ -1,5 +1,5 @@
 name: BlockMania
-version: '1.36.0'
+version: '1.38.0'
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom
@@ -11,6 +11,10 @@ commands:
   tutorial:
     description: Denny e Andrew (NPC animati)
     usage: /<command> [skip]
+  adminmania:
+    description: Comandi dello staff di BlockMania
+    usage: /<command> help
+    aliases: [am]
   mines:
     description: Apre la GUI delle miniere
     usage: /<command>
@@ -46,3 +50,42 @@ permissions:
   blockmania.use:
     description: Permette di usare gli oggetti
     default: true
+  blockmania.role.jr-helper:
+    description: Ruolo staff jr-helper
+    default: false
+  blockmania.role.helper:
+    description: Ruolo staff helper
+    default: false
+  blockmania.role.jr-mod:
+    description: Ruolo staff jr-mod
+    default: false
+  blockmania.role.mod:
+    description: Ruolo staff mod
+    default: false
+  blockmania.role.sr-mod:
+    description: Ruolo staff sr-mod
+    default: false
+  blockmania.role.jr-admin:
+    description: Ruolo staff jr-admin
+    default: false
+  blockmania.role.admin:
+    description: Ruolo staff admin
+    default: false
+  blockmania.role.sr-admin:
+    description: Ruolo staff sr-admin
+    default: false
+  blockmania.role.co-founder:
+    description: Ruolo staff co-founder
+    default: false
+  blockmania.role.founder:
+    description: Ruolo staff founder
+    default: false
+  blockmania.dept.builder:
+    description: Reparto builder
+    default: false
+  blockmania.dept.texturemaker:
+    description: Reparto texturemaker
+    default: false
+  blockmania.dept.developer:
+    description: Reparto developer
+    default: false
