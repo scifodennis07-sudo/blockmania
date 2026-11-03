@@ -79,7 +79,9 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         long lastNanos = System.nanoTime();
         double acc;
         int ticks;
-        int lastLevel = -1;
+        long blackEnd;
+        boolean endSent;
+        boolean fadeStarted;
         Component sub;
         BukkitTask task;
         boolean invulnerable;
@@ -360,7 +362,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
     }
 
     private boolean cinematic() {
-        return plugin.getConfig().getBoolean("tutorial.cinematic", true);
+        return plugin.getConfig().getBoolean("tutorial.cinematic", false);
     }
 
     public void startScene(Player p) {
@@ -441,34 +443,38 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
 
     // ---- dissolvenza e bande da film (title) ----
 
-    private static final String FADE_FONT = "";
+    private static final Duration LONG = Duration.ofMinutes(10);
 
-    private void showFx(Player p, int level, boolean bars) {
+    private Component glyph(char c) {
+        return Component.text(String.valueOf(c), NamedTextColor.WHITE);
+    }
+
+    /** Dal trasparente al nero: lo fa il client con i tempi del title (una sola immagine). */
+    private void fadeToBlack(Player p, double seconds) {
+        p.showTitle(Title.title(Component.empty(), glyph('\uF810'),
+                Title.Times.times(Duration.ofMillis((long) (seconds * 1000)), LONG, Duration.ZERO)));
+    }
+
+    /** Dal nero al trasparente, sempre con i tempi del title. */
+    private void fadeFromBlack(Player p, double seconds) {
+        p.showTitle(Title.title(Component.empty(), glyph('\uF810'),
+                Title.Times.times(Duration.ZERO, Duration.ofMillis(100), Duration.ofMillis((long) (seconds * 1000)))));
+    }
+
+    /** Schermo nero: compaiono le bande fisse e il nero (nell'actionbar) si toglie da solo in 1 secondo. */
+    private void showBarsAndClear(Session s) {
+        Player p = s.player;
         int style = plugin.getConfig().getInt("tutorial.bars", 2);
-        Component top = bars && style >= 1 && style <= 5
-                ? Component.text(String.valueOf((char) (0xF800 + style)), NamedTextColor.WHITE) : Component.empty();
-        Component bottom = level > 0
-                ? Component.text(String.valueOf((char) (0xF810 + Math.min(8, level) - 1)), NamedTextColor.WHITE) : Component.empty();
-        if (top == Component.empty() && bottom == Component.empty()) {
-            p.clearTitle();
-            return;
-        }
-        p.showTitle(Title.title(top, bottom, Title.Times.times(Duration.ZERO, Duration.ofSeconds(4), Duration.ZERO)));
+        Component bars = style >= 1 && style <= 5 ? glyph((char) (0xF800 + style)) : Component.empty();
+        p.showTitle(Title.title(bars, Component.empty(), Title.Times.times(Duration.ZERO, LONG, Duration.ZERO)));
+        // l'actionbar dura 3 secondi: 2 pieno e l'ultimo si dissolve da solo
+        p.sendActionBar(glyph('\uF811'));
+        s.blackEnd = System.nanoTime() + 3_000_000_000L;
     }
 
     /** Alla fine: dal nero torna a vedersi il posto dove il giocatore era. */
     private void fadeBackIn(Player p) {
-        showFx(p, 8, false);
-        int[] k = {8};
-        Bukkit.getScheduler().runTaskTimer(plugin, task -> {
-            k[0]--;
-            if (!p.isOnline() || k[0] <= 0) {
-                p.clearTitle();
-                task.cancel();
-                return;
-            }
-            showFx(p, k[0], false);
-        }, 3L, 3L);
+        fadeFromBlack(p, plugin.getConfig().getDouble("tutorial.fade-out", 1.2));
     }
 
     private double[] angles(Location from, double tx, double ty, double tz) {
@@ -549,10 +555,14 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
             Player p = s.player;
             if (st.text().isEmpty()) {
                 s.sub = null;
-                p.sendActionBar(Component.empty());
+                if (s.blackEnd == 0) {
+                    p.sendActionBar(Component.empty());
+                }
             } else {
                 s.sub = plugin.withBackground(st.text());
-                p.sendActionBar(s.sub);
+                if (s.blackEnd == 0) {
+                    p.sendActionBar(s.sub);
+                }
             }
         }
         for (String act : st.actions()) {
@@ -613,38 +623,42 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         }
         long now = System.nanoTime();
         double fadeIn = plugin.getConfig().getDouble("tutorial.fade-in", 0.8);
-        double hold = plugin.getConfig().getDouble("tutorial.black-hold", 2.0);
-        double fadeOut = plugin.getConfig().getDouble("tutorial.fade-out", 1.6);
         double endFade = plugin.getConfig().getDouble("tutorial.end-fade", 1.2);
-        double alpha;
         if (s.stage == 0) {
-            alpha = Math.min(1.0, (now - s.createdNanos) / 1.0e9 / Math.max(0.05, fadeIn));
-            if (alpha >= 1.0) {
+            if (!s.fadeStarted) {
+                s.fadeStarted = true;
+                fadeToBlack(p, fadeIn);
+            }
+            if ((now - s.createdNanos) / 1.0e9 >= fadeIn + 0.05) {
                 beginRun(s);
+                showBarsAndClear(s);
             }
         } else if (s.stage == 1) {
             double t = (now - s.startNanos) / 1.0e9;
-            alpha = t < hold ? 1.0 : t < hold + fadeOut ? 1.0 - (t - hold) / fadeOut : 0.0;
+            if (s.blackEnd != 0 && now >= s.blackEnd) {
+                s.blackEnd = 0;
+                if (s.sub != null) {
+                    p.sendActionBar(s.sub);
+                }
+            }
+            if (t >= sceneLength - endFade && !s.endSent) {
+                s.endSent = true;
+                s.sub = null;
+                s.blackEnd = 0;
+                p.sendActionBar(Component.empty());
+                fadeToBlack(p, endFade);
+            }
             if (t >= sceneLength) {
                 s.stage = 2;
                 s.endNanos = now;
-            } else if (t >= sceneLength - endFade) {
-                alpha = Math.max(alpha, (t - (sceneLength - endFade)) / endFade);
+            } else {
+                runScene(s, t, now);
             }
-            runScene(s, t, now);
-        } else {
-            alpha = 1.0;
-            if ((now - s.endNanos) / 1.0e9 >= 0.3) {
-                endScene(s, true);
-                return;
-            }
+        } else if ((now - s.endNanos) / 1.0e9 >= 0.3) {
+            endScene(s, true);
+            return;
         }
-        int level = (int) Math.round(Math.max(0, Math.min(1, alpha)) * 8);
         s.ticks++;
-        if (level != s.lastLevel || s.ticks % 60 == 0) {
-            s.lastLevel = level;
-            showFx(p, level, true);
-        }
     }
 
     private void runScene(Session s, double t, long now) {
@@ -675,7 +689,7 @@ public final class Tutorial implements Listener, CommandExecutor, TabCompleter {
         } else {
             p.setRotation(yaw, pitch);
         }
-        if (s.sub != null && s.ticks % 30 == 0) {
+        if (s.sub != null && s.blackEnd == 0 && s.ticks % 30 == 0) {
             p.sendActionBar(s.sub);
         }
     }

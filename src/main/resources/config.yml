@@ -814,7 +814,7 @@ messages:
   rw-need-exp-action:
     type: error
     channel: chat
-    text: "scrivi cosa vuoi fare con l'exp: give (dai), take (togli), set (imposta), get (guarda) o reset (azzera)"
+    text: "scrivi cosa vuoi fare con l'exp: add (dai), remove (togli), set (imposta), see (guarda) o reset (azzera)"
   rw-need-amount:
     type: error
     channel: chat
@@ -826,7 +826,7 @@ messages:
   rw-need-lvl-action:
     type: error
     channel: chat
-    text: "scrivi cosa vuoi fare: add (aggiungi livelli), remove (togli), set (imposta), get (guarda) o reset (azzera)"
+    text: "scrivi cosa vuoi fare: add (aggiungi livelli), remove (togli), set (imposta), see (guarda) o reset (azzera)"
   rw-need-levels:
     type: error
     channel: chat
@@ -2546,12 +2546,11 @@ tutorial:
   sound: "tutorial1"        # l'audio nel resource pack
   volume: 1.0
   sway: 0.8                 # oscillazione leggera della testa (0 = niente)
-  cinematic: true           # camera da film: il giocatore guarda dalla camera (niente mirino, niente mano, niente barra oggetti). false = visuale normale
+  cinematic: false          # camera da film: il giocatore guarda dalla camera (niente mirino, niente mano, niente barra oggetti). false = visuale normale
   bars: 2                   # bande nere su e giu: 0 = niente, 1-5 = sempre piu' sottili (se non si vedono i sottotitoli o le bande mancano prova un altro numero)
   fade-in: 0.8              # secondi per diventare nero all'inizio
-  black-hold: 2.0           # secondi di nero dall'inizio dell'audio ('dove sei?') prima di rivedere la scena
-  fade-out: 1.6             # secondi per togliere il nero
-  end-fade: 1.2             # secondi per tornare nero alla fine
+  fade-out: 1.2             # secondi per tornare a vedere il posto a fine tutorial (all'inizio il nero dura 2 secondi e si toglie in 1)
+  end-fade: 1.2             # secondi per tornare nero alla fine (le bande spariscono)
 
 # ----------------------------------------------------------------------
 #  ADMINMANIA  (/adminmania, alias /am): tutti i comandi dello staff, divisi in gruppi

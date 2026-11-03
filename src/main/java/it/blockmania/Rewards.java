@@ -1217,6 +1217,21 @@ public final class Rewards implements Listener {
         saveClaims(target, type, bits);
     }
 
+    /** Azzera tutto: contatori, livelli ritirati, giornaliera, pass e miniere completate. */
+    public void resetAll(Player target) {
+        AmmoManager a = plugin.getAmmo();
+        for (String k : new String[] {"rw_broken", "rw_hits", "rw_bcin", "rw_bcout", "rw_coinin", "rw_spent", "rw_play",
+                "rw_exp", "rw_daydate", "rw_daymin", "rw_dayclaim", "rw_days"}) {
+            a.setCounter(target, k, 0);
+        }
+        for (int mine = 1; mine <= 100; mine++) {
+            a.setCounter(target, "mine_runs_" + mine, 0);
+        }
+        for (String t : TYPES) {
+            target.getPersistentDataContainer().remove(claimKey(t));
+        }
+    }
+
     /** /bm ricompense <exp|livello|tipi> ...  (args[0] = "ricompense"). */
     public void admin(CommandSender sender, String[] args) {
         if (!sender.hasPermission("blockmania.stats")) {
@@ -1354,11 +1369,11 @@ public final class Rewards implements Listener {
         if (args.length == 2) {
             out.addAll(List.of("exp", "livello", "tipi"));
         } else if (args.length == 3 && args[1].equalsIgnoreCase("exp")) {
-            out.addAll(List.of("give", "take", "set", "get", "reset"));
+            out.addAll(List.of("see", "add", "remove", "set", "reset"));
         } else if (args.length == 3 && (args[1].equalsIgnoreCase("livello") || args[1].equalsIgnoreCase("level"))) {
             out.addAll(adminTypes());
         } else if (args.length == 4 && (args[1].equalsIgnoreCase("livello") || args[1].equalsIgnoreCase("level"))) {
-            out.addAll(List.of("add", "remove", "set", "get", "reset"));
+            out.addAll(List.of("see", "add", "remove", "set", "reset"));
         }
         String last = args[args.length - 1].toLowerCase(Locale.ROOT);
         out.removeIf(s -> !s.startsWith(last));

@@ -790,6 +790,9 @@ public final class BlockManiaCommand implements TabExecutor {
         ammo.setCoinQuiet(target, 0);
         ammo.setMine(target, 0);
         plugin.getUpgrades().resetLevels(target);
+        if (plugin.getRewards() != null) {
+            plugin.getRewards().resetAll(target);
+        }
         plugin.sendCommand(sender, "reset-all", "%player%", target.getName());
         if (!target.equals(sender)) {
             plugin.send(target, "reset-all", "%player%", target.getName());

@@ -322,12 +322,16 @@ public final class BlockMania extends JavaPlugin {
             c.set("cheques.blockcoin.min", null);
             c.set("cheques.blockcoin.max", null);
         }
+        if (done < 15) {
+            // la camera da film (spettatore) fa lag: torna spenta di default
+            c.set("tutorial.cinematic", false);
+        }
         if (done >= 1) {
-            c.set("tuning-version", 14);
+            c.set("tuning-version", 15);
             saveConfig();
             return;
         }
-        c.set("tuning-version", 14);
+        c.set("tuning-version", 15);
         retune("shops.doubleball.price", 150, 60);
         retune("shops.ghostball.price", 2500, 250);
         retune("shops.explosionball.price", 40000, 800);
@@ -348,7 +352,7 @@ public final class BlockMania extends JavaPlugin {
         if ("&fminiera %number%".equals(c.getString("mines-gui.states.owned.name"))) {
             c.set("mines-gui.states", null);
         }
-        c.set("tuning-version", 13);
+        c.set("tuning-version", 15);
         saveConfig();
     }
 
