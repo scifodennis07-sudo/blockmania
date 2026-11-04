@@ -1137,9 +1137,6 @@ public final class Tickets implements Listener {
             int side = (m.kind.equals("sys") || m.kind.equals("note")) ? 2
                     : (m.author != null && m.author.equals(viewer)) ? 1 : 0;
             List<String> parts = wrap(clean(m.text), MAX_TEXT);
-            if (!lines.isEmpty()) {
-                lines.add(new Line(-1, 0, 1, "", 3, null));
-            }
             for (int k = 0; k < parts.size(); k++) {
                 lines.add(new Line(i, k, parts.size(), parts.get(k), side, m));
             }
@@ -1151,6 +1148,38 @@ public final class Tickets implements Listener {
         return (char) (0xE100 + scheme * 64 + variant * 16 + piece);
     }
 
+    private static final int MSG_GAP = 3;
+
+    /** Primo rigo visibile quando l'ultimo e' end-1: si riempie dal basso, 12px a riga e 3px tra un messaggio e l'altro. */
+    private static int firstVisible(List<Line> lines, int end) {
+        int h = 0;
+        int i = end - 1;
+        while (i >= 0) {
+            int need = ROW_H + (i < end - 1 && lines.get(i).msg() != lines.get(i + 1).msg() ? MSG_GAP : 0);
+            if (h + need > ROWS * ROW_H) {
+                break;
+            }
+            h += need;
+            i--;
+        }
+        return i + 1;
+    }
+
+    /** Quanti righi stanno nella chat partendo dal primo messaggio (serve per sapere fin dove si puo salire). */
+    private static int fitFromTop(List<Line> lines) {
+        int h = 0;
+        int n = 0;
+        for (int i = 0; i < lines.size(); i++) {
+            int need = ROW_H + (i > 0 && lines.get(i).msg() != lines.get(i - 1).msg() ? MSG_GAP : 0);
+            if (h + need > ROWS * ROW_H) {
+                break;
+            }
+            h += need;
+            n++;
+        }
+        return n;
+    }
+
     private Component chatTitle(Ticket t, Player viewer, boolean staffView, int scroll) {
         String image = staffView ? IMG_CHAT : plugin.getConfig().getString("tickets.image-player", IMG_CHAT);
         GuiTitle g = newTitle(image);
@@ -1160,14 +1189,25 @@ public final class Tickets implements Listener {
         int ci = 3 + catIndex(t.category);
         g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
         g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
-        tinyText(g, t.code, 95, true, '', '');
+        tinyText(g, t.code, 94, true, '', '');
 
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
+        // faccia 2D del player nel primo slot della barra
+        drawFace(g, faceOf(t.owner), 15, 33, 2);
+
         int total = lines.size();
         int end = total - scroll;
-        int start = Math.max(0, end - ROWS);
+        int start = firstVisible(lines, end);
         int count = end - start;
-        int firstRow = ROWS - count;
+        int[] ys = new int[count];
+        int cy = ROW_Y0 + ROWS * ROW_H;
+        for (int k = count - 1; k >= 0; k--) {
+            if (k < count - 1 && lines.get(start + k).msg() != lines.get(start + k + 1).msg()) {
+                cy -= MSG_GAP;
+            }
+            cy -= ROW_H;
+            ys[k] = cy;
+        }
         Map<Integer, Integer> maxW = new HashMap<>();
         for (Line l : lines) {
             maxW.merge(l.msg(), textWidth(l.text()), Math::max);
@@ -1177,13 +1217,12 @@ public final class Tickets implements Listener {
             if (ln.side() == 3) {
                 continue;
             }
-            int row = firstRow + k;
-            int yb = ROW_Y0 + ROW_H * row;
+            int yb = ys[k];
             int variant = ln.n() == 1 ? 0 : ln.idx() == 0 ? 1 : ln.idx() == ln.n() - 1 ? 3 : 2;
             int tw = Math.max(8, maxW.getOrDefault(ln.msg(), 8));
             int own = textWidth(ln.text());
             int bw = tw + 6;
-            int xb = ln.side() == 1 ? VX1 - bw - 1 : ln.side() == 2 ? (VX0 + VX1) / 2 - bw / 2 : VX0 + 12;
+            int xb = ln.side() == 1 ? VX1 - bw - 1 : ln.side() == 2 ? (VX0 + VX1) / 2 - bw / 2 : VX0 + 11;
             StringBuilder sb = new StringBuilder();
             sb.append(bubbleChar(ln.side(), variant, 0)).append('');
             int remaining = tw;
@@ -1198,7 +1237,7 @@ public final class Tickets implements Listener {
             g.atComponent(xb + IMG, glyph(sb.toString(), tk(yb), 0xFFFFFF), bw);
             g.atComponent(xb + 3 + IMG, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
             if (ln.side() == 0 && ln.idx() == 0) {
-                drawFace(g, faceOf(ln.m().author), VX0 + 2, yb + 2, 1);
+                drawFace(g, faceOf(ln.m().author), VX0 + 1, yb + 2, 1);
             }
         }
         return g.build();
@@ -1214,7 +1253,7 @@ public final class Tickets implements Listener {
         boolean staffView = staffSide(p, t);
         UUID id = p.getUniqueId();
         List<Line> lines = layout(t, id, staffView);
-        int maxScroll = Math.max(0, lines.size() - ROWS);
+        int maxScroll = Math.max(0, lines.size() - fitFromTop(lines));
         scroll = Math.max(0, Math.min(scroll, maxScroll));
         t.read.put(id, t.msgs.size());
 
@@ -1226,21 +1265,15 @@ public final class Tickets implements Listener {
 
         hideInventory(p);
         put(h, 8, pane("&cindietro", List.of()), "back");
-        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
-        SkullMeta hm = (SkullMeta) head.getItemMeta();
-        hm.setOwningPlayer(Bukkit.getOfflinePlayer(t.owner));
-        hm.displayName(plugin.text("&f" + t.ownerName));
-        hm.lore(loreComponents(List.of("&7giocatore del ticket", " ", "&eclicca per aprire il profilo")));
-        head.setItemMeta(hm);
-        put(h, 0, head, "profile");
+        put(h, 0, pane("&f" + t.ownerName, List.of("&eclicca per aprire il profilo")), "profile");
         for (int s : SLOTS_UP) {
             put(h, s, pane("&7sali", List.of("&7messaggi piu vecchi")), "scroll:1");
         }
         for (int s : SLOTS_DOWN) {
             put(h, s, pane("&7scendi", List.of("&7messaggi piu recenti")), "scroll:-1");
         }
-        List<String> wl = t.open ? List.of("&eclick sinistro: &fscrivi un messaggio", "&eclick destro: &flink del ticket")
-                : List.of("&7Questo ticket e chiuso.", " ", "&eclick destro: &flink del ticket");
+        List<String> wl = List.of("&eclick sinistro:", t.open ? "&fscrivi un messaggio" : "&cticket chiuso",
+                "&eclick destro:", "&flink del ticket");
         for (int s : SLOTS_WRITE) {
             put(h, s, pane(t.open ? "&fscrivi messaggio" : "&7ticket chiuso", wl), "write");
         }
