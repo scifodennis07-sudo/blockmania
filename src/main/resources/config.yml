@@ -2633,3 +2633,20 @@ adminmania:
       tutorial:
         min: founder
         depts: [developer, texturemaker]
+
+# ----------------------------------------------------------------------
+#  TICKET  (/ticket per i player, /adminmania ticket per lo staff)
+#  Se una voce manca qui, il plugin usa il valore di default scritto nel codice.
+#  Nei testi dei messaggi standard: {player} = nome del player, {ore} = ore prima della chiusura automatica.
+# ----------------------------------------------------------------------
+tickets:
+  max-staff-open: 9            # ticket aperti insieme per ogni staffer
+  auto-close-hours: 6          # ore senza risposta dopo il messaggio di chiusura
+  image-player: ""             # immagine (carattere del pack) della chat vista dal player; vuoto = senza texture
+  canned:
+    risolto: "Ciao {player}, il tuo problema dovrebbe essere risolto. Fammi sapere se va tutto bene!"
+    accettata: "Ciao {player}, abbiamo preso in carico la tua segnalazione. La stiamo verificando, grazie per averci avvisato!"
+    chiusura: "Ciao {player}, se non hai altro da aggiungere chiuderemo il ticket tra {ore} ore. Se ti serve ancora aiuto scrivici qui."
+    non_valida: "Ciao {player}, dopo un controllo la tua segnalazione non risulta valida. Se pensi sia un errore scrivici qui."
+    prove: "Ciao {player}, per verificare ci servono delle prove (screenshot o video). Caricale su https://imgur.com/upload e mandaci il link qui."
+    attendi: "Ciao {player}, ci stiamo lavorando. Ti chiediamo ancora un po' di pazienza, ti aggiorniamo appena possibile."

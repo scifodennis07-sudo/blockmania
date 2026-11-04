@@ -379,6 +379,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length >= 1 && args[0].equalsIgnoreCase("ticket")) {
+            return plugin.getTickets().staffCommand(sender, args);
+        }
         if (level(sender) <= 0 && !hasDept(sender, List.of("builder", "texturemaker", "developer"))) {
             deny(sender, "questo comando è solo per lo staff");
             return true;
@@ -654,8 +657,12 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         if (level(sender) <= 0 && !hasDept(sender, List.of("builder", "texturemaker", "developer"))) {
             return out;
         }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("ticket")) {
+            return plugin.getTickets().staffComplete(args);
+        }
         if (args.length == 1) {
             out.add("help");
+            out.add("ticket");
             for (String g : GROUPS) {
                 if (anyAllowed(sender, g)) {
                     out.add(g);

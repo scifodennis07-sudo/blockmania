@@ -88,6 +88,17 @@ public final class GuiTitle {
         return this;
     }
 
+    /** Come at(), ma scrive un pezzo di testo gia' pronto (con il suo font e colore) e dice tu di quanti pixel avanza. */
+    public GuiTitle atComponent(int x, Component component, int advance) {
+        int move = x - cursor;
+        if (move != 0) {
+            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
+        }
+        result = result.append(component);
+        cursor = x + advance;
+        return this;
+    }
+
     public Component build() {
         return result;
     }
