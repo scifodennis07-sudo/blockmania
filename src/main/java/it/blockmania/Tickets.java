@@ -134,6 +134,7 @@ public final class Tickets implements Listener {
         private int page;
         private int filter;
         private int scroll;
+        private Player viewer;
         private String mode = "open";
         private final Map<Integer, String> actions = new HashMap<>();
 
@@ -678,6 +679,54 @@ public final class Tickets implements Listener {
     //  Oggetti delle gui
     // ------------------------------------------------------------------
 
+    private static final java.util.regex.Pattern CODE = java.util.regex.Pattern.compile("&(#[0-9a-fA-F]{6}|[0-9a-fk-orA-FK-OR])");
+
+    private static int visibleLen(String w) {
+        return CODE.matcher(w).replaceAll("").length();
+    }
+
+    /** Spezza una riga di lore a capo (circa max lettere) tenendo il colore anche nelle righe dopo. */
+    private static List<String> wrapColored(String raw, int max) {
+        List<String> out = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        int len = 0;
+        String active = "";
+        for (String w : raw.split(" ", -1)) {
+            int wl = visibleLen(w);
+            if (len > 0 && len + 1 + wl > max) {
+                out.add(line.toString());
+                line = new StringBuilder(active);
+                len = 0;
+            }
+            if (len > 0) {
+                line.append(' ');
+                len++;
+            }
+            line.append(w);
+            len += wl;
+            java.util.regex.Matcher m = CODE.matcher(w);
+            while (m.find()) {
+                active = m.group().equalsIgnoreCase("&r") ? "" : m.group();
+            }
+        }
+        out.add(line.toString());
+        return out;
+    }
+
+    private List<Component> loreComponents(List<String> lines) {
+        List<Component> out = new ArrayList<>();
+        for (String raw : lines) {
+            if (raw == null || raw.isBlank()) {
+                out.add(plugin.color(" "));
+                continue;
+            }
+            for (String part : wrapColored(raw, 30)) {
+                out.add(plugin.text(part));
+            }
+        }
+        return out;
+    }
+
     private ItemStack pane(String name, List<String> lore) {
         ItemStack stack = new ItemStack(Material.GLASS_PANE);
         ItemMeta meta = stack.getItemMeta();
@@ -685,13 +734,9 @@ public final class Tickets implements Listener {
         if (name == null) {
             meta.setHideTooltip(true);
         } else {
-            meta.displayName(plugin.color(name));
+            meta.displayName(plugin.text(name));
             if (lore != null && !lore.isEmpty()) {
-                List<Component> lines = new ArrayList<>();
-                for (String l : lore) {
-                    lines.add(plugin.color(l));
-                }
-                meta.lore(lines);
+                meta.lore(loreComponents(lore));
             }
         }
         stack.setItemMeta(meta);
@@ -701,13 +746,9 @@ public final class Tickets implements Listener {
     private ItemStack item(Material m, String name, List<String> lore) {
         ItemStack stack = new ItemStack(m);
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(plugin.color(name));
+        meta.displayName(plugin.text(name));
         if (lore != null && !lore.isEmpty()) {
-            List<Component> lines = new ArrayList<>();
-            for (String l : lore) {
-                lines.add(plugin.color(l));
-            }
-            meta.lore(lines);
+            meta.lore(loreComponents(lore));
         }
         stack.setItemMeta(meta);
         return stack;
@@ -716,6 +757,8 @@ public final class Tickets implements Listener {
     private void put(Holder h, int raw, ItemStack stack, String action) {
         if (raw < SIZE) {
             h.inventory.setItem(raw, stack);
+        } else if (h.viewer != null) {
+            putBottom(h.viewer, raw, stack);
         }
         if (action != null) {
             h.actions.put(raw, action);
@@ -859,6 +902,25 @@ public final class Tickets implements Listener {
         g.at(start + IMG, "&f" + tinyLetters(text, base), "", adv);
     }
 
+    private static final char NAV = '\uE4A0';
+    private static final char NAV_SH = '\uE4B0';
+
+    /** Numero pagina (1/3) con i numeri disegnati del pack, alla quota della barra dei ticket. */
+    private void navText(GuiTitle g, int page, int pages, int centerImg) {
+        String plain = page + "/" + pages;
+        StringBuilder n = new StringBuilder();
+        StringBuilder sh = new StringBuilder();
+        for (char ch : plain.toCharArray()) {
+            int o = ch == '/' ? 10 : ch - '0';
+            n.append((char) (NAV + o));
+            sh.append((char) (NAV_SH + o));
+        }
+        int adv = plain.length() * 6;
+        int start = centerImg - (adv - 1) / 2;
+        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, "", adv);
+        g.at(start + IMG, "&f" + n, "", adv);
+    }
+
     // ------------------------------------------------------------------
     //  Pagina principale (ticket-1)
     // ------------------------------------------------------------------
@@ -981,7 +1043,7 @@ public final class Tickets implements Listener {
 
         GuiTitle g = newTitle(IMG_LIST);
         tinyText(g, FILTERS[filter], 95, true, '', '');
-        tinyText(g, "pagina " + (page + 1) + " di " + pages, 96, true, '', '');
+        navText(g, page + 1, pages, 96);
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
             if (idx >= list.size()) {
@@ -994,7 +1056,15 @@ public final class Tickets implements Listener {
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         put(h, 1, pane("&cindietro", List.of()), "back");
-        put(h, 7, pane("&bfiltra per", List.of("&7filtro attuale: &f" + FILTERS[filter], "", "&eclicca per cambiare")), "filter");
+        List<String> fl = new ArrayList<>();
+        fl.add("&7scegli cosa vedere:");
+        fl.add(" ");
+        for (int i = 0; i < FILTERS.length; i++) {
+            fl.add(i == filter ? "&a» " + FILTERS[i] : "&8" + FILTERS[i]);
+        }
+        fl.add(" ");
+        fl.add("&eclicca per cambiare");
+        put(h, 7, pane("&bfiltra per", fl), "filter");
         put(h, 38, pane("&7pagina precedente", List.of()), "page:-1");
         put(h, 42, pane("&7pagina successiva", List.of()), "page:1");
         for (int i = 0; i < 21; i++) {
@@ -1065,12 +1135,17 @@ public final class Tickets implements Listener {
         int start = Math.max(0, end - ROWS);
         int count = end - start;
         int firstRow = ROWS - count;
+        Map<Integer, Integer> maxW = new HashMap<>();
+        for (Line l : lines) {
+            maxW.merge(l.msg(), textWidth(l.text()), Math::max);
+        }
         for (int k = 0; k < count; k++) {
             Line ln = lines.get(start + k);
             int row = firstRow + k;
             int yb = ROW_Y0 + ROW_H * row;
             int variant = ln.n() == 1 ? 0 : ln.idx() == 0 ? 1 : ln.idx() == ln.n() - 1 ? 3 : 2;
-            int tw = Math.max(8, textWidth(ln.text()));
+            int tw = Math.max(8, maxW.getOrDefault(ln.msg(), 8));
+            int own = textWidth(ln.text());
             int bw = tw + 6;
             int xb = ln.side() == 1 ? VX1 - bw + 1 : ln.side() == 2 ? (VX0 + VX1) / 2 - bw / 2 : VX0 + 10;
             StringBuilder sb = new StringBuilder();
@@ -1085,7 +1160,7 @@ public final class Tickets implements Listener {
             }
             sb.append(bubbleChar(ln.side(), variant, 1)).append('');
             g.atComponent(xb + IMG, glyph(sb.toString(), tk(yb), 0xFFFFFF), bw);
-            g.atComponent(xb + 3 + IMG, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), tw);
+            g.atComponent(xb + 3 + IMG, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
             if (ln.side() == 0 && ln.idx() == 0) {
                 drawFace(g, faceOf(ln.m().author), VX0, yb + 2, 1);
             }
@@ -1110,6 +1185,7 @@ public final class Tickets implements Listener {
         Holder h = new Holder("chat");
         h.ticketId = ticketId;
         h.scroll = scroll;
+        h.viewer = p;
         h.inventory = Bukkit.createInventory(h, SIZE, chatTitle(t, p, staffView, scroll));
 
         hideInventory(p);
@@ -1135,7 +1211,8 @@ public final class Tickets implements Listener {
                 String key = CANNED[i];
                 List<String> lore = new ArrayList<>();
                 lore.add("&7messaggio che viene inviato:");
-                lore.addAll(wrapLore(fillCanned(key, t), 38, "&f"));
+                lore.add(" ");
+                lore.add("&f" + fillCanned(key, t));
                 if (key.equals("chiusura")) {
                     lore.add("");
                     lore.add("&7Se il player non risponde entro &f" + autoCloseHours() + "h&7 il ticket si chiude da solo.");
@@ -1333,7 +1410,7 @@ public final class Tickets implements Listener {
         restoreInventory(p);
         Holder h = new Holder("cat");
         h.ticketId = t.id;
-        h.inventory = Bukkit.createInventory(h, 27, plugin.color("&8sposta il ticket #" + t.id));
+        h.inventory = Bukkit.createInventory(h, 27, plugin.text("&8sposta il ticket #" + t.id));
         Material[] real = {Material.WRITABLE_BOOK, Material.REDSTONE_TORCH, Material.SPYGLASS};
         for (int i = 0; i < 3; i++) {
             boolean cur = CATS[i].equals(t.category);
@@ -1358,7 +1435,7 @@ public final class Tickets implements Listener {
         restoreInventory(p);
         Holder h = new Holder("tag");
         h.ticketId = t.id;
-        h.inventory = Bukkit.createInventory(h, 54, plugin.color("&8tagga uno staffer - ticket #" + t.id));
+        h.inventory = Bukkit.createInventory(h, 54, plugin.text("&8tagga uno staffer - ticket #" + t.id));
         int slot = 0;
         for (Map.Entry<UUID, String> e : staffSeen.entrySet()) {
             if (slot >= 45) {
@@ -1374,13 +1451,10 @@ public final class Tickets implements Listener {
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             OfflinePlayer off = Bukkit.getOfflinePlayer(u);
             meta.setOwningPlayer(off);
-            meta.displayName(plugin.color((full ? "&c" : "&f") + e.getValue()));
-            List<Component> lore = new ArrayList<>();
-            lore.add(plugin.color("&7ticket aperti: &f" + cnt + "/" + maxStaffOpen()));
-            lore.add(plugin.color(Bukkit.getPlayer(u) != null ? "&aonline" : "&7offline"));
-            lore.add(Component.empty());
-            lore.add(plugin.color(full ? "&cha gia troppi ticket aperti" : "&eclicca per taggarlo"));
-            meta.lore(lore);
+            meta.displayName(plugin.text((full ? "&c" : "&f") + e.getValue()));
+            meta.lore(loreComponents(List.of("&7ticket aperti: &f" + cnt + "/" + maxStaffOpen(),
+                    Bukkit.getPlayer(u) != null ? "&aonline" : "&7offline", " ",
+                    full ? "&cha gia troppi ticket aperti" : "&eclicca per taggarlo")));
             head.setItemMeta(meta);
             put(h, slot, head, full ? "deny" : "tagpick:" + u);
             slot++;
@@ -1445,7 +1519,7 @@ public final class Tickets implements Listener {
             case "closed" -> "ticket chiusi da te";
             default -> "tutti i ticket aperti";
         };
-        h.inventory = Bukkit.createInventory(h, SIZE, plugin.color("&8" + title + " (" + list.size() + ")"));
+        h.inventory = Bukkit.createInventory(h, SIZE, plugin.text("&8" + title + " (" + list.size() + ")"));
         for (int i = 0; i < 45; i++) {
             int idx = page * 45 + i;
             if (idx >= list.size()) {
@@ -1498,9 +1572,10 @@ public final class Tickets implements Listener {
         s.onCancel = onCancel;
         AnvilView view = MenuType.ANVIL.builder().title(Component.text(title)).build(p);
         s.view = view;
-        ItemStack left = item(Material.PAPER, " ", List.of());
+        ItemStack left = new ItemStack(Material.ARROW);
         ItemMeta lm = left.getItemMeta();
         lm.displayName(Component.text(" "));
+        lm.lore(List.of(plugin.text("&ctorna indietro")));
         left.setItemMeta(lm);
         view.setItem(0, left);
         view.setItem(1, item(Material.WRITABLE_BOOK, "&espostati a scrivere in chat",
@@ -1591,6 +1666,11 @@ public final class Tickets implements Listener {
             } else if (event.getRawSlot() == 1) {
                 plugin.guiClick(p);
                 anvilToChat(p, s);
+            } else if (event.getRawSlot() == 0) {
+                plugin.guiClick(p);
+                s.done = true;
+                p.closeInventory();
+                Bukkit.getScheduler().runTask(plugin, s.onCancel);
             }
             return;
         }
