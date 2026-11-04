@@ -107,6 +107,7 @@ public final class Tickets implements Listener {
 
     private static final class Ticket {
         int id;
+        String code = "";
         UUID owner;
         String ownerName = "";
         String category = "assistenza";
@@ -135,6 +136,7 @@ public final class Tickets implements Listener {
         private int filter;
         private int scroll;
         private Player viewer;
+        private List<String> links = new ArrayList<>();
         private String mode = "open";
         private final Map<Integer, String> actions = new HashMap<>();
 
@@ -256,6 +258,10 @@ public final class Tickets implements Listener {
                 t.id = Integer.parseInt(key);
                 t.owner = UUID.fromString(s.getString("owner", ""));
                 t.ownerName = s.getString("owner-name", "?");
+                t.code = s.getString("code", "");
+                if (t.code.isEmpty()) {
+                    t.code = newCode();
+                }
                 t.category = s.getString("category", "assistenza");
                 t.open = s.getBoolean("open", true);
                 t.created = s.getLong("created");
@@ -313,6 +319,7 @@ public final class Tickets implements Listener {
             String p = "tickets." + t.id + ".";
             y.set(p + "owner", t.owner.toString());
             y.set(p + "owner-name", t.ownerName);
+            y.set(p + "code", t.code);
             y.set(p + "category", t.category);
             y.set(p + "open", t.open);
             y.set(p + "created", t.created);
@@ -1097,6 +1104,29 @@ public final class Tickets implements Listener {
         return isStaff(p) && !t.owner.equals(p.getUniqueId());
     }
 
+    /** Codice univoco del ticket (6 caratteri, senza lettere che si confondono). */
+    private String newCode() {
+        String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
+        while (true) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 6; i++) {
+                sb.append(alphabet.charAt(r.nextInt(alphabet.length())));
+            }
+            String c = sb.toString();
+            boolean used = false;
+            for (Ticket o : tickets.values()) {
+                if (c.equals(o.code)) {
+                    used = true;
+                    break;
+                }
+            }
+            if (!used) {
+                return c;
+            }
+        }
+    }
+
     private List<Line> layout(Ticket t, UUID viewer, boolean staffView) {
         List<Line> lines = new ArrayList<>();
         for (int i = 0; i < t.msgs.size(); i++) {
@@ -1107,6 +1137,9 @@ public final class Tickets implements Listener {
             int side = (m.kind.equals("sys") || m.kind.equals("note")) ? 2
                     : (m.author != null && m.author.equals(viewer)) ? 1 : 0;
             List<String> parts = wrap(clean(m.text), MAX_TEXT);
+            if (!lines.isEmpty()) {
+                lines.add(new Line(-1, 0, 1, "", 3, null));
+            }
             for (int k = 0; k < parts.size(); k++) {
                 lines.add(new Line(i, k, parts.size(), parts.get(k), side, m));
             }
@@ -1125,9 +1158,9 @@ public final class Tickets implements Listener {
         // barra in alto: stato e sezione
         int si = statusOf(t);
         int ci = 3 + catIndex(t.category);
-        g.at(19 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
-        g.at(19 + CHIP_W[si] + 3 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
-        tinyText(g, "ticket " + t.id + " " + t.ownerName, 95, true, '', '');
+        g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
+        g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
+        tinyText(g, t.code, 95, true, '', '');
 
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
         int total = lines.size();
@@ -1141,13 +1174,16 @@ public final class Tickets implements Listener {
         }
         for (int k = 0; k < count; k++) {
             Line ln = lines.get(start + k);
+            if (ln.side() == 3) {
+                continue;
+            }
             int row = firstRow + k;
             int yb = ROW_Y0 + ROW_H * row;
             int variant = ln.n() == 1 ? 0 : ln.idx() == 0 ? 1 : ln.idx() == ln.n() - 1 ? 3 : 2;
             int tw = Math.max(8, maxW.getOrDefault(ln.msg(), 8));
             int own = textWidth(ln.text());
             int bw = tw + 6;
-            int xb = ln.side() == 1 ? VX1 - bw + 1 : ln.side() == 2 ? (VX0 + VX1) / 2 - bw / 2 : VX0 + 10;
+            int xb = ln.side() == 1 ? VX1 - bw - 1 : ln.side() == 2 ? (VX0 + VX1) / 2 - bw / 2 : VX0 + 12;
             StringBuilder sb = new StringBuilder();
             sb.append(bubbleChar(ln.side(), variant, 0)).append('');
             int remaining = tw;
@@ -1162,7 +1198,7 @@ public final class Tickets implements Listener {
             g.atComponent(xb + IMG, glyph(sb.toString(), tk(yb), 0xFFFFFF), bw);
             g.atComponent(xb + 3 + IMG, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
             if (ln.side() == 0 && ln.idx() == 0) {
-                drawFace(g, faceOf(ln.m().author), VX0, yb + 2, 1);
+                drawFace(g, faceOf(ln.m().author), VX0 + 2, yb + 2, 1);
             }
         }
         return g.build();
@@ -1190,16 +1226,23 @@ public final class Tickets implements Listener {
 
         hideInventory(p);
         put(h, 8, pane("&cindietro", List.of()), "back");
+        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+        SkullMeta hm = (SkullMeta) head.getItemMeta();
+        hm.setOwningPlayer(Bukkit.getOfflinePlayer(t.owner));
+        hm.displayName(plugin.text("&f" + t.ownerName));
+        hm.lore(loreComponents(List.of("&7giocatore del ticket", " ", "&eclicca per aprire il profilo")));
+        head.setItemMeta(hm);
+        put(h, 0, head, "profile");
         for (int s : SLOTS_UP) {
             put(h, s, pane("&7sali", List.of("&7messaggi piu vecchi")), "scroll:1");
         }
         for (int s : SLOTS_DOWN) {
             put(h, s, pane("&7scendi", List.of("&7messaggi piu recenti")), "scroll:-1");
         }
-        List<String> wl = t.open ? List.of("&7Scrivi un messaggio in questo ticket.", "", "&eclicca per scrivere")
-                : List.of("&7Questo ticket e chiuso.");
+        List<String> wl = t.open ? List.of("&eclick sinistro: &fscrivi un messaggio", "&eclick destro: &flink del ticket")
+                : List.of("&7Questo ticket e chiuso.", " ", "&eclick destro: &flink del ticket");
         for (int s : SLOTS_WRITE) {
-            put(h, s, pane(t.open ? "&fscrivi messaggio" : "&7ticket chiuso", wl), t.open ? "write" : null);
+            put(h, s, pane(t.open ? "&fscrivi messaggio" : "&7ticket chiuso", wl), "write");
         }
         // funzioni: ogni icona occupa 2 slot (uno sopra e uno sotto)
         List<String> closeLore = List.of("&7Chiude il ticket.", staffView ? "&7Il player viene avvisato." : "&7Potrai aprirne un altro.", "", "&eclicca per chiudere");
@@ -1256,6 +1299,7 @@ public final class Tickets implements Listener {
         }
         Ticket t = new Ticket();
         t.id = nextId++;
+        t.code = newCode();
         t.owner = p.getUniqueId();
         t.ownerName = p.getName();
         t.category = cat;
@@ -1429,6 +1473,50 @@ public final class Tickets implements Listener {
         t.category = cat;
         addMsg(t, p, false, "sys", "Sezione cambiata in: " + CAT_LABEL[catIndex(cat)] + " (da " + p.getName() + ")", true);
         openChat(p, t.id, 0);
+    }
+
+    private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("https?://[^\\s]+");
+
+    private void openLinks(Player p, Ticket t) {
+        restoreInventory(p);
+        boolean staffView = staffSide(p, t);
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
+        for (Msg m : t.msgs) {
+            if (!visible(m, staffView)) {
+                continue;
+            }
+            java.util.regex.Matcher mt = URL.matcher(m.text);
+            while (mt.find()) {
+                found.add(mt.group());
+            }
+        }
+        List<String> all = new ArrayList<>(found);
+        if (all.size() > 45) {
+            all = new ArrayList<>(all.subList(all.size() - 45, all.size()));
+        }
+        Holder h = new Holder("links");
+        h.ticketId = t.id;
+        h.links = all;
+        h.inventory = Bukkit.createInventory(h, 54, plugin.text("&8link del ticket (" + all.size() + ")"));
+        for (int i = 0; i < all.size(); i++) {
+            String url = all.get(i);
+            ItemStack it = new ItemStack(Material.PAPER);
+            ItemMeta meta = it.getItemMeta();
+            meta.displayName(plugin.text("&blink"));
+            List<Component> lore = new ArrayList<>();
+            for (int k = 0; k < url.length(); k += 28) {
+                lore.add(Component.text(url.substring(k, Math.min(url.length(), k + 28)))
+                        .color(net.kyori.adventure.text.format.NamedTextColor.GRAY)
+                        .decoration(TextDecoration.ITALIC, false));
+            }
+            lore.add(plugin.color(" "));
+            lore.add(plugin.text("&eclicca per aprirlo"));
+            meta.lore(lore);
+            it.setItemMeta(meta);
+            put(h, i, it, "openlink:" + i);
+        }
+        put(h, 49, item(Material.ARROW, "&7indietro", List.of()), "chat");
+        open(p, h);
     }
 
     private void openTag(Player p, Ticket t) {
@@ -1687,6 +1775,9 @@ public final class Tickets implements Listener {
             return;
         }
         plugin.guiClick(p);
+        if (action.equals("write") && event.isRightClick()) {
+            action = "links";
+        }
         handle(p, h, action);
     }
 
@@ -1746,7 +1837,25 @@ public final class Tickets implements Listener {
             }
         } else if (t == null) {
             return;
+        } else if (action.equals("profile")) {
+            p.sendMessage(plugin.text("&7Il profilo del giocatore non e ancora disponibile."));
+        } else if (action.equals("links")) {
+            openLinks(p, t);
+        } else if (action.startsWith("openlink:")) {
+            int li = Integer.parseInt(action.substring(9));
+            if (li >= 0 && li < h.links.size()) {
+                String url = h.links.get(li);
+                p.closeInventory();
+                net.kyori.adventure.text.Component page = Component.text("Clicca il link per aprirlo:\n\n")
+                        .append(Component.text(url).color(net.kyori.adventure.text.format.NamedTextColor.BLUE)
+                                .decorate(TextDecoration.UNDERLINED)
+                                .clickEvent(net.kyori.adventure.text.event.ClickEvent.openUrl(url)));
+                p.openBook(net.kyori.adventure.inventory.Book.book(Component.text("link"), Component.text("ticket"), page));
+            }
         } else if (action.equals("write")) {
+            if (!t.open) {
+                return;
+            }
             askText(p, "scrivi il messaggio", "", txt -> {
                 postMessage(p, t, txt, "msg");
                 openChat(p, t.id, 0);
@@ -1877,6 +1986,7 @@ public final class Tickets implements Listener {
             case "test" -> {
                 Ticket t = new Ticket();
                 t.id = nextId++;
+                t.code = newCode();
                 t.owner = UUID.randomUUID();
                 t.ownerName = "GiocatoreTest";
                 t.category = "bug";
