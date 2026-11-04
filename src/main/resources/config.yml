@@ -2642,7 +2642,7 @@ adminmania:
 tickets:
   max-staff-open: 9            # ticket aperti insieme per ogni staffer
   auto-close-hours: 6          # ore senza risposta dopo il messaggio di chiusura
-  image-player: ""             # immagine (carattere del pack) della chat vista dal player; vuoto = senza texture
+  image-player: "\u3e02"      # immagine della chat vista dal player (per ora la stessa dello staff); vuoto = senza texture
   canned:
     risolto: "Ciao {player}, il tuo problema dovrebbe essere risolto. Fammi sapere se va tutto bene!"
     accettata: "Ciao {player}, abbiamo preso in carico la tua segnalazione. La stiamo verificando, grazie per averci avvisato!"

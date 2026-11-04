@@ -788,7 +788,7 @@ public final class Tickets implements Listener {
         if (image != null && !image.isEmpty()) {
             t.at(-15, "&f" + image, "", 179);
         } else {
-            t.at(-15, "&f", "", 179);
+            t.at(-15, "&f", "", 0);
         }
         return t;
     }
@@ -1049,7 +1049,7 @@ public final class Tickets implements Listener {
     }
 
     private Component chatTitle(Ticket t, Player viewer, boolean staffView, int scroll) {
-        String image = staffView ? IMG_CHAT : plugin.getConfig().getString("tickets.image-player", "");
+        String image = staffView ? IMG_CHAT : plugin.getConfig().getString("tickets.image-player", IMG_CHAT);
         GuiTitle g = newTitle(image);
 
         // barra in alto: stato e sezione
@@ -1794,6 +1794,29 @@ public final class Tickets implements Listener {
             case "miei", "mine" -> openStaffList(p, "mine", 0);
             case "chiusi", "closed" -> openStaffList(p, "closed", 0);
             case "aperti", "open" -> openStaffList(p, "open", 0);
+            case "test" -> {
+                Ticket t = new Ticket();
+                t.id = nextId++;
+                t.owner = UUID.randomUUID();
+                t.ownerName = "GiocatoreTest";
+                t.category = "bug";
+                t.created = System.currentTimeMillis();
+                t.updated = t.created;
+                String[] texts = {"ciao, non riesco ad aprire la miniera", "mi dice che non ho abbastanza blockcoin ma ne ho 500",
+                        "puoi aiutarmi? grazie mille, e un problema che ho da ieri sera"};
+                for (String x : texts) {
+                    Msg m = new Msg();
+                    m.author = t.owner;
+                    m.name = t.ownerName;
+                    m.text = x;
+                    m.time = t.created;
+                    t.msgs.add(m);
+                }
+                tickets.put(t.id, t);
+                save();
+                ok(p, "ticket di prova #" + t.id + " creato: lo vedi come staff");
+                openChat(p, t.id, 0);
+            }
             default -> {
                 try {
                     openChat(p, Integer.parseInt(sub), 0);
@@ -1807,7 +1830,7 @@ public final class Tickets implements Listener {
 
     public List<String> staffComplete(String[] args) {
         if (args.length == 2) {
-            return List.of("aperti", "miei", "chiusi");
+            return List.of("aperti", "miei", "chiusi", "test");
         }
         return List.of();
     }
