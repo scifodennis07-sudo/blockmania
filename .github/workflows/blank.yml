@@ -27,3 +27,16 @@ jobs:
           ssh-keyscan -p 3928 eu11-free.falixserver.net >> ~/.ssh/known_hosts
           echo "put target/BlockMania.jar plugins/BlockMania.jar" > batch.txt
           sftp -P 3928 -i ~/.ssh/falix_key -b batch.txt scifodennis07.1aeee6eb@eu11-free.falixserver.net
+      - name: Riavvia il server Falix
+        if: github.ref == 'refs/heads/main'
+        env:
+          FALIX_API_KEY: ${{ secrets.FALIX_API_KEY }}
+        run: |
+          for s in restart start; do
+            code=$(curl -s -o out.txt -w '%{http_code}' -X POST "https://client.falixnodes.net/api/v2/servers/3441159/power" \
+              -H "Authorization: Bearer $FALIX_API_KEY" -H "Content-Type: application/json" \
+              -d "{\"signal\": \"$s\"}")
+            echo "$s -> HTTP $code"; cat out.txt; echo
+            [ "$code" = "202" ] && exit 0
+          done
+          exit 1
