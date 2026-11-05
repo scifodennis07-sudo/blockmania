@@ -16,3 +16,14 @@ jobs:
         with:
           name: BlockMania
           path: target/BlockMania.jar
+      - name: Carica il jar sul server Falix
+        if: github.ref == 'refs/heads/main'
+        env:
+          SFTP_KEY: ${{ secrets.SFTP_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SFTP_KEY" > ~/.ssh/falix_key
+          chmod 600 ~/.ssh/falix_key
+          ssh-keyscan -p 3928 eu11-free.falixserver.net >> ~/.ssh/known_hosts
+          echo "put target/BlockMania.jar plugins/BlockMania.jar" > batch.txt
+          sftp -P 3928 -i ~/.ssh/falix_key -b batch.txt scifodennis07.1aeee6eb@eu11-free.falixserver.net
