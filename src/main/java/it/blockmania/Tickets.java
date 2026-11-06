@@ -996,6 +996,22 @@ public final class Tickets implements Listener {
         return t;
     }
 
+    /** Colore con cui si scurisce la GUI di sfondo sotto un popup. */
+    private static final String DIM = "&#555555";
+
+    /**
+     * Titolo di un popup: prima l'immagine della schermata chiamante scurita (bg), poi il popup a colori pieni.
+     * Le immagini hanno stesse posizioni, quindi basta tornare indietro di 179 pixel.
+     */
+    private GuiTitle popupTitle(String bg, String image) {
+        GuiTitle t = new GuiTitle(plugin);
+        if (bg != null && !bg.isEmpty()) {
+            t.at(-15, DIM + bg, "", 179);
+        }
+        t.at(-15, "&f" + image, "", 179);
+        return t;
+    }
+
     private static Key tk(int y) {
         return Key.key("minecraft", "tk" + y);
     }
@@ -1745,7 +1761,7 @@ public final class Tickets implements Listener {
         h.mode = what;
         h.scroll = scroll;
         h.viewer = p;
-        h.inventory = Bukkit.createInventory(h, SIZE, newTitle(staffView ? IMG_CONF_STAFF : IMG_CONF_PLAYER).build());
+        h.inventory = Bukkit.createInventory(h, SIZE, popupTitle(staffView ? IMG_CHAT : IMG_PCHAT, staffView ? IMG_CONF_STAFF : IMG_CONF_PLAYER).build());
         hideInventory(p);
         List<String> yes = what.equals("close")
                 ? List.of("&7Il ticket viene chiuso.", staffView ? "&7Il player viene avvisato e deve valutarlo." : "&7Dopo dovrai valutarlo con le stelle.", "", "&eclicca per confermare")
@@ -1768,7 +1784,7 @@ public final class Tickets implements Listener {
         Holder h = new Holder("cat");
         h.ticketId = t.id;
         h.viewer = p;
-        h.inventory = Bukkit.createInventory(h, SIZE, newTitle(IMG_CAT).build());
+        h.inventory = Bukkit.createInventory(h, SIZE, popupTitle(IMG_CHAT, IMG_CAT).build());
         hideInventory(p);
         put(h, 19, pane("&cindietro", List.of()), "chat");
         put(h, 25, pane("&6filtro", List.of("&7Sposta il ticket in un'altra sezione,",
@@ -1792,12 +1808,12 @@ public final class Tickets implements Listener {
 
     /** Popup ticket-5: X (slot 10), i (16), griglia 7x3, frecce (47 e 51), barra del titolo e numero pagina. */
     private Holder popup(Player p, String kind, int ticketId, String bar, int page, int pages, String backAction,
-                         String backName, List<String> info, boolean hide) {
+                         String backName, List<String> info, boolean hide, String bg) {
         Holder h = new Holder(kind);
         h.ticketId = ticketId;
         h.page = page;
         h.viewer = p;
-        GuiTitle g = newTitle(IMG_ITEMS);
+        GuiTitle g = popupTitle(bg, IMG_ITEMS);
         tinyText(g, bar, POPUP_CX, true, BAR, BAR_SH);
         navText(g, page + 1, pages, POPUP_CX + 1, NAV2, NAV2_SH);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
@@ -1842,7 +1858,7 @@ public final class Tickets implements Listener {
         int pages = Math.max(1, (all.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
         Holder h = popup(p, "links", t.id, "link del ticket", page, pages, "chat", "&cindietro",
-                List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true);
+                List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true, staffView ? IMG_CHAT : IMG_PCHAT);
         h.links = all;
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
@@ -1872,7 +1888,7 @@ public final class Tickets implements Listener {
         int pages = Math.max(1, (cand.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
         Holder h = popup(p, "tag", t.id, "tagga staffer", page, pages, "chat", "&cindietro",
-                List.of("&7Dai accesso al ticket a un altro staffer.", "&7Poi gli scrivi un messaggio."), true);
+                List.of("&7Dai accesso al ticket a un altro staffer.", "&7Poi gli scrivi un messaggio."), true, IMG_CHAT);
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
             if (idx >= cand.size()) {
@@ -1948,7 +1964,7 @@ public final class Tickets implements Listener {
             default -> "aperti";
         };
         Holder h = popup(p, "stafflist", 0, bar, page, pages, "close", "&cchiudi",
-                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), true);
+                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), true, null);
         h.mode = mode;
         String next = mode.equals("open") ? "mine" : mode.equals("mine") ? "closed" : "open";
         List<String> modes = List.of("&7scegli cosa vedere:", " ",
@@ -2127,7 +2143,7 @@ public final class Tickets implements Listener {
         Ticket t = tickets.get(h.ticketId);
         if (action.equals("close")) {
             // chiusura al tick dopo: chiudere dentro l'evento click puo' lasciare la gui aperta lato client
-            Bukkit.getScheduler().runTask(plugin, p::closeInventory);
+            Bukkit.getScheduler().runTask(plugin, () -> p.closeInventory());
         } else if (action.equals("back")) {
             if (h.kind.equals("list")) {
                 openMain(p);
