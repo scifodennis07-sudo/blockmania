@@ -10,8 +10,8 @@ jobs:
           echo "${{ secrets.SFTP_KEY }}" > ~/.ssh/falix_key
           chmod 600 ~/.ssh/falix_key
           ssh-keyscan -p 3928 eu11-free.falixserver.net >> ~/.ssh/known_hosts 2>/dev/null
-          printf "get logs/latest.log latest.log\nls -l plugins\nls -l plugins/update\n" > batch.txt
+          printf "get logs/latest.log latest.log\nget plugins/BlockMania/sanctions.yml sanctions.yml\n" > batch.txt
           sftp -P 3928 -i ~/.ssh/falix_key -b batch.txt scifodennis07.1aeee6eb@eu11-free.falixserver.net
           echo "=====LOG====="
-          tail -n 300 latest.log
+          tail -n 60 latest.log; echo =====SANCTIONS=====; cat sanctions.yml
           echo "=====FINE====="
