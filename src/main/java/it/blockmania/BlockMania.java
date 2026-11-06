@@ -49,6 +49,12 @@ public final class BlockMania extends JavaPlugin {
     private Power power;
     private Rewards rewards;
     private Tickets tickets;
+    private AdminCommand adminCommand;
+    private SanctionManager sanctions;
+    private PlayerCounters counters;
+    private UserProfilePowers profileUi;
+    private UserProfileHistory profileHistory;
+    private UserProfileGui userProfile;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
@@ -94,6 +100,7 @@ public final class BlockMania extends JavaPlugin {
             command.setTabCompleter(handler);
             AdminCommand adminHandler = new AdminCommand(this, handler);
             handler.setAdmin(adminHandler);
+            adminCommand = adminHandler;
             PluginCommand adminCommand = getCommand("adminmania");
             if (adminCommand != null) {
                 adminCommand.setExecutor(adminHandler);
@@ -155,6 +162,19 @@ public final class BlockMania extends JavaPlugin {
         power = new Power(this);
         getServer().getPluginManager().registerEvents(power, this);
         power.start();
+        // profilo player (/adminmania userprofile): l'ordine conta, le GUI usano i servizi creati prima
+        sanctions = new SanctionManager(this);
+        getServer().getPluginManager().registerEvents(sanctions, this);
+        sanctions.start();
+        counters = new PlayerCounters(this);
+        getServer().getPluginManager().registerEvents(counters, this);
+        profileUi = new UserProfilePowers(this);
+        getServer().getPluginManager().registerEvents(profileUi, this);
+        profileHistory = new UserProfileHistory(this, sanctions, profileUi);
+        getServer().getPluginManager().registerEvents(profileHistory, this);
+        userProfile = new UserProfileGui(this);
+        getServer().getPluginManager().registerEvents(userProfile, this);
+        userProfile.start();
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
@@ -398,6 +418,12 @@ public final class BlockMania extends JavaPlugin {
         if (rewards != null) {
             rewards.stop();
         }
+        if (userProfile != null) {
+            userProfile.stop();
+        }
+        if (sanctions != null) {
+            sanctions.stop();
+        }
         if (tickets != null) {
             tickets.stop();
         }
@@ -508,6 +534,30 @@ public final class BlockMania extends JavaPlugin {
 
     public Tickets getTickets() {
         return tickets;
+    }
+
+    public AdminCommand getAdminCommand() {
+        return adminCommand;
+    }
+
+    public SanctionManager getSanctions() {
+        return sanctions;
+    }
+
+    public PlayerCounters getCounters() {
+        return counters;
+    }
+
+    public UserProfilePowers getProfileUi() {
+        return profileUi;
+    }
+
+    public UserProfileHistory getProfileHistory() {
+        return profileHistory;
+    }
+
+    public UserProfileGui getUserProfile() {
+        return userProfile;
     }
 
     public Power getPower() {

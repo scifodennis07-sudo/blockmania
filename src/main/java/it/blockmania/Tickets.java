@@ -2306,7 +2306,12 @@ public final class Tickets implements Listener {
         } else if (t == null) {
             return;
         } else if (action.equals("profile")) {
-            p.sendMessage(plugin.text("&7Il profilo del giocatore non e ancora disponibile."));
+            if (isStaff(p) && plugin.getUserProfile() != null) {
+                final UUID owner = t.owner;
+                Bukkit.getScheduler().runTask(plugin, () -> plugin.getUserProfile().open(p, owner));
+            } else {
+                p.sendMessage(plugin.text("&7Il profilo del giocatore non e disponibile."));
+            }
         } else if (action.equals("links")) {
             openLinks(p, t, 0);
         } else if (action.equals("linkfilter")) {

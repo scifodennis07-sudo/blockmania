@@ -2609,6 +2609,12 @@ adminmania:
       reset: {min: sr-mod}
       edit: {min: sr-mod}
       resetall: {min: co-founder}
+    sanctions:                  # GUI profilo (/adminmania userprofile): chi puo' fare cosa
+      see: {min: helper}        # aprire il profilo e la cronologia
+      mute: {min: helper}       # aggiungere un mute
+      warn: {min: helper}       # aggiungere un warn
+      ban: {min: mod}           # aggiungere un ban
+      undo: {min: sr-mod}       # togliere, ridurre o azzerare mute / warn / ban (e cancellare voci della cronologia)
     items:
       list: {min: jr-mod}
       get: {min: sr-admin}
@@ -2633,6 +2639,16 @@ adminmania:
       tutorial:
         min: founder
         depts: [developer, texturemaker]
+
+# ----------------------------------------------------------------------
+#  SANZIONI  (mute / warn / ban gestiti dal profilo: /adminmania userprofile <nome>)
+#  Il ban e' controllato dal plugin al login (non e' il ban di Minecraft).
+# ----------------------------------------------------------------------
+sanctions:
+  warn-ban-ms: 604800000       # ban automatico al 4o warn: 7 giorni (in millisecondi). Se e' gia' bannato si aggiunge questo tempo
+  max-minutes:                 # massimo scrivibile nella finestra dei minuti (mute / ban) dal profilo
+    mute: 43200                # 30 giorni
+    ban: 525600                # 1 anno
 
 # ----------------------------------------------------------------------
 #  TICKET  (/ticket per i player, /adminmania ticket per lo staff)

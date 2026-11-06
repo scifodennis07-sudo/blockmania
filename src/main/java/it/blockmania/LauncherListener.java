@@ -257,6 +257,9 @@ public final class LauncherListener implements Listener {
             return false;
         }
         ammo.addAmmo(player, type, -1);
+        if (PlayerCounters.INSTANCE != null) {
+            PlayerCounters.INSTANCE.recordShot(player, type, power);
+        }
         uses.put(li.id(), now);
 
         var c = plugin.getConfig();

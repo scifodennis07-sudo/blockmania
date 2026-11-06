@@ -377,10 +377,110 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    // ------------------------------------------------------------------
+    //  userprofile (GUI profilo player, sanzioni e contatori)
+    // ------------------------------------------------------------------
+
+    /** /adminmania userprofile <nome>: apre il profilo (anche di un player offline gia' conosciuto dal server). */
+    private boolean userProfileCommand(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player p)) {
+            sender.sendMessage("solo i giocatori possono aprire il profilo");
+            return true;
+        }
+        if (level(p) <= 0 && !p.isOp()) {
+            deny(sender, "questo comando è solo per lo staff");
+            return true;
+        }
+        if (!allowed(p, "profile", "see")) {
+            log(sender, "NEGATO profile.see | " + String.join(" ", args));
+            deny(sender, "il tuo ruolo (" + roleName(sender) + ") non può vedere i profili");
+            return true;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(plugin.text("&7usa: &f/adminmania userprofile <nome>"));
+            return true;
+        }
+        UUID id;
+        Player online = Bukkit.getPlayerExact(args[1]);
+        if (online != null) {
+            id = online.getUniqueId();
+        } else {
+            org.bukkit.OfflinePlayer off = Bukkit.getOfflinePlayerIfCached(args[1]);
+            if (off == null) {
+                deny(sender, "giocatore sconosciuto: " + args[1]);
+                return true;
+            }
+            id = off.getUniqueId();
+        }
+        plugin.getUserProfile().open(p, id);
+        return true;
+    }
+
+    private List<String> userProfileComplete(CommandSender sender, String[] args) {
+        List<String> out = new ArrayList<>();
+        if (args.length != 2 || !allowed(sender, "profile", "see")) {
+            return out;
+        }
+        String typed = args[1].toLowerCase(Locale.ROOT);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (p.getName().toLowerCase(Locale.ROOT).startsWith(typed)) {
+                out.add(p.getName());
+            }
+        }
+        for (org.bukkit.OfflinePlayer o : Bukkit.getOfflinePlayers()) {
+            String n = o.getName();
+            if (n != null && out.size() < 40 && n.toLowerCase(Locale.ROOT).startsWith(typed) && !out.contains(n)) {
+                out.add(n);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Per UserProfileGui: stessi controlli di /adminmania (ruolo, dare/togliere a se stessi, tetti per volta e giornalieri).
+     * verb "see" non e' una scrittura. In caso di rifiuto avvisa lo staffer e scrive nel registro.
+     */
+    boolean authorize(CommandSender sender, String group, String verb, UUID target, long amount) {
+        if (!allowed(sender, group, verb)) {
+            log(sender, "NEGATO " + group + "." + verb + " (userprofile)");
+            deny(sender, "il tuo ruolo (" + roleName(sender) + ") non può fare questo (" + group + " " + verb
+                    + "). Chiedilo a un ruolo più alto.");
+            return false;
+        }
+        if (verb.equals("see")) {
+            return true;
+        }
+        if (sender instanceof Player self && !sender.isOp() && target != null && self.getUniqueId().equals(target)
+                && level(sender) < roleLevel(plugin.getConfig().getString("adminmania.self-min", "admin"))) {
+            log(sender, "NEGATO su se stesso " + group + "." + verb + " (userprofile)");
+            deny(sender, "col tuo ruolo non puoi dare, togliere o azzerare niente a te stesso");
+            return false;
+        }
+        if (amount > 0 && !checkCaps(sender, group, verb, new String[]{"", "", String.valueOf(amount)})) {
+            log(sender, "NEGATO tetto " + group + "." + verb + " (userprofile)");
+            return false;
+        }
+        return true;
+    }
+
+    /** Tetto per volta di questo ruolo (-1 = nessun tetto, -2 = non definito). */
+    long capFor(CommandSender sender, String group, String verb) {
+        long c = capOf(sender, group, verb, "cap");
+        return c == -2 ? -1 : c;
+    }
+
+    /** Scrive nel registro adminmania.log. */
+    void record(CommandSender sender, String text) {
+        log(sender, text);
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length >= 1 && args[0].equalsIgnoreCase("ticket")) {
             return plugin.getTickets().staffCommand(sender, args);
+        }
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("userprofile") || args[0].equalsIgnoreCase("up"))) {
+            return userProfileCommand(sender, args);
         }
         if (level(sender) <= 0 && !hasDept(sender, List.of("builder", "texturemaker", "developer"))) {
             deny(sender, "questo comando è solo per lo staff");
@@ -660,9 +760,15 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 1 && args[0].equalsIgnoreCase("ticket")) {
             return plugin.getTickets().staffComplete(args);
         }
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("userprofile") || args[0].equalsIgnoreCase("up"))) {
+            return userProfileComplete(sender, args);
+        }
         if (args.length == 1) {
             out.add("help");
             out.add("ticket");
+            if (allowed(sender, "profile", "see")) {
+                out.add("userprofile");
+            }
             for (String g : GROUPS) {
                 if (anyAllowed(sender, g)) {
                     out.add(g);

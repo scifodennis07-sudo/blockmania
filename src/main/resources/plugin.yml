@@ -1,5 +1,5 @@
 name: BlockMania
-version: 1.47.0
+version: 1.48.0
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom
@@ -13,7 +13,7 @@ commands:
     usage: /<command> [skip]
   adminmania:
     description: Comandi dello staff di BlockMania
-    usage: /<command> help
+    usage: /<command> help | userprofile <nome>
     aliases: [am]
   ticket:
     description: Apre i tuoi ticket (assistenza, bug, segnalazioni)
