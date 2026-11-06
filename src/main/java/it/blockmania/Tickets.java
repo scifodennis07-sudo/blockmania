@@ -2127,7 +2127,7 @@ public final class Tickets implements Listener {
         Ticket t = tickets.get(h.ticketId);
         if (action.equals("close")) {
             // chiusura al tick dopo: chiudere dentro l'evento click puo' lasciare la gui aperta lato client
-            Bukkit.getScheduler().runTask(plugin, p::closeInventory);
+            Bukkit.getScheduler().runTask(plugin, () -> p.closeInventory());
         } else if (action.equals("back")) {
             if (h.kind.equals("list")) {
                 openMain(p);
