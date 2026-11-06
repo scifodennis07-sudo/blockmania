@@ -1006,7 +1006,10 @@ public final class Tickets implements Listener {
     private GuiTitle popupTitle(String bg, String image) {
         GuiTitle t = new GuiTitle(plugin);
         if (bg != null && !bg.isEmpty()) {
-            t.at(-15, DIM + bg, "", 179);
+            // avanzamento REALE delle immagini: 185 px di larghezza + 1 = 186 (le immagini ticket*.png finiscono alla colonna 184).
+            // Con 179 il popup risultava spostato di 7 px a destra; il cursore dopo il popup resta calcolato come in newTitle (179),
+            // cosi i testi (IMG = -22) restano calibrati come nelle altre schermate.
+            t.at(-15, DIM + bg, "", 186);
         }
         t.at(-15, "&f" + image, "", 179);
         return t;
@@ -1842,11 +1845,24 @@ public final class Tickets implements Listener {
 
     private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("https?://[^\\s]+");
 
+    private static final String[] LINK_FILTERS = {"tutti", "mandati dal player", "mandati dallo staff"};
+
     private void openLinks(Player p, Ticket t, int page) {
+        openLinks(p, t, page, 0);
+    }
+
+    private void openLinks(Player p, Ticket t, int page, int filter) {
         boolean staffView = staffSide(p, t);
         java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
         for (Msg m : t.msgs) {
             if (!visible(m, staffView)) {
+                continue;
+            }
+            boolean system = m.kind.equals("sys");
+            if (filter == 1 && (m.staff || system)) {
+                continue;
+            }
+            if (filter == 2 && (!m.staff || system)) {
                 continue;
             }
             java.util.regex.Matcher mt = URL.matcher(m.text);
@@ -1857,9 +1873,19 @@ public final class Tickets implements Listener {
         List<String> all = new ArrayList<>(found);
         int pages = Math.max(1, (all.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
-        Holder h = popup(p, "links", t.id, "link del ticket", page, pages, "chat", "&cindietro",
+        Holder h = popup(p, "links", t.id, "link", page, pages, "chat", "&cindietro",
                 List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true, staffView ? IMG_CHAT : IMG_PCHAT);
         h.links = all;
+        h.filter = filter;
+        List<String> fl = new ArrayList<>();
+        fl.add("&7scegli cosa vedere:");
+        fl.add(" ");
+        for (int i = 0; i < LINK_FILTERS.length; i++) {
+            fl.add(i == filter ? "&a» " + LINK_FILTERS[i] : "&8" + LINK_FILTERS[i]);
+        }
+        fl.add(" ");
+        fl.add("&eclicca per cambiare");
+        put(h, 15, pane("&bfiltra per", fl), "linkfilter");
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
             if (idx >= all.size()) {
@@ -1964,7 +1990,7 @@ public final class Tickets implements Listener {
             default -> "aperti";
         };
         Holder h = popup(p, "stafflist", 0, bar, page, pages, "close", "&cchiudi",
-                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), true, null);
+                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), true, IMG_CHAT);
         h.mode = mode;
         String next = mode.equals("open") ? "mine" : mode.equals("mine") ? "closed" : "open";
         List<String> modes = List.of("&7scegli cosa vedere:", " ",
@@ -2183,7 +2209,7 @@ public final class Tickets implements Listener {
             if (h.kind.equals("stafflist")) {
                 openStaffList(p, h.mode, h.page + d);
             } else if (h.kind.equals("links") && t != null) {
-                openLinks(p, t, h.page + d);
+                openLinks(p, t, h.page + d, h.filter);
             } else if (h.kind.equals("tag") && t != null) {
                 openTag(p, t, h.page + d);
             } else {
@@ -2209,6 +2235,8 @@ public final class Tickets implements Listener {
             p.sendMessage(plugin.text("&7Il profilo del giocatore non e ancora disponibile."));
         } else if (action.equals("links")) {
             openLinks(p, t, 0);
+        } else if (action.equals("linkfilter")) {
+            openLinks(p, t, 0, (h.filter + 1) % LINK_FILTERS.length);
         } else if (action.startsWith("openlink:")) {
             int li = Integer.parseInt(action.substring(9));
             if (li >= 0 && li < h.links.size()) {
@@ -2218,7 +2246,7 @@ public final class Tickets implements Listener {
                 p.closeInventory();
                 // finestra 1.21 con il link; "annulla" riporta alla lista dei link
                 Bukkit.getScheduler().runTaskLater(plugin, () -> TicketDialog.open(p,
-                        List.of(new TicketDialog.Link("apri il link", url)), () -> openLinks(p, t, pg)), 2L);
+                        List.of(new TicketDialog.Link(url.replaceFirst("^https?://", ""), url)), () -> openLinks(p, t, pg), isStaff(p)), 2L);
             }
         } else if (action.equals("write")) {
             if (!t.open) {
