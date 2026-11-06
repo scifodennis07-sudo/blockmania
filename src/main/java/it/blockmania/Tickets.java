@@ -97,7 +97,7 @@ public final class Tickets implements Listener {
     /** Larghezza massima (pixel) del testo nella barra dei popup: oltre esce dal riquadro. */
     private static final int BAR_MAX = 58;
     /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5. */
-    private static final int POPUP_CX = 87;
+    private static final int POPUP_CX = 94;
 
     // stella piena (disegnata a pixel come le facce): 1 = dentro, 2 = bordo interno
     private static final String[] STAR_MASK = {
@@ -1799,7 +1799,7 @@ public final class Tickets implements Listener {
         h.viewer = p;
         GuiTitle g = newTitle(IMG_ITEMS);
         tinyText(g, bar, POPUP_CX, true, BAR, BAR_SH);
-        navText(g, page + 1, pages, POPUP_CX, NAV2, NAV2_SH);
+        navText(g, page + 1, pages, POPUP_CX + 1, NAV2, NAV2_SH);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         if (hide) {
             hideInventory(p);
@@ -2127,7 +2127,7 @@ public final class Tickets implements Listener {
         Ticket t = tickets.get(h.ticketId);
         if (action.equals("close")) {
             // chiusura al tick dopo: chiudere dentro l'evento click puo' lasciare la gui aperta lato client
-            Bukkit.getScheduler().runTask(plugin, () -> p.closeInventory());
+            Bukkit.getScheduler().runTask(plugin, p::closeInventory);
         } else if (action.equals("back")) {
             if (h.kind.equals("list")) {
                 openMain(p);

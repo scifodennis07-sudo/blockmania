@@ -118,6 +118,7 @@ public final class TicketDialog {
         Dialog dialog = Dialog.create(b -> b.empty()
                 .base(DialogBase.builder(title)
                         .canCloseWithEscape(false)
+                        .pause(false)
                         .afterAction(DialogBase.DialogAfterAction.NONE)
                         .body(List.of(DialogBody.plainMessage(
                                 Component.text("Scegli un link da aprire.", NamedTextColor.GRAY))))
