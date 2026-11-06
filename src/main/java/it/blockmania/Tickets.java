@@ -97,7 +97,7 @@ public final class Tickets implements Listener {
     /** Larghezza massima (pixel) del testo nella barra dei popup: oltre esce dal riquadro. */
     private static final int BAR_MAX = 58;
     /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5. */
-    private static final int POPUP_CX = 94;
+    private static final int POPUP_CX = 87;
 
     // stella piena (disegnata a pixel come le facce): 1 = dentro, 2 = bordo interno
     private static final String[] STAR_MASK = {
@@ -1027,6 +1027,9 @@ public final class Tickets implements Listener {
     /** Faccia 8x8 (scala 1) o 16x16 (scala 2) con la parte alta a y (pixel dell'immagine). */
     private void drawFace(GuiTitle g, int[] face, int x, int y, int scale) {
         for (int j = 0; j < 8; j++) {
+            if (y + j * scale + scale > dimClipTop && x + 8 * scale > dimClipX0) {
+                continue;   // riga coperta dal popup (solo nelle chat scurite sotto i popup)
+            }
             int i = 0;
             while (i < 8) {
                 int c = face[j * 8 + i];
@@ -1407,14 +1410,14 @@ public final class Tickets implements Listener {
     }
 
     private Component chatTitle(Ticket t, Player viewer, boolean staffView, int scroll) {
-        return chatTitleG(t, viewer, staffView, scroll).build();
+        return chatTitleG(t, viewer, staffView, scroll, null, null).build();
     }
 
-    /** Moltiplica i colori del titolo per #555555: stessa schermata, scurita. */
+    /** Scurisce i colori del titolo (x0.6, come il telaio gia scurito dentro le immagini dei popup). */
     private static Component tint(Component c, TextColor inherited) {
         TextColor col = c.color() != null ? c.color() : inherited;
-        TextColor nc = col == null ? TextColor.color(0x555555)
-                : TextColor.color(col.red() * 85 / 255, col.green() * 85 / 255, col.blue() * 85 / 255);
+        TextColor nc = col == null ? TextColor.color(0x999999)
+                : TextColor.color(col.red() * 154 / 255, col.green() * 154 / 255, col.blue() * 154 / 255);
         List<Component> kids = new ArrayList<>();
         for (Component k : c.children()) {
             kids.add(tint(k, col));
@@ -1422,22 +1425,49 @@ public final class Tickets implements Listener {
         return c.color(nc).children(kids);
     }
 
+    /** Righe di faccia non disegnate oltre questa quota (head sotto il bordo del popup), vedi popupOverChat. */
+    private int dimClipTop = Integer.MAX_VALUE;
+    private int dimClipX0 = Integer.MAX_VALUE;
+
+    /** Rettangolo (x0, y0, x1, y1, pixel immagine, ombra compresa) occupato dal popup. */
+    private static int[] popupRect(String image) {
+        if (IMG_ITEMS.equals(image)) {
+            return new int[]{24, 45, 166, 148};
+        }
+        if (IMG_CAT.equals(image)) {
+            return new int[]{24, 63, 166, 166};
+        }
+        return new int[]{24, 90, 166, 152};   // conferme
+    }
+
     /**
-     * Titolo di un popup aperto dalla chat: tutta la chat (barra, tag, bolle, testi) scurita, poi il popup a colori pieni.
+     * Titolo di un popup aperto dalla chat. Le immagini dei popup (ticket-4..8) sono opache e coprono tutto il telaio
+     * (gia scurito), quindi il contenuto della chat va scritto DOPO il popup: barra, tag, codice, bolle e testi
+     * scuriti, saltando solo quello che cadrebbe dentro il rettangolo del popup.
      * Dopo la prima immagine il cursore calcolato e' 7 px indietro rispetto a quello reale (179 contro 186):
-     * per tornare a -15 reale il popup va messo a IMG (-22).
+     * la convenzione e' la stessa di newTitle, quindi le posizioni (x + IMG) restano valide.
      */
     private GuiTitle popupOverChat(Player p, Ticket t, int scroll, String image) {
-        GuiTitle c = chatTitleG(t, p, staffSide(p, t), scroll);
+        GuiTitle pop = newTitle(image);
+        int[] clip = popupRect(image);
+        GuiTitle c = new GuiTitle(plugin);
+        c.atComponent(0, Component.empty(), pop.cursor());
+        dimClipTop = clip[1];
+        dimClipX0 = clip[0];
+        try {
+            chatTitleG(t, p, staffSide(p, t), scroll, c, clip);
+        } finally {
+            dimClipTop = Integer.MAX_VALUE;
+            dimClipX0 = Integer.MAX_VALUE;
+        }
         GuiTitle g = new GuiTitle(plugin);
-        g.atComponent(0, tint(c.build(), null), c.cursor());
-        g.at(IMG, "&f" + image, "", 179);
+        g.atComponent(0, pop.build().append(tint(c.build(), null)), c.cursor());
         return g;
     }
 
-    private GuiTitle chatTitleG(Ticket t, Player viewer, boolean staffView, int scroll) {
+    private GuiTitle chatTitleG(Ticket t, Player viewer, boolean staffView, int scroll, GuiTitle base, int[] clip) {
         String image = staffView ? IMG_CHAT : IMG_PCHAT;
-        GuiTitle g = newTitle(image);
+        GuiTitle g = base != null ? base : newTitle(image);
 
         // barra in alto: stato e sezione
         int si = statusOf(t);
@@ -1482,6 +1512,9 @@ public final class Tickets implements Listener {
             int own = textWidth(ln.text());
             int bw = tw + 6;
             int xb = ln.side() == 1 ? VX1 - bw - 1 : ln.side() == 2 ? (VX0 + VX1) / 2 - bw / 2 : VX0 + 11;
+            if (clip != null && xb + bw + 1 > clip[0] && xb < clip[2] && yb + ROW_H > clip[1] && yb < clip[3]) {
+                continue;   // cadrebbe sopra il popup
+            }
             StringBuilder sb = new StringBuilder();
             sb.append(bubbleChar(ln.side(), variant, 0)).append('');
             int remaining = tw;
@@ -1869,7 +1902,6 @@ public final class Tickets implements Listener {
         }
         put(h, 10, pane(backName, List.of()), backAction);
         put(h, 11, pane(backName, List.of()), backAction);   // la X disegnata sborda sullo slot accanto
-        put(h, 16, pane("&6informazioni", info), null);
         put(h, 47, pane("&7pagina precedente", List.of()), "page:-1");
         put(h, 51, pane("&7pagina successiva", List.of()), "page:1");
         return h;
@@ -1927,7 +1959,7 @@ public final class Tickets implements Listener {
         }
         fl.add(" ");
         fl.add("&eclicca per cambiare");
-        put(h, 15, pane("&bfiltra per", fl), "linkfilter");
+        put(h, 16, pane("&bfiltra per", fl), "linkfilter");
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
             if (idx >= all.size()) {

@@ -28,7 +28,7 @@ import java.util.List;
  *   TicketDialog.open(player, List.of(new TicketDialog.Link("Discord", "https://...")), () -> riapri la GUI precedente);
  *
  * Look "clicklink": si vede SOLO la grafica della pack (font minecraft:clicklink: U+E000 staff,
- * U+E001 player = GUI ticket intera con il popup grigio; sono immagini 256x256 con ascent 74).
+ * U+E001 player = GUI ticket intera con il popup grigio; sono immagini 256x256 con ascent 73).
  * Il dialog non puo' non avere pulsanti vanilla, quindi:
  *  - titolo vuoto, nessun testo vanilla, un solo plainMessage (larghezza 200);
  *  - il glifo sta sulla riga "0" del body; le righe sotto (9 px l'una) sono fatte di soli
@@ -41,7 +41,7 @@ import java.util.List;
  *    vuota, senza tooltip; e' anche l'exit action quindi ESC = annulla (stessa callback);
  *  - pause(false) + afterAction NONE (obbligatorio insieme): il dialog resta aperto dopo un click.
  *
- * Allineamento: ascent 74 in font/clicklink.json (le righe da 9 px cadono sui pulsanti: rosso =
+ * Allineamento: ascent 73 in font/clicklink.json (le righe da 9 px cadono sui pulsanti: rosso =
  * righe 1-2, grigio = 3-5, verde = 6-8 dopo la riga del glifo). Se cambi l'ascent cambia tutto.
  */
 public final class TicketDialog {
@@ -58,10 +58,10 @@ public final class TicketDialog {
 
     /**
      * Righe vuote sopra/sotto la riga del glifo: l'immagine e' alta 230 px (righe 5..235 del png,
-     * ascent 74) e la riga del glifo e' la numero 7; 7 sopra + 9 di zone cliccabili + 10 sotto
-     * = 26 righe (234 px), simmetriche: l'immagine e' centrata se il client centra il body.
+     * ascent 73) e la riga del glifo e' la numero 7; 5 sopra (calibrate in gioco: il body parte dall'alto, 7 era 17 px troppo in basso;
+     * -2 righe = -18 px, +1 px compensato dall'ascent 73) + 9 zone cliccabili + 10 sotto.
      */
-    private static final int LINES_ABOVE = 7;
+    private static final int LINES_ABOVE = 5;
     private static final int LINES_BELOW = 10;
     /** Link massimi mostrati nella zona grigia (3 righe). */
     private static final int MAX_LINKS = 3;
