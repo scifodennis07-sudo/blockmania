@@ -1353,7 +1353,16 @@ public final class Tickets implements Listener {
             }
             int side = (m.kind.equals("sys") || m.kind.equals("note")) ? 2
                     : (m.author != null && m.author.equals(viewer)) ? 1 : 0;
-            List<String> parts = wrap(clean(m.text), MAX_TEXT);
+            String cleaned = clean(m.text);
+            List<String> parts;
+            int paren = m.kind.equals("sys") ? cleaned.indexOf(" (da ") : -1;
+            if (paren > 0) {
+                // a capo forzato prima di "(da ...)" nei messaggi di sistema
+                parts = new ArrayList<>(wrap(cleaned.substring(0, paren), MAX_TEXT));
+                parts.addAll(wrap(cleaned.substring(paren + 1), MAX_TEXT));
+            } else {
+                parts = wrap(cleaned, MAX_TEXT);
+            }
             for (int k = 0; k < parts.size(); k++) {
                 lines.add(new Line(i, k, parts.size(), parts.get(k), side, m));
             }
@@ -1398,6 +1407,35 @@ public final class Tickets implements Listener {
     }
 
     private Component chatTitle(Ticket t, Player viewer, boolean staffView, int scroll) {
+        return chatTitleG(t, viewer, staffView, scroll).build();
+    }
+
+    /** Moltiplica i colori del titolo per #555555: stessa schermata, scurita. */
+    private static Component tint(Component c, TextColor inherited) {
+        TextColor col = c.color() != null ? c.color() : inherited;
+        TextColor nc = col == null ? TextColor.color(0x555555)
+                : TextColor.color(col.red() * 85 / 255, col.green() * 85 / 255, col.blue() * 85 / 255);
+        List<Component> kids = new ArrayList<>();
+        for (Component k : c.children()) {
+            kids.add(tint(k, col));
+        }
+        return c.color(nc).children(kids);
+    }
+
+    /**
+     * Titolo di un popup aperto dalla chat: tutta la chat (barra, tag, bolle, testi) scurita, poi il popup a colori pieni.
+     * Dopo la prima immagine il cursore calcolato e' 7 px indietro rispetto a quello reale (179 contro 186):
+     * per tornare a -15 reale il popup va messo a IMG (-22).
+     */
+    private GuiTitle popupOverChat(Player p, Ticket t, int scroll, String image) {
+        GuiTitle c = chatTitleG(t, p, staffSide(p, t), scroll);
+        GuiTitle g = new GuiTitle(plugin);
+        g.atComponent(0, tint(c.build(), null), c.cursor());
+        g.at(IMG, "&f" + image, "", 179);
+        return g;
+    }
+
+    private GuiTitle chatTitleG(Ticket t, Player viewer, boolean staffView, int scroll) {
         String image = staffView ? IMG_CHAT : IMG_PCHAT;
         GuiTitle g = newTitle(image);
 
@@ -1461,7 +1499,7 @@ public final class Tickets implements Listener {
                 drawFace(g, faceOf(ln.m().author), VX0 + 1, yb + 2, 1);
             }
         }
-        return g.build();
+        return g;
     }
 
     public void openChat(Player p, int ticketId, int scroll) {
@@ -1477,6 +1515,7 @@ public final class Tickets implements Listener {
         int maxScroll = Math.max(0, lines.size() - fitFromTop(lines));
         scroll = Math.max(0, Math.min(scroll, maxScroll));
         t.read.put(id, t.msgs.size());
+        chatScroll.put(id, scroll);
 
         Holder h = new Holder("chat");
         h.ticketId = ticketId;
@@ -1764,7 +1803,7 @@ public final class Tickets implements Listener {
         h.mode = what;
         h.scroll = scroll;
         h.viewer = p;
-        h.inventory = Bukkit.createInventory(h, SIZE, popupTitle(staffView ? IMG_CHAT : IMG_PCHAT, staffView ? IMG_CONF_STAFF : IMG_CONF_PLAYER).build());
+        h.inventory = Bukkit.createInventory(h, SIZE, popupOverChat(p, t, scroll, staffView ? IMG_CONF_STAFF : IMG_CONF_PLAYER).build());
         hideInventory(p);
         List<String> yes = what.equals("close")
                 ? List.of("&7Il ticket viene chiuso.", staffView ? "&7Il player viene avvisato e deve valutarlo." : "&7Dopo dovrai valutarlo con le stelle.", "", "&eclicca per confermare")
@@ -1787,7 +1826,7 @@ public final class Tickets implements Listener {
         Holder h = new Holder("cat");
         h.ticketId = t.id;
         h.viewer = p;
-        h.inventory = Bukkit.createInventory(h, SIZE, popupTitle(IMG_CHAT, IMG_CAT).build());
+        h.inventory = Bukkit.createInventory(h, SIZE, popupOverChat(p, t, chatScroll.getOrDefault(p.getUniqueId(), 0), IMG_CAT).build());
         hideInventory(p);
         put(h, 19, pane("&cindietro", List.of()), "chat");
         put(h, 25, pane("&6filtro", List.of("&7Sposta il ticket in un'altra sezione,",
@@ -1816,7 +1855,10 @@ public final class Tickets implements Listener {
         h.ticketId = ticketId;
         h.page = page;
         h.viewer = p;
-        GuiTitle g = popupTitle(bg, IMG_ITEMS);
+        Ticket chatTicket = ticketId > 0 ? tickets.get(ticketId) : null;
+        GuiTitle g = chatTicket != null && bg != null
+                ? popupOverChat(p, chatTicket, chatScroll.getOrDefault(p.getUniqueId(), 0), IMG_ITEMS)
+                : popupTitle(bg, IMG_ITEMS);
         tinyText(g, bar, POPUP_CX, true, BAR, BAR_SH);
         navText(g, page + 1, pages, POPUP_CX + 1, NAV2, NAV2_SH);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
@@ -2299,6 +2341,8 @@ public final class Tickets implements Listener {
     }
 
     private final Map<UUID, String> lastStaffListMode = new HashMap<>();
+    /** Scroll della chat che il player stava guardando: serve a ridisegnarla scurita sotto i popup. */
+    private final Map<UUID, Integer> chatScroll = new HashMap<>();
 
     @EventHandler
     public void onDrag(InventoryDragEvent event) {

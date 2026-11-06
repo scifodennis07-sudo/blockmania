@@ -169,10 +169,13 @@ public final class TicketDialog {
 
         List<Component> lines = new ArrayList<>();
         for (int i = 0; i < LINES_ABOVE; i++) lines.add(blank());
-        lines.add(Component.text(staff ? GLYPH_STAFF : GLYPH_PLAYER, NamedTextColor.WHITE)
-                .font(FONT)                 // riga 0: grafica
-                .shadowColor(ShadowColor.none())
-                .append(Component.text(sp(4))));                               // 186 + 4 = 190 -> pannello al centro
+        // riga 0: grafica. Il glifo ha il font clicklink; lo spazio finale e' un FRATELLO (non figlio)
+        // con font default esplicito, altrimenti erediterebbe clicklink e uscirebbe come tofu.
+        lines.add(Component.empty()
+                .append(Component.text(staff ? GLYPH_STAFF : GLYPH_PLAYER, NamedTextColor.WHITE)
+                        .font(FONT)
+                        .shadowColor(ShadowColor.none()))
+                .append(Component.text(sp(4)).font(Key.key("minecraft", "default"))));  // 186 + 4 = 190 -> pannello al centro
         Component redLine = Component.text(sp(56))                             // righe 1-2: pulsante rosso
                 .clickEvent(cancel)
                 .hoverEvent(HoverEvent.showText(Component.text("Annulla", NamedTextColor.RED)));
