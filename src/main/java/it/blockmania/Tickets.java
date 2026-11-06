@@ -94,6 +94,10 @@ public final class Tickets implements Listener {
     private static final String FONT_TINY2 = "minecraft:tiny2";
     private static final char NAV2 = '\uF700';
     private static final char NAV2_SH = '\uF710';
+    /** Larghezza massima (pixel) del testo nella barra dei popup: oltre esce dal riquadro. */
+    private static final int BAR_MAX = 58;
+    /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5. */
+    private static final int POPUP_CX = 87;
 
     // stella piena (disegnata a pixel come le facce): 1 = dentro, 2 = bordo interno
     private static final String[] STAR_MASK = {
@@ -1052,9 +1056,28 @@ public final class Tickets implements Listener {
         if (text.isEmpty()) {
             return;
         }
+        if (base == BAR) {
+            // il font tiny2 non ha lo spazio (usciva un tofu): ogni parola e' scritta a parte, e il testo non deve uscire dalla barra
+            while (tinyAdvance(text) > BAR_MAX && text.length() > 1) {
+                text = text.substring(0, text.length() - 1).trim();
+            }
+            int total = tinyAdvance(text);
+            int st = center ? xImg - Math.max(0, total - 1) / 2 : xImg;
+            int off = 0;
+            for (String w : text.split(" ")) {
+                if (w.isEmpty()) {
+                    continue;
+                }
+                int wa = tinyAdvance(w);
+                g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, shadowBase), FONT_TINY2, wa);
+                g.at(st + off + IMG, "&f" + tinyLetters(w, base), FONT_TINY2, wa);
+                off += wa + 4;
+            }
+            return;
+        }
         int adv = tinyAdvance(text);
         int start = center ? xImg - Math.max(0, adv - 1) / 2 : xImg;
-        String fnt = base == BAR ? FONT_TINY2 : "";
+        String fnt = "";
         g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(text, shadowBase), fnt, adv);
         g.at(start + IMG, "&f" + tinyLetters(text, base), fnt, adv);
     }
@@ -1748,7 +1771,7 @@ public final class Tickets implements Listener {
         h.inventory = Bukkit.createInventory(h, SIZE, newTitle(IMG_CAT).build());
         hideInventory(p);
         put(h, 19, pane("&cindietro", List.of()), "chat");
-        put(h, 25, pane("&6informazioni", List.of("&7Sposta il ticket in un'altra sezione,",
+        put(h, 25, pane("&6filtro", List.of("&7Sposta il ticket in un'altra sezione,",
                 "&7per esempio da Bug ad Assistenza.", "&7Nella chat compare un avviso.")), null);
         int[][] cols = {{1, 2}, {3, 4, 5}, {6, 7}};
         for (int i = 0; i < 3; i++) {
@@ -1775,8 +1798,8 @@ public final class Tickets implements Listener {
         h.page = page;
         h.viewer = p;
         GuiTitle g = newTitle(IMG_ITEMS);
-        tinyText(g, bar, 95, true, BAR, BAR_SH);
-        navText(g, page + 1, pages, 96, NAV2, NAV2_SH);
+        tinyText(g, bar, POPUP_CX, true, BAR, BAR_SH);
+        navText(g, page + 1, pages, POPUP_CX, NAV2, NAV2_SH);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         if (hide) {
             hideInventory(p);
@@ -1784,6 +1807,7 @@ public final class Tickets implements Listener {
             restoreInventory(p);
         }
         put(h, 10, pane(backName, List.of()), backAction);
+        put(h, 11, pane(backName, List.of()), backAction);   // la X disegnata sborda sullo slot accanto
         put(h, 16, pane("&6informazioni", info), null);
         put(h, 47, pane("&7pagina precedente", List.of()), "page:-1");
         put(h, 51, pane("&7pagina successiva", List.of()), "page:1");
@@ -1919,20 +1943,21 @@ public final class Tickets implements Listener {
         int pages = Math.max(1, (list.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
         String bar = switch (mode) {
-            case "mine" -> "i tuoi aperti";
-            case "closed" -> "chiusi da te";
-            default -> "tutti gli aperti";
+            case "mine" -> "tuoi";
+            case "closed" -> "chiusi";
+            default -> "aperti";
         };
         Holder h = popup(p, "stafflist", 0, bar, page, pages, "close", "&cchiudi",
-                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), false);
+                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), true);
         h.mode = mode;
         String next = mode.equals("open") ? "mine" : mode.equals("mine") ? "closed" : "open";
-        List<String> modes = List.of("&7scegli la lista:", " ",
+        List<String> modes = List.of("&7scegli cosa vedere:", " ",
                 (mode.equals("open") ? "&a» " : "&8") + "tutti gli aperti",
                 (mode.equals("mine") ? "&a» " : "&8") + "i tuoi aperti",
-                (mode.equals("closed") ? "&a» " : "&8") + "chiusi da te", " ", "&eclicca per cambiare");
-        for (int s = 12; s <= 15; s++) {
-            put(h, s, pane("&bcambia lista", modes), "mode:" + next);
+                (mode.equals("closed") ? "&a» " : "&8") + "chiusi da te", " ",
+                "&7ticket: &f" + list.size(), " ", "&eclicca per cambiare");
+        for (int s = 12; s <= 16; s++) {
+            put(h, s, pane("&bfiltra per", modes), "mode:" + next);
         }
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
@@ -2101,7 +2126,8 @@ public final class Tickets implements Listener {
         UUID id = p.getUniqueId();
         Ticket t = tickets.get(h.ticketId);
         if (action.equals("close")) {
-            p.closeInventory();
+            // chiusura al tick dopo: chiudere dentro l'evento click puo' lasciare la gui aperta lato client
+            Bukkit.getScheduler().runTask(plugin, p::closeInventory);
         } else if (action.equals("back")) {
             if (h.kind.equals("list")) {
                 openMain(p);
@@ -2243,7 +2269,7 @@ public final class Tickets implements Listener {
 
     /** Gui aperte dalla chat: l'inventario del player resta nascosto finche non le chiude. */
     private static boolean hidesInventory(String kind) {
-        return kind.equals("chat") || kind.equals("cat") || kind.equals("links") || kind.equals("tag") || kind.equals("confirm");
+        return kind.equals("stafflist") || kind.equals("chat") || kind.equals("cat") || kind.equals("links") || kind.equals("tag") || kind.equals("confirm");
     }
 
     @EventHandler
