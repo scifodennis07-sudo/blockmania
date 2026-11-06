@@ -1,0 +1,32 @@
+name: Sbanna
+on: workflow_dispatch
+jobs:
+  sbanna:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Togli ban e warn a doppiaX nel file sanctions.yml (il server deve essere SPENTO)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SFTP_KEY }}" > ~/.ssh/falix_key
+          chmod 600 ~/.ssh/falix_key
+          ssh-keyscan -p 3928 eu11-free.falixserver.net >> ~/.ssh/known_hosts 2>/dev/null
+          echo "get plugins/BlockMania/sanctions.yml sanctions.yml" > get.txt
+          sftp -P 3928 -i ~/.ssh/falix_key -b get.txt scifodennis07.1aeee6eb@eu11-free.falixserver.net
+          cp sanctions.yml sanctions.backup.yml
+          python3 - <<'PY'
+          import re
+          u="315dc942-2de4-35b5-be7b-e5acc93ad5f0"
+          lines=open("sanctions.yml").read().split("\n")
+          out=[];inblk=False
+          for l in lines:
+              if re.match(r"^  [0-9a-f-]{36}:\s*$",l): inblk=(l.strip()==u+":")
+              elif inblk and re.match(r"^    (mute-start|mute-end|ban-start|ban-end|warns|note-ms|note-type):",l):
+                  k=l.split(":")[0]; l=k+": 0"
+              elif inblk and l.strip().startswith("ban-from-warns:"): l="    ban-from-warns: false"
+              out.append(l)
+          open("sanctions.yml","w").write("\n".join(out))
+          PY
+          grep -A9 "315dc942" sanctions.yml | head -12
+          echo "put sanctions.yml plugins/BlockMania/sanctions.yml" > put.txt
+          sftp -P 3928 -i ~/.ssh/falix_key -b put.txt scifodennis07.1aeee6eb@eu11-free.falixserver.net
+          echo "=====FATTO====="
