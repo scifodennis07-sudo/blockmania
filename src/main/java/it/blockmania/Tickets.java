@@ -2172,10 +2172,11 @@ public final class Tickets implements Listener {
             if (li >= 0 && li < h.links.size()) {
                 String url = h.links.get(li);
                 int pg = h.page;
+                plugin.getLogger().info("[Tickets] openlink " + li + " -> " + url);
                 p.closeInventory();
                 // finestra 1.21 con il link; "annulla" riporta alla lista dei link
-                Bukkit.getScheduler().runTask(plugin, () -> TicketDialog.open(p,
-                        List.of(new TicketDialog.Link("apri il link", url)), () -> openLinks(p, t, pg)));
+                Bukkit.getScheduler().runTaskLater(plugin, () -> TicketDialog.open(p,
+                        List.of(new TicketDialog.Link("apri il link", url)), () -> openLinks(p, t, pg)), 2L);
             }
         } else if (action.equals("write")) {
             if (!t.open) {

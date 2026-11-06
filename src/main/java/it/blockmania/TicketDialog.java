@@ -53,7 +53,32 @@ public final class TicketDialog {
 
     public static void open(Player p, List<Link> links, Runnable onCancel) {
         if (p == null || !p.isOnline()) return;
+        JavaPlugin pl = JavaPlugin.getProvidingPlugin(TicketDialog.class);
+        try {
+            openDialog(p, links, onCancel);
+        } catch (Throwable ex) {
+            pl.getLogger().warning("[TicketDialog] Dialog non mostrato a " + p.getName() + ": " + ex);
+            ex.printStackTrace();
+            fallbackChat(p, links);
+        }
+    }
 
+    /** Se il Dialog fallisce: link cliccabili in chat. */
+    private static void fallbackChat(Player p, List<Link> links) {
+        if (!p.isOnline()) return;
+        p.sendMessage(Component.text("Non riesco ad aprire la finestra, clicca il link qui sotto:", NamedTextColor.YELLOW));
+        if (links == null) return;
+        for (Link l : links) {
+            if (l == null || l.url() == null) continue;
+            String u = l.url().trim();
+            if (!(u.startsWith("http://") || u.startsWith("https://"))) continue;
+            p.sendMessage(Component.text("» " + u, NamedTextColor.AQUA)
+                    .decorate(TextDecoration.UNDERLINED)
+                    .clickEvent(ClickEvent.openUrl(u)));
+        }
+    }
+
+    private static void openDialog(Player p, List<Link> links, Runnable onCancel) {
         List<ActionButton> buttons = new ArrayList<>();
         if (links != null) {
             for (Link l : links) {
@@ -100,6 +125,8 @@ public final class TicketDialog {
                 .type(DialogType.multiAction(buttons, cancel, 1)));
 
         p.showDialog(dialog);
+        JavaPlugin.getProvidingPlugin(TicketDialog.class).getLogger()
+                .info("[TicketDialog] Dialog mostrato a " + p.getName() + " (" + buttons.size() + " link)");
     }
 
     /** Esegue sul thread principale (il callback del client potrebbe non esserci). */
