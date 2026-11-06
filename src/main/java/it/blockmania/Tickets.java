@@ -8,8 +8,10 @@ import net.kyori.adventure.text.format.ShadowColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
@@ -39,6 +41,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -68,15 +71,38 @@ public final class Tickets implements Listener {
     private static final String IMG_MAIN = "㸀";
     private static final String IMG_LIST = "㸁";
     private static final String IMG_CHAT = "㸂";
+    private static final String IMG_CAT = "\u3e03";          // ticket-4: cambia sezione
+    private static final String IMG_ITEMS = "\u3e04";        // ticket-5: popup con gli oggetti
+    private static final String IMG_CONF_STAFF = "\u3e05";   // ticket-6: conferma (staff)
+    private static final String IMG_PCHAT = "\u3e06";        // ticket-7: chat del player
+    private static final String IMG_CONF_PLAYER = "\u3e07";  // ticket-8: conferma (player)
+    private static final String IMG_ANVIL = "\u3e08";        // incudine personalizzata
     private static final int SIZE = 54;
 
-    private static final String[] CATS = {"assistenza", "bug", "segnalazione"};
+    private static final String[] CATS = {"assistenza", "bug", "report"};
     private static final String[] CAT_LABEL = {"assistenza generale", "segnala bug", "segnala player"};
-    private static final String[] CAT_SHORT = {"assistenza", "bug", "segnalazione"};
+    private static final String[] CAT_SHORT = {"assistenza", "bug", "report"};
     private static final String[] STATUS_NAME = {"aperto", "in attesa", "chiuso"};
     private static final char[] LTICK = {'㼂', '㼁', '㼀'};     // verde, giallo, rosso
-    private static final int[] CHIP_W = {41, 56, 38, 62, 26, 72};           // aperto, attesa, chiuso, assist., bug, segn.
-    private static final String[] FILTERS = {"tutti", "aperti", "chiusi", "assistenza", "bug", "segnalazione"};
+    private static final int[] CHIP_W = {41, 56, 38, 62, 26, 40};           // aperto, attesa, chiuso, assist., bug, report
+    private static final String[] FILTERS = {"tutti", "aperti", "chiusi", "assistenza", "bug", "report"};
+
+    // popup ticket-5: testo della barra in alto e numero pagina, scritti con i set del pack per i popup
+    private static final char BAR = '\uf500';
+    private static final char BAR_SH = '\uf600';
+    private static final char NAV2 = '\uF700';
+    private static final char NAV2_SH = '\uF710';
+
+    // stella piena (disegnata a pixel come le facce): 1 = dentro, 2 = bordo interno
+    private static final String[] STAR_MASK = {
+            ".............", "......22.....", "......22.....", "......11.....", ".222221122222",
+            "..2111111112.", "...21111112..", "....211112...", "....211112...", "....112211...",
+            "...21....12..", "...2......2..", ".............", "............."};
+    private static final int STAR_X0 = 70;
+    private static final int STAR_Y0 = 182;
+    private static final int STAR_PITCH = 18;
+    private static final int STAR_IN = 0xFFD83A;
+    private static final int STAR_EDGE = 0xE0A100;
 
     // chat
     private static final int ROW_Y0 = 57;
@@ -92,6 +118,8 @@ public final class Tickets implements Listener {
     private static final int[] SLOTS_DOWN = {44, 53, 62};
     private static final int[] SLOTS_WRITE = {81, 82, 83, 84, 85, 86, 87, 88, 89};
     private static final String[] CANNED = {"risolto", "accettata", "chiusura", "non_valida", "prove", "attendi"};
+
+    private static final String[] STATUS_MODEL = {"ticket_open", "ticket_wait", "ticket_closed"};
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ZoneId.systemDefault());
 
@@ -120,6 +148,9 @@ public final class Tickets implements Listener {
         UUID lastStaff;
         String lastStaffName = "";
         long autoClose;
+        int rating;              // 0 = da dare, 1-5 = voto, -1 = non richiesto (ticket vecchi)
+        long rateDeadline;       // entro quando va dato il voto
+        boolean ratedAuto;
         final Set<UUID> staff = new LinkedHashSet<>();
         final Map<UUID, Integer> read = new HashMap<>();
         final List<Msg> msgs = new ArrayList<>();
@@ -175,6 +206,8 @@ public final class Tickets implements Listener {
     private final Map<UUID, AnvilSession> anvils = new HashMap<>();
     private final Map<UUID, ChatInput> awaiting = new HashMap<>();
     private final Set<UUID> faceAsked = new HashSet<>();
+    private final Map<UUID, Integer> stars = new HashMap<>();
+    private final Set<Integer> reminded = new HashSet<>();
     private BukkitTask task;
 
     public Tickets(BlockMania plugin) {
@@ -274,6 +307,12 @@ public final class Tickets implements Listener {
                 t.lastStaff = ls.isEmpty() ? null : UUID.fromString(ls);
                 t.lastStaffName = s.getString("last-staff-name", "");
                 t.autoClose = s.getLong("auto-close");
+                t.rating = s.contains("rating") ? s.getInt("rating") : (t.open ? 0 : -1);
+                t.rateDeadline = s.getLong("rate-deadline");
+                t.ratedAuto = s.getBoolean("rated-auto");
+                if (t.category.equals("segnalazione")) {
+                    t.category = "report";
+                }
                 for (String u : s.getStringList("staff")) {
                     t.staff.add(UUID.fromString(u));
                 }
@@ -330,6 +369,9 @@ public final class Tickets implements Listener {
             y.set(p + "last-staff", t.lastStaff == null ? "" : t.lastStaff.toString());
             y.set(p + "last-staff-name", t.lastStaffName);
             y.set(p + "auto-close", t.autoClose);
+            y.set(p + "rating", t.rating);
+            y.set(p + "rate-deadline", t.rateDeadline);
+            y.set(p + "rated-auto", t.ratedAuto);
             List<String> st = new ArrayList<>();
             for (UUID u : t.staff) {
                 st.add(u.toString());
@@ -365,7 +407,84 @@ public final class Tickets implements Listener {
         for (Ticket t : new ArrayList<>(tickets.values())) {
             if (t.open && t.autoClose > 0 && now >= t.autoClose) {
                 closeTicket(t, null, "sistema", true);
+            } else if (!t.open && t.rating == 0 && t.rateDeadline > 0) {
+                if (now >= t.rateDeadline) {
+                    autoRate(t);
+                } else if (now >= t.rateDeadline - 3600_000L && reminded.add(t.id)) {
+                    Player o = Bukkit.getPlayer(t.owner);
+                    if (o != null) {
+                        notifyRate(o, t);
+                    }
+                }
             }
+        }
+    }
+
+    private int rateHours() {
+        return Math.max(1, plugin.getConfig().getInt("tickets.rate-hours", 6));
+    }
+
+    /** Ticket chiuso del player che non e ancora stato valutato (finche c'e non puo aprirne un altro). */
+    private Ticket pendingRating(UUID owner) {
+        Ticket best = null;
+        for (Ticket t : tickets.values()) {
+            if (!t.open && t.rating == 0 && t.owner.equals(owner) && (best == null || t.closedAt >= best.closedAt)) {
+                best = t;
+            }
+        }
+        return best;
+    }
+
+    /** Title + messaggio: ricorda al player di valutare il ticket entro la scadenza. */
+    private void notifyRate(Player p, Ticket t) {
+        long left = Math.max(0, t.rateDeadline - System.currentTimeMillis());
+        long h = left / 3600_000L;
+        long m = (left % 3600_000L) / 60_000L;
+        String when = h > 0 ? h + " ore e " + m + " min" : m + " minuti";
+        p.showTitle(Title.title(plugin.color("&6&lvaluta il ticket"),
+                plugin.color("&fhai ancora &e" + when + "&f: scrivi &e/ticket &fe dai le stelle"),
+                Title.Times.times(Duration.ofMillis(300), Duration.ofSeconds(5), Duration.ofMillis(800))));
+        p.sendMessage(plugin.color("&6[ticket] &fDevi valutare il ticket &e#" + t.id + "&f entro &e" + when
+                + "&f, altrimenti ricevi un warn e il voto sara 5 stelle. ")
+                .append(plugin.color("&b&n[valuta ora]").clickEvent(ClickEvent.runCommand("/ticket " + t.id))));
+        plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+    }
+
+    private void rateTicket(Player p, Ticket t, int n) {
+        if (t.open || t.rating != 0 || !t.owner.equals(p.getUniqueId())) {
+            return;
+        }
+        t.rating = Math.max(1, Math.min(5, n));
+        t.rateDeadline = 0;
+        stars.remove(p.getUniqueId());
+        addMsg(t, p, false, "sys", "Valutazione del ticket: " + t.rating + " su 5 stelle", true);
+        save();
+        ok(p, "grazie! hai valutato il ticket con " + t.rating + (t.rating == 1 ? " stella" : " stelle"));
+    }
+
+    /** Scaduto il tempo: 5 stelle in automatico e warn (comando in tickets.warn-command). */
+    private void autoRate(Ticket t) {
+        if (t.open || t.rating != 0) {
+            return;
+        }
+        t.rating = 5;
+        t.ratedAuto = true;
+        t.rateDeadline = 0;
+        stars.remove(t.owner);
+        addMsg(t, null, false, "sys", "Valutazione assegnata in automatico: 5 stelle (il player non ha valutato in tempo)", false);
+        save();
+        String cmd = plugin.getConfig().getString("tickets.warn-command", "");
+        OfflinePlayer off = Bukkit.getOfflinePlayer(t.owner);
+        if (cmd != null && !cmd.isBlank() && (off.isOnline() || off.hasPlayedBefore())) {
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("%player%", t.ownerName));
+        }
+        Player o = Bukkit.getPlayer(t.owner);
+        if (o != null) {
+            o.sendMessage(plugin.color("&6[ticket] &cNon hai valutato il ticket &e#" + t.id
+                    + "&c in tempo: hai ricevuto un warn e il ticket e stato valutato 5 stelle."));
+        }
+        for (Player pl : Bukkit.getOnlinePlayers()) {
+            refreshChat(pl, t);
         }
     }
 
@@ -761,6 +880,29 @@ public final class Tickets implements Listener {
         return stack;
     }
 
+    /** Oggetto vero con il modello blockmania:ticket_open / ticket_wait / ticket_closed (al posto delle icone nel titolo). */
+    private ItemStack ticketItem(Ticket t, String name, List<String> lore) {
+        ItemStack stack = new ItemStack(Material.PAPER);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(plugin.text(name));
+        if (lore != null && !lore.isEmpty()) {
+            meta.lore(loreComponents(lore));
+        }
+        meta.setItemModel(new NamespacedKey(plugin, STATUS_MODEL[statusOf(t)]));
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    private ItemStack linkItem(String name, List<String> lore) {
+        ItemStack stack = new ItemStack(Material.PAPER);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(plugin.text(name));
+        meta.lore(loreComponents(lore));
+        meta.setItemModel(new NamespacedKey(plugin, "ticket_link"));
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
     private void put(Holder h, int raw, ItemStack stack, String action) {
         if (raw < SIZE) {
             h.inventory.setItem(raw, stack);
@@ -834,9 +976,14 @@ public final class Tickets implements Listener {
     // ------------------------------------------------------------------
 
     private GuiTitle newTitle(String image) {
+        return newTitle(image, 0);
+    }
+
+    /** dx sposta l'immagine (serve per l'incudine, il cui titolo parte piu a destra). */
+    private GuiTitle newTitle(String image, int dx) {
         GuiTitle t = new GuiTitle(plugin);
         if (image != null && !image.isEmpty()) {
-            t.at(-15, "&f" + image, "", 179);
+            t.at(-15 + dx, "&f" + image, "", 179);
         } else {
             t.at(-15, "&f", "", 0);
         }
@@ -914,18 +1061,47 @@ public final class Tickets implements Listener {
 
     /** Numero pagina (1/3) con i numeri disegnati del pack, alla quota della barra dei ticket. */
     private void navText(GuiTitle g, int page, int pages, int centerImg) {
+        navText(g, page, pages, centerImg, NAV, NAV_SH);
+    }
+
+    private void navText(GuiTitle g, int page, int pages, int centerImg, char nav, char navSh) {
         String plain = page + "/" + pages;
         StringBuilder n = new StringBuilder();
         StringBuilder sh = new StringBuilder();
         for (char ch : plain.toCharArray()) {
             int o = ch == '/' ? 10 : ch - '0';
-            n.append((char) (NAV + o));
-            sh.append((char) (NAV_SH + o));
+            n.append((char) (nav + o));
+            sh.append((char) (navSh + o));
         }
         int adv = plain.length() * 6;
         int start = centerImg - (adv - 1) / 2;
         g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, "", adv);
         g.at(start + IMG, "&f" + n, "", adv);
+    }
+
+    /** Stelle piene (giallo) sopra le 5 caselle del ticket-7: n = quante riempire. */
+    private void drawStars(GuiTitle g, int n) {
+        for (int k = 0; k < Math.min(5, n); k++) {
+            int x0 = STAR_X0 + STAR_PITCH * k;
+            for (int j = 0; j < STAR_MASK.length; j++) {
+                String row = STAR_MASK[j];
+                int i = 0;
+                while (i < row.length()) {
+                    char c = row.charAt(i);
+                    if (c == '.') {
+                        i++;
+                        continue;
+                    }
+                    int run = 1;
+                    while (i + run < row.length() && row.charAt(i + run) == c) {
+                        run++;
+                    }
+                    String s = ("\ue000\ue002").repeat(run);
+                    g.atComponent(x0 + i + IMG, glyph(s, tk(STAR_Y0 + j), c == '1' ? STAR_IN : STAR_EDGE), run);
+                    i += run;
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -986,6 +1162,10 @@ public final class Tickets implements Listener {
                 lore.add("");
                 lore.add("&e" + un + (un == 1 ? " messaggio non letto" : " messaggi non letti"));
             }
+            if (!last.open && last.rating == 0) {
+                lore.add("");
+                lore.add("&6devi ancora valutare il ticket");
+            }
             lore.add("");
             lore.add("&eclicca per aprire la chat");
             for (int s = 36; s <= 44; s++) {
@@ -1028,7 +1208,7 @@ public final class Tickets implements Listener {
                 case 2 -> !t.open;
                 case 3 -> t.category.equals("assistenza");
                 case 4 -> t.category.equals("bug");
-                case 5 -> t.category.equals("segnalazione");
+                case 5 -> t.category.equals("report");
                 default -> true;
             };
             if (okay) {
@@ -1051,15 +1231,6 @@ public final class Tickets implements Listener {
         GuiTitle g = newTitle(IMG_LIST);
         tinyText(g, FILTERS[filter], 95, true, '', '');
         navText(g, page + 1, pages, 96);
-        for (int i = 0; i < 21; i++) {
-            int idx = page * 21 + i;
-            if (idx >= list.size()) {
-                break;
-            }
-            int r = i / 7;
-            int c = i % 7;
-            g.at(33 + 18 * c + IMG, "&f" + (char) (0x3f30 + statusOf(list.get(idx)) * 3 + r), "", 17);
-        }
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         put(h, 1, pane("&cindietro", List.of()), "back");
@@ -1087,7 +1258,7 @@ public final class Tickets implements Listener {
             lore.add("&7messaggi: &f" + t.msgs.size());
             lore.add("");
             lore.add("&eclicca per aprire la chat");
-            put(h, 10 + (i / 7) * 9 + (i % 7), pane("&f#" + t.id + " &7- " + CAT_SHORT[catIndex(t.category)], lore), "open:" + t.id);
+            put(h, 10 + (i / 7) * 9 + (i % 7), ticketItem(t, "&f#" + t.id + " &7- " + CAT_SHORT[catIndex(t.category)], lore), "open:" + t.id);
         }
         open(p, h);
     }
@@ -1181,7 +1352,7 @@ public final class Tickets implements Listener {
     }
 
     private Component chatTitle(Ticket t, Player viewer, boolean staffView, int scroll) {
-        String image = staffView ? IMG_CHAT : plugin.getConfig().getString("tickets.image-player", IMG_CHAT);
+        String image = staffView ? IMG_CHAT : IMG_PCHAT;
         GuiTitle g = newTitle(image);
 
         // barra in alto: stato e sezione
@@ -1194,6 +1365,10 @@ public final class Tickets implements Listener {
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
         // faccia 2D del player nel primo slot della barra
         drawFace(g, faceOf(t.owner), 15, 33, 2);
+        if (!staffView && !t.open) {
+            int filled = t.rating > 0 ? t.rating : (t.rating == 0 ? stars.getOrDefault(viewer.getUniqueId(), 0) : 0);
+            drawStars(g, filled);
+        }
 
         int total = lines.size();
         int end = total - scroll;
@@ -1277,10 +1452,10 @@ public final class Tickets implements Listener {
         for (int s : SLOTS_WRITE) {
             put(h, s, pane(t.open ? "&fscrivi messaggio" : "&7ticket chiuso", wl), "write");
         }
-        // funzioni: ogni icona occupa 2 slot (uno sopra e uno sotto)
-        List<String> closeLore = List.of("&7Chiude il ticket.", staffView ? "&7Il player viene avvisato." : "&7Potrai aprirne un altro.", "", "&eclicca per chiudere");
-        placeBottom(h, p, 0, pane(staffView ? "&cchiudi ticket" : "&cchiudi ticket", closeLore), t.open ? "closeticket" : null);
         if (staffView) {
+            // funzioni dello staff: ogni icona occupa 2 slot (uno sopra e uno sotto)
+            List<String> closeLore = List.of("&7Chiude il ticket.", "&7Il player viene avvisato e deve valutarlo.", "", "&eclicca per chiudere");
+            placeBottom(h, p, 0, pane("&cchiudi ticket", closeLore), t.open ? "closeticket" : null);
             placeBottom(h, p, 1, pane("&dcambia sezione", List.of("&7Sposta il ticket in un'altra sezione,", "&7per esempio da Bug ad Assistenza.", "", "&eclicca per scegliere")), "cat");
             placeBottom(h, p, 2, pane("&6tagga staffer", List.of("&7Dai accesso al ticket a un altro staffer.", "&7Devi scrivergli un messaggio.", "", "&eclicca per scegliere")), "tag");
             for (int i = 0; i < CANNED.length; i++) {
@@ -1297,8 +1472,51 @@ public final class Tickets implements Listener {
                 lore.add("&eclicca per inviare");
                 placeBottom(h, p, 3 + i, pane(cannedName(key), lore), t.open ? "canned:" + key : null);
             }
+        } else {
+            playerFunctions(h, p, t);
         }
         open(p, h);
+    }
+
+    /** Parte bassa della chat del player (ticket-7): lucchetto, 5 stelle, spunta verde. */
+    private void playerFunctions(Holder h, Player p, Ticket t) {
+        boolean pending = !t.open && t.rating == 0 && t.owner.equals(p.getUniqueId());
+        int sel = stars.getOrDefault(p.getUniqueId(), 0);
+
+        List<String> lockLore = t.open
+                ? List.of("&7Chiude il ticket.", "&7Dopo dovrai valutarlo da 1 a 5 stelle", "&7prima di poterne aprire un altro.", "", "&eclicca per chiudere")
+                : List.of("&7Questo ticket e chiuso.");
+        ItemStack lock = pane(t.open ? "&cchiudi ticket" : "&7ticket chiuso", lockLore);
+        for (int s : new int[]{63, 64, 72, 73}) {
+            put(h, s, lock, t.open ? "closeticket" : null);
+        }
+        for (int k = 0; k < 5; k++) {
+            ItemStack star;
+            if (pending) {
+                star = pane("&e" + (k + 1) + (k == 0 ? " stella" : " stelle"),
+                        List.of("&7Valuta il ticket con &e" + (k + 1) + "&7 su 5.", "", "&eclicca per scegliere"));
+            } else if (t.open) {
+                star = pane("&7valutazione", List.of("&7Potrai valutare il ticket", "&7quando sara chiuso."));
+            } else if (t.rating > 0) {
+                star = pane("&7valutazione: &e" + t.rating + " su 5", List.of(t.ratedAuto ? "&7assegnata in automatico" : "&7grazie per aver valutato!"));
+            } else {
+                star = pane("&7valutazione", List.of("&7non richiesta per questo ticket"));
+            }
+            String action = pending ? "star:" + k : null;
+            put(h, 66 + k, star, action);
+            put(h, 75 + k, star, action);
+        }
+        ItemStack check;
+        if (pending) {
+            check = pane("&aconferma valutazione", sel > 0
+                    ? List.of("&7Stelle scelte: &e" + sel + " su 5", "", "&eclicca per confermare")
+                    : List.of("&7Scegli prima le stelle da 1 a 5."));
+        } else {
+            check = pane("&7valutazione", List.of(t.open ? "&7Disponibile dopo la chiusura." : "&7Gia valutato."));
+        }
+        for (int s : new int[]{71, 80}) {
+            put(h, s, check, pending ? "rate" : null);
+        }
     }
 
     private void placeBottom(Holder h, Player p, int col, ItemStack stack, String action) {
@@ -1321,6 +1539,12 @@ public final class Tickets implements Listener {
     // ------------------------------------------------------------------
 
     private void createTicket(Player p, String cat, String text) {
+        Ticket pend = pendingRating(p.getUniqueId());
+        if (pend != null) {
+            err(p, "prima devi valutare il ticket #" + pend.id);
+            openChat(p, pend.id, 0);
+            return;
+        }
         if (openTicketOf(p.getUniqueId()) != null) {
             err(p, "hai gia un ticket aperto: chiudilo prima di aprirne un altro");
             return;
@@ -1464,19 +1688,49 @@ public final class Tickets implements Listener {
         t.closedBy = name;
         t.closedByUuid = by == null ? null : by.getUniqueId();
         t.autoClose = 0;
+        t.rating = 0;
+        t.ratedAuto = false;
+        t.rateDeadline = t.closedAt + rateHours() * 3600_000L;
+        reminded.remove(t.id);
         String text = auto ? "Ticket chiuso in automatico: nessuna risposta entro " + autoCloseHours() + " ore"
                 : "Ticket chiuso da " + name;
         Msg m = addMsg(t, by, false, "sys", text, false);
         m.name = name;
         save();
         Player owner = Bukkit.getPlayer(t.owner);
-        if (owner != null && (by == null || !by.getUniqueId().equals(owner.getUniqueId()))) {
-            owner.sendMessage(plugin.color("&6[ticket] &fIl tuo ticket &e#" + t.id + " &fe stato chiuso. Se ti serve ancora aiuto puoi aprirne un altro con /ticket"));
-            plugin.playConfiguredSound(owner.getLocation(), "message-sounds.success");
+        if (owner != null) {
+            if (by == null || !by.getUniqueId().equals(owner.getUniqueId())) {
+                owner.sendMessage(plugin.color("&6[ticket] &fIl tuo ticket &e#" + t.id + " &fe stato chiuso."));
+            }
+            notifyRate(owner, t);
         }
         for (Player pl : Bukkit.getOnlinePlayers()) {
             refreshChat(pl, t);
         }
+    }
+
+    /** Conferma (ticket-6 per lo staff, ticket-8 per il player): what = close oppure rate. */
+    private void openConfirm(Player p, Ticket t, String what, int scroll) {
+        UUID id = p.getUniqueId();
+        boolean staffView = staffSide(p, t);
+        Holder h = new Holder("confirm");
+        h.ticketId = t.id;
+        h.mode = what;
+        h.scroll = scroll;
+        h.viewer = p;
+        h.inventory = Bukkit.createInventory(h, SIZE, newTitle(staffView ? IMG_CONF_STAFF : IMG_CONF_PLAYER).build());
+        hideInventory(p);
+        List<String> yes = what.equals("close")
+                ? List.of("&7Il ticket viene chiuso.", staffView ? "&7Il player viene avvisato e deve valutarlo." : "&7Dopo dovrai valutarlo con le stelle.", "", "&eclicca per confermare")
+                : List.of("&7Valutazione: &e" + stars.getOrDefault(id, 0) + " su 5 stelle", "&7Dopo non potrai cambiarla.", "", "&eclicca per confermare");
+        List<String> no = List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare");
+        for (int s : new int[]{46, 47, 48}) {
+            put(h, s, pane("&aconferma", yes), "yes");
+        }
+        for (int s : new int[]{50, 51, 52}) {
+            put(h, s, pane("&cannulla", no), "no");
+        }
+        open(p, h);
     }
 
     // ------------------------------------------------------------------
@@ -1484,18 +1738,52 @@ public final class Tickets implements Listener {
     // ------------------------------------------------------------------
 
     private void openCategory(Player p, Ticket t) {
-        restoreInventory(p);
         Holder h = new Holder("cat");
         h.ticketId = t.id;
-        h.inventory = Bukkit.createInventory(h, 27, plugin.text("&8sposta il ticket #" + t.id));
-        Material[] real = {Material.WRITABLE_BOOK, Material.REDSTONE_TORCH, Material.SPYGLASS};
+        h.viewer = p;
+        h.inventory = Bukkit.createInventory(h, SIZE, newTitle(IMG_CAT).build());
+        hideInventory(p);
+        put(h, 19, pane("&cindietro", List.of()), "chat");
+        put(h, 25, pane("&6informazioni", List.of("&7Sposta il ticket in un'altra sezione,",
+                "&7per esempio da Bug ad Assistenza.", "&7Nella chat compare un avviso.")), null);
+        int[][] cols = {{1, 2}, {3, 4, 5}, {6, 7}};
         for (int i = 0; i < 3; i++) {
             boolean cur = CATS[i].equals(t.category);
-            put(h, 11 + i * 2, item(real[i], (cur ? "&a" : "&f") + CAT_LABEL[i],
-                    List.of(cur ? "&7sezione attuale" : "&eclicca per spostare qui")), cur ? null : "setcat:" + CATS[i]);
+            for (int r = 3; r <= 5; r++) {
+                for (int c : cols[i]) {
+                    put(h, r * 9 + c, pane((cur ? "&a" : "&f") + CAT_LABEL[i],
+                            List.of(cur ? "&7sezione attuale" : "&eclicca per spostare qui")), cur ? null : "setcat:" + CATS[i]);
+                }
+            }
         }
-        put(h, 22, item(Material.ARROW, "&7indietro", List.of()), "chat");
         open(p, h);
+    }
+
+    private static int gridSlot(int i) {
+        return 19 + (i / 7) * 9 + (i % 7);
+    }
+
+    /** Popup ticket-5: X (slot 10), i (16), griglia 7x3, frecce (47 e 51), barra del titolo e numero pagina. */
+    private Holder popup(Player p, String kind, int ticketId, String bar, int page, int pages, String backAction,
+                         String backName, List<String> info, boolean hide) {
+        Holder h = new Holder(kind);
+        h.ticketId = ticketId;
+        h.page = page;
+        h.viewer = p;
+        GuiTitle g = newTitle(IMG_ITEMS);
+        tinyText(g, bar, 95, true, BAR, BAR_SH);
+        navText(g, page + 1, pages, 96, NAV2, NAV2_SH);
+        h.inventory = Bukkit.createInventory(h, SIZE, g.build());
+        if (hide) {
+            hideInventory(p);
+        } else {
+            restoreInventory(p);
+        }
+        put(h, 10, pane(backName, List.of()), backAction);
+        put(h, 16, pane("&6informazioni", info), null);
+        put(h, 47, pane("&7pagina precedente", List.of()), "page:-1");
+        put(h, 51, pane("&7pagina successiva", List.of()), "page:1");
+        return h;
     }
 
     private void setCategory(Player p, Ticket t, String cat) {
@@ -1510,8 +1798,7 @@ public final class Tickets implements Listener {
 
     private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("https?://[^\\s]+");
 
-    private void openLinks(Player p, Ticket t) {
-        restoreInventory(p);
+    private void openLinks(Player p, Ticket t, int page) {
         boolean staffView = staffSide(p, t);
         java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
         for (Msg m : t.msgs) {
@@ -1524,63 +1811,59 @@ public final class Tickets implements Listener {
             }
         }
         List<String> all = new ArrayList<>(found);
-        if (all.size() > 45) {
-            all = new ArrayList<>(all.subList(all.size() - 45, all.size()));
-        }
-        Holder h = new Holder("links");
-        h.ticketId = t.id;
+        int pages = Math.max(1, (all.size() + 20) / 21);
+        page = Math.max(0, Math.min(page, pages - 1));
+        Holder h = popup(p, "links", t.id, "link del ticket", page, pages, "chat", "&cindietro",
+                List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true);
         h.links = all;
-        h.inventory = Bukkit.createInventory(h, 54, plugin.text("&8link del ticket (" + all.size() + ")"));
-        for (int i = 0; i < all.size(); i++) {
-            String url = all.get(i);
-            ItemStack it = new ItemStack(Material.PAPER);
-            ItemMeta meta = it.getItemMeta();
-            meta.displayName(plugin.text("&blink"));
-            List<Component> lore = new ArrayList<>();
-            for (int k = 0; k < url.length(); k += 28) {
-                lore.add(Component.text(url.substring(k, Math.min(url.length(), k + 28)))
-                        .color(net.kyori.adventure.text.format.NamedTextColor.GRAY)
-                        .decoration(TextDecoration.ITALIC, false));
+        for (int i = 0; i < 21; i++) {
+            int idx = page * 21 + i;
+            if (idx >= all.size()) {
+                break;
             }
-            lore.add(plugin.color(" "));
-            lore.add(plugin.text("&eclicca per aprirlo"));
-            meta.lore(lore);
-            it.setItemMeta(meta);
-            put(h, i, it, "openlink:" + i);
+            String url = all.get(idx);
+            List<String> lore = new ArrayList<>();
+            for (int k = 0; k < url.length(); k += 28) {
+                lore.add("&7" + url.substring(k, Math.min(url.length(), k + 28)).replace('&', ' '));
+            }
+            lore.add(" ");
+            lore.add("&eclicca per aprirlo");
+            put(h, gridSlot(i), linkItem("&blink &7#" + (idx + 1), lore), "openlink:" + idx);
         }
-        put(h, 49, item(Material.ARROW, "&7indietro", List.of()), "chat");
         open(p, h);
     }
 
-    private void openTag(Player p, Ticket t) {
-        restoreInventory(p);
-        Holder h = new Holder("tag");
-        h.ticketId = t.id;
-        h.inventory = Bukkit.createInventory(h, 54, plugin.text("&8tagga uno staffer - ticket #" + t.id));
-        int slot = 0;
-        for (Map.Entry<UUID, String> e : staffSeen.entrySet()) {
-            if (slot >= 45) {
-                break;
-            }
-            UUID u = e.getKey();
+    private void openTag(Player p, Ticket t, int page) {
+        List<UUID> cand = new ArrayList<>();
+        for (UUID u : staffSeen.keySet()) {
             if (u.equals(p.getUniqueId()) || t.staff.contains(u) || u.equals(t.owner)) {
                 continue;
             }
+            cand.add(u);
+        }
+        int pages = Math.max(1, (cand.size() + 20) / 21);
+        page = Math.max(0, Math.min(page, pages - 1));
+        Holder h = popup(p, "tag", t.id, "tagga staffer", page, pages, "chat", "&cindietro",
+                List.of("&7Dai accesso al ticket a un altro staffer.", "&7Poi gli scrivi un messaggio."), true);
+        for (int i = 0; i < 21; i++) {
+            int idx = page * 21 + i;
+            if (idx >= cand.size()) {
+                break;
+            }
+            UUID u = cand.get(idx);
             int cnt = staffOpenCount(u);
             boolean full = cnt >= maxStaffOpen();
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             OfflinePlayer off = Bukkit.getOfflinePlayer(u);
             meta.setOwningPlayer(off);
-            meta.displayName(plugin.text((full ? "&c" : "&f") + e.getValue()));
+            meta.displayName(plugin.text((full ? "&c" : "&f") + staffSeen.get(u)));
             meta.lore(loreComponents(List.of("&7ticket aperti: &f" + cnt + "/" + maxStaffOpen(),
                     Bukkit.getPlayer(u) != null ? "&aonline" : "&7offline", " ",
                     full ? "&cha gia troppi ticket aperti" : "&eclicca per taggarlo")));
             head.setItemMeta(meta);
-            put(h, slot, head, full ? "deny" : "tagpick:" + u);
-            slot++;
+            put(h, gridSlot(i), head, full ? "deny" : "tagpick:" + u);
         }
-        put(h, 49, item(Material.ARROW, "&7indietro", List.of()), "chat");
         open(p, h);
     }
 
@@ -1616,7 +1899,6 @@ public final class Tickets implements Listener {
     // ------------------------------------------------------------------
 
     public void openStaffList(Player p, String mode, int page) {
-        restoreInventory(p);
         List<Ticket> list = new ArrayList<>();
         UUID me = p.getUniqueId();
         for (Ticket t : tickets.values()) {
@@ -1630,19 +1912,26 @@ public final class Tickets implements Listener {
             }
         }
         list.sort((a, b) -> Long.compare(b.updated, a.updated));
-        int pages = Math.max(1, (list.size() + 44) / 45);
+        int pages = Math.max(1, (list.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
-        Holder h = new Holder("stafflist");
-        h.mode = mode;
-        h.page = page;
-        String title = switch (mode) {
-            case "mine" -> "i tuoi ticket aperti";
-            case "closed" -> "ticket chiusi da te";
-            default -> "tutti i ticket aperti";
+        String bar = switch (mode) {
+            case "mine" -> "i tuoi aperti";
+            case "closed" -> "chiusi da te";
+            default -> "tutti gli aperti";
         };
-        h.inventory = Bukkit.createInventory(h, SIZE, plugin.text("&8" + title + " (" + list.size() + ")"));
-        for (int i = 0; i < 45; i++) {
-            int idx = page * 45 + i;
+        Holder h = popup(p, "stafflist", 0, bar, page, pages, "close", "&cchiudi",
+                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), false);
+        h.mode = mode;
+        String next = mode.equals("open") ? "mine" : mode.equals("mine") ? "closed" : "open";
+        List<String> modes = List.of("&7scegli la lista:", " ",
+                (mode.equals("open") ? "&a» " : "&8") + "tutti gli aperti",
+                (mode.equals("mine") ? "&a» " : "&8") + "i tuoi aperti",
+                (mode.equals("closed") ? "&a» " : "&8") + "chiusi da te", " ", "&eclicca per cambiare");
+        for (int s = 12; s <= 15; s++) {
+            put(h, s, pane("&bcambia lista", modes), "mode:" + next);
+        }
+        for (int i = 0; i < 21; i++) {
+            int idx = page * 21 + i;
             if (idx >= list.size()) {
                 break;
             }
@@ -1669,15 +1958,8 @@ public final class Tickets implements Listener {
             }
             lore.add("");
             lore.add("&eclicca per aprire");
-            Material m = !t.open ? Material.BOOK : st == 1 ? Material.PAPER : Material.MAP;
-            put(h, i, item(m, "&f#" + t.id + " &7- " + CAT_SHORT[catIndex(t.category)], lore), "open:" + t.id);
+            put(h, gridSlot(i), ticketItem(t, "&f#" + t.id + " &7- " + CAT_SHORT[catIndex(t.category)], lore), "open:" + t.id);
         }
-        put(h, 45, item(Material.ARROW, "&7pagina precedente", List.of()), "page:-1");
-        put(h, 46, item(Material.LIME_DYE, (mode.equals("open") ? "&a" : "&f") + "tutti gli aperti", List.of()), "mode:open");
-        put(h, 47, item(Material.YELLOW_DYE, (mode.equals("mine") ? "&a" : "&f") + "i miei aperti", List.of("&7max " + maxStaffOpen() + " alla volta")), "mode:mine");
-        put(h, 48, item(Material.RED_DYE, (mode.equals("closed") ? "&a" : "&f") + "chiusi da me", List.of()), "mode:closed");
-        put(h, 49, item(Material.BARRIER, "&cchiudi", List.of()), "close");
-        put(h, 53, item(Material.ARROW, "&7pagina successiva", List.of()), "page:1");
         open(p, h);
     }
 
@@ -1691,15 +1973,12 @@ public final class Tickets implements Listener {
         AnvilSession s = new AnvilSession();
         s.onSend = onSend;
         s.onCancel = onCancel;
-        AnvilView view = MenuType.ANVIL.builder().title(Component.text(title)).build(p);
+        GuiTitle at = newTitle(IMG_ANVIL, plugin.getConfig().getInt("tickets.anvil-shift", -52));
+        AnvilView view = MenuType.ANVIL.builder().title(at.build()).build(p);
         s.view = view;
-        ItemStack left = new ItemStack(Material.ARROW);
-        ItemMeta lm = left.getItemMeta();
-        lm.displayName(Component.text(" "));
-        lm.lore(List.of(plugin.text("&ctorna indietro")));
-        left.setItemMeta(lm);
-        view.setItem(0, left);
-        view.setItem(1, item(Material.WRITABLE_BOOK, "&espostati a scrivere in chat",
+        // oggetti invisibili: l'immagine dell'incudine disegna le icone (casa, scambio, invia)
+        view.setItem(0, pane(" ", List.of("&ctorna indietro")));
+        view.setItem(1, pane("&escrivi in chat",
                 List.of("&7Per i messaggi lunghi: scrivi in chat", "&7(oppure scrivi &fannulla&7 per tornare indietro).")));
         anvils.put(id, s);
         switching.add(id);
@@ -1708,7 +1987,7 @@ public final class Tickets implements Listener {
         } finally {
             switching.remove(id);
         }
-        p.sendMessage(plugin.color("&7Scrivi il messaggio nella barra e clicca sull'oggetto verde per inviare. L'incudine accetta massimo 50 caratteri: per messaggi piu lunghi usa il libro e scrivi in chat."));
+        p.sendMessage(plugin.color("&7Scrivi il messaggio nella barra e clicca sul tasto verde per inviare. L'incudine accetta massimo 50 caratteri: per messaggi piu lunghi usa lo scambio e scrivi in chat."));
     }
 
     private void finishAnvil(Player p, AnvilSession s, String text) {
@@ -1740,7 +2019,7 @@ public final class Tickets implements Listener {
         AnvilView av = (AnvilView) event.getView();
         String txt = av.getRenameText();
         s.text = txt == null ? "" : txt;
-        event.setResult(item(Material.EMERALD, "&ainvia messaggio", List.of("&7" + clean(s.text))));
+        event.setResult(pane("&ainvia", List.of("&7" + clean(s.text))));
         av.setRepairCost(0);
     }
 
@@ -1833,6 +2112,12 @@ public final class Tickets implements Listener {
             }
         } else if (action.startsWith("create:")) {
             String cat = action.substring(7);
+            Ticket pend = pendingRating(id);
+            if (pend != null) {
+                err(p, "prima devi valutare il ticket #" + pend.id);
+                openChat(p, pend.id, 0);
+                return;
+            }
             if (openTicketOf(id) != null) {
                 err(p, "hai gia un ticket aperto: chiudilo prima di aprirne un altro");
                 return;
@@ -1851,6 +2136,10 @@ public final class Tickets implements Listener {
             int d = Integer.parseInt(action.substring(5));
             if (h.kind.equals("stafflist")) {
                 openStaffList(p, h.mode, h.page + d);
+            } else if (h.kind.equals("links") && t != null) {
+                openLinks(p, t, h.page + d);
+            } else if (h.kind.equals("tag") && t != null) {
+                openTag(p, t, h.page + d);
             } else {
                 openList(p, h.page + d, h.filter);
             }
@@ -1873,17 +2162,16 @@ public final class Tickets implements Listener {
         } else if (action.equals("profile")) {
             p.sendMessage(plugin.text("&7Il profilo del giocatore non e ancora disponibile."));
         } else if (action.equals("links")) {
-            openLinks(p, t);
+            openLinks(p, t, 0);
         } else if (action.startsWith("openlink:")) {
             int li = Integer.parseInt(action.substring(9));
             if (li >= 0 && li < h.links.size()) {
                 String url = h.links.get(li);
+                int pg = h.page;
                 p.closeInventory();
-                net.kyori.adventure.text.Component page = Component.text("Clicca il link per aprirlo:\n\n")
-                        .append(Component.text(url).color(net.kyori.adventure.text.format.NamedTextColor.BLUE)
-                                .decorate(TextDecoration.UNDERLINED)
-                                .clickEvent(net.kyori.adventure.text.event.ClickEvent.openUrl(url)));
-                p.openBook(net.kyori.adventure.inventory.Book.book(Component.text("link"), Component.text("ticket"), page));
+                // finestra 1.21 con il link; "annulla" riporta alla lista dei link
+                Bukkit.getScheduler().runTask(plugin, () -> TicketDialog.open(p,
+                        List.of(new TicketDialog.Link("apri il link", url)), () -> openLinks(p, t, pg)));
             }
         } else if (action.equals("write")) {
             if (!t.open) {
@@ -1894,7 +2182,9 @@ public final class Tickets implements Listener {
                 openChat(p, t.id, 0);
             }, () -> openChat(p, t.id, h.scroll));
         } else if (action.equals("closeticket")) {
-            closeTicket(t, p, p.getName(), false);
+            if (t.open) {
+                openConfirm(p, t, "close", h.scroll);
+            }
         } else if (action.startsWith("canned:")) {
             sendCanned(p, t, action.substring(7));
         } else if (action.equals("cat")) {
@@ -1902,12 +2192,34 @@ public final class Tickets implements Listener {
         } else if (action.startsWith("setcat:")) {
             setCategory(p, t, action.substring(7));
         } else if (action.equals("tag")) {
-            openTag(p, t);
+            openTag(p, t, 0);
         } else if (action.equals("chat")) {
             openChat(p, t.id, 0);
         } else if (action.startsWith("tagpick:")) {
             UUID target = UUID.fromString(action.substring(8));
             askText(p, "messaggio per lo staffer", "", txt -> doTag(p, t, target, txt), () -> openChat(p, t.id, 0));
+        } else if (action.startsWith("star:")) {
+            if (!t.open && t.rating == 0 && t.owner.equals(id)) {
+                stars.put(id, Integer.parseInt(action.substring(5)) + 1);
+                openChat(p, t.id, h.scroll);
+            }
+        } else if (action.equals("rate")) {
+            if (stars.getOrDefault(id, 0) < 1) {
+                err(p, "scegli prima quante stelle dare");
+            } else {
+                openConfirm(p, t, "rate", h.scroll);
+            }
+        } else if (action.equals("yes")) {
+            if (h.mode.equals("close")) {
+                if (t.open) {
+                    closeTicket(t, p, p.getName(), false);
+                }
+            } else if (h.mode.equals("rate")) {
+                rateTicket(p, t, stars.getOrDefault(id, 0));
+            }
+            openChat(p, t.id, 0);
+        } else if (action.equals("no")) {
+            openChat(p, t.id, h.scroll);
         }
     }
 
@@ -1922,6 +2234,11 @@ public final class Tickets implements Listener {
         if (event.getWhoClicked() instanceof Player p && anvils.containsKey(p.getUniqueId())) {
             event.setCancelled(true);
         }
+    }
+
+    /** Gui aperte dalla chat: l'inventario del player resta nascosto finche non le chiude. */
+    private static boolean hidesInventory(String kind) {
+        return kind.equals("chat") || kind.equals("cat") || kind.equals("links") || kind.equals("tag") || kind.equals("confirm");
     }
 
     @EventHandler
@@ -1947,7 +2264,7 @@ public final class Tickets implements Listener {
         if (switching.contains(id)) {
             return;
         }
-        if (event.getInventory().getHolder() instanceof Holder h && h.kind.equals("chat")) {
+        if (event.getInventory().getHolder() instanceof Holder h && hidesInventory(h.kind)) {
             restoreInventory(p);
         }
     }
@@ -1959,6 +2276,19 @@ public final class Tickets implements Listener {
         if (isStaff(p)) {
             seeStaff(p);
         }
+        final Ticket pend = pendingRating(p.getUniqueId());
+        if (pend != null) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (!p.isOnline() || pend.rating != 0) {
+                    return;
+                }
+                if (pend.rateDeadline > 0 && System.currentTimeMillis() >= pend.rateDeadline) {
+                    autoRate(pend);
+                } else {
+                    notifyRate(p, pend);
+                }
+            }, 60L);
+        }
     }
 
     @EventHandler
@@ -1966,6 +2296,7 @@ public final class Tickets implements Listener {
         Player p = event.getPlayer();
         UUID id = p.getUniqueId();
         awaiting.remove(id);
+        stars.remove(id);
         AnvilSession s = anvils.remove(id);
         if (s != null) {
             s.done = true;

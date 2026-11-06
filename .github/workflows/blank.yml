@@ -25,5 +25,5 @@ jobs:
           printf '%s\n' "$SFTP_KEY" > ~/.ssh/falix_key
           chmod 600 ~/.ssh/falix_key
           ssh-keyscan -p 3928 eu11-free.falixserver.net >> ~/.ssh/known_hosts
-          echo "put target/BlockMania.jar plugins/BlockMania.jar" > batch.txt
+          printf -- '-mkdir plugins/update\nput target/BlockMania.jar plugins/update/BlockMania.jar\n' > batch.txt
           sftp -P 3928 -i ~/.ssh/falix_key -b batch.txt scifodennis07.1aeee6eb@eu11-free.falixserver.net
