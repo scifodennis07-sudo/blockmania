@@ -90,6 +90,8 @@ public final class Tickets implements Listener {
     // popup ticket-5: testo della barra in alto e numero pagina, scritti con i set del pack per i popup
     private static final char BAR = '\uf500';
     private static final char BAR_SH = '\uf600';
+    /** Font separato per le barre dei popup (i troppi glifi nel font default rompevano il client). */
+    private static final String FONT_TINY2 = "minecraft:tiny2";
     private static final char NAV2 = '\uF700';
     private static final char NAV2_SH = '\uF710';
 
@@ -1052,8 +1054,9 @@ public final class Tickets implements Listener {
         }
         int adv = tinyAdvance(text);
         int start = center ? xImg - Math.max(0, adv - 1) / 2 : xImg;
-        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(text, shadowBase), "", adv);
-        g.at(start + IMG, "&f" + tinyLetters(text, base), "", adv);
+        String fnt = base == BAR ? FONT_TINY2 : "";
+        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(text, shadowBase), fnt, adv);
+        g.at(start + IMG, "&f" + tinyLetters(text, base), fnt, adv);
     }
 
     private static final char NAV = '\uE4A0';
@@ -1075,8 +1078,9 @@ public final class Tickets implements Listener {
         }
         int adv = plain.length() * 6;
         int start = centerImg - (adv - 1) / 2;
-        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, "", adv);
-        g.at(start + IMG, "&f" + n, "", adv);
+        String fnt = nav == NAV2 ? FONT_TINY2 : "";
+        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, fnt, adv);
+        g.at(start + IMG, "&f" + n, fnt, adv);
     }
 
     /** Stelle piene (giallo) sopra le 5 caselle del ticket-7: n = quante riempire. */
