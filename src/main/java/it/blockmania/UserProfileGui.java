@@ -352,7 +352,7 @@ public final class UserProfileGui implements Listener {
     }
 
     /** Faccia 8x8: scala 1, 2 o 4 (la 4 usa quadrati 2x2 su due righe). y = parte alta in pixel dell'immagine. */
-    private void drawFace(GuiTitle g, int[] face, int x, int y, int scale) {
+    private static void drawFace(GuiTitle g, int[] face, int x, int y, int scale) {
         int sub = Math.max(1, scale / 2);
         for (int j = 0; j < 8; j++) {
             for (int s = 0; s < sub; s++) {
@@ -428,6 +428,36 @@ public final class UserProfileGui implements Listener {
         return f == null ? DEFAULT_FACE : f;
     }
 
+    private static final int[] GREY_FACE = new int[64];
+
+    static {
+        java.util.Arrays.fill(GREY_FACE, 0x5A5A5A);
+    }
+
+    /** Callback in attesa del caricamento della faccia (usati da altre GUI, es. RulePopups). */
+    private final Map<UUID, List<Runnable>> faceWaiters = new HashMap<>();
+
+    /** Faccia 8x8 gia' caricata (pixel RGB) oppure null se non ancora disponibile. Solo main thread. */
+    public int[] loadedFace(UUID id) {
+        return id == null ? null : faces.get(id);
+    }
+
+    /** Avvia (una sola volta per UUID) il caricamento async della faccia; a caricamento finito esegue onLoaded sul main thread. */
+    public void ensureFaceFor(UUID id, Runnable onLoaded) {
+        if (id == null || faces.containsKey(id)) {
+            return;
+        }
+        if (onLoaded != null) {
+            faceWaiters.computeIfAbsent(id, k -> new ArrayList<>()).add(onLoaded);
+        }
+        ensureFace(id);
+    }
+
+    /** Disegna la faccia (run-length per riga) nel titolo; face null = sagoma grigia. x,y in pixel dell'immagine. */
+    public static void drawFaceAt(GuiTitle g, int[] face, int x, int y, int scale) {
+        drawFace(g, face == null ? GREY_FACE : face, x, y, scale);
+    }
+
     private static URL skinOf(PlayerProfile profile) {
         try {
             return profile == null ? null : profile.getTextures().getSkin();
@@ -487,6 +517,16 @@ public final class UserProfileGui implements Listener {
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     faces.put(id, face);
                     refresh(id);
+                    List<Runnable> waiting = faceWaiters.remove(id);
+                    if (waiting != null) {
+                        for (Runnable r : waiting) {
+                            try {
+                                r.run();
+                            } catch (Throwable ignored) {
+                                // un callback difettoso non blocca gli altri
+                            }
+                        }
+                    }
                 });
             } catch (Exception e) {
                 // la skin non si scarica: resta la faccia di default

@@ -65,6 +65,9 @@ public final class RulePopups implements Listener {
         Player staff;
         String title;
         List<ItemStack> entries;
+        /** UUID (anche null) per voce: se la lista non e' null le teste sono 2D nel titolo. */
+        List<UUID> faces;
+        boolean refreshQueued;
         int page;
         Runnable onBack;
         Holder holder;
@@ -93,14 +96,20 @@ public final class RulePopups implements Listener {
 
     /** Lista a griglia 7x3 con il titolo nella barra; X torna (onBack) o chiude. */
     public void openList(Player staff, String title, List<ItemStack> entries, Runnable onBack) {
-        openList(staff, title, entries, onBack, 0);
+        openList(staff, title, entries, null, onBack, 0);
     }
 
-    private void openList(Player staff, String title, List<ItemStack> entries, Runnable onBack, int page) {
+    /** Come sopra, ma con una faccia 2D (nel titolo) per voce: faces.get(i) puo' essere null (sagoma grigia). */
+    public void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack) {
+        openList(staff, title, entries, faces, onBack, 0);
+    }
+
+    private void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack, int page) {
         Session s = new Session();
         s.staff = staff;
         s.title = title == null ? "" : title;
         s.entries = entries == null ? new ArrayList<>() : entries;
+        s.faces = faces;
         s.onBack = onBack;
         int pages = pageCount(s.entries.size());
         s.page = Math.max(0, Math.min(page, pages - 1));
@@ -117,11 +126,66 @@ public final class RulePopups implements Listener {
             switching.remove(id);
         }
         sessions.put(id, s);
+        requestFaces(s);
+    }
+
+    private UUID faceId(Session s, int idx) {
+        return s.faces == null || idx < 0 || idx >= s.faces.size() ? null : s.faces.get(idx);
+    }
+
+    /** Avvia il caricamento delle facce della pagina; a ogni faccia pronta ridisegna il titolo (coalescendo). */
+    private void requestFaces(Session s) {
+        UserProfileGui up = plugin.getUserProfile();
+        if (s.faces == null || up == null) {
+            return;
+        }
+        for (int i = 0; i < PER_PAGE; i++) {
+            int idx = s.page * PER_PAGE + i;
+            if (idx >= s.entries.size()) {
+                break;
+            }
+            UUID f = faceId(s, idx);
+            if (f != null && up.loadedFace(f) == null) {
+                up.ensureFaceFor(f, () -> queueRefresh(s));
+            }
+        }
+    }
+
+    private void queueRefresh(Session s) {
+        if (s.refreshQueued) {
+            return;
+        }
+        s.refreshQueued = true;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            s.refreshQueued = false;
+            Player p = s.staff;
+            if (p == null || !p.isOnline() || sessions.get(p.getUniqueId()) != s
+                    || p.getOpenInventory().getTopInventory().getHolder() != s.holder) {
+                return;
+            }
+            // il titolo non si cambia a inventario aperto: si riapre (switching evita di far scattare onClose)
+            openList(p, s.title, s.entries, s.faces, s.onBack, s.page);
+        }, 5L);
+    }
+
+    /** Elemento senza testa 3D: pane trasparente con nome e lore dell'originale. */
+    private ItemStack flat(ItemStack src) {
+        ItemStack stack = new ItemStack(Material.GLASS_PANE);
+        ItemMeta meta = stack.getItemMeta();
+        ItemMeta sm = src.getItemMeta();
+        meta.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
+        if (sm != null) {
+            meta.displayName(sm.displayName());
+            meta.lore(sm.lore());
+        }
+        stack.setItemMeta(meta);
+        return stack;
     }
 
     /** Cronologia modifiche della regola, dalla piu' recente. */
     public void historyList(Player staff, Rules.Rule r, Runnable onBack) {
         List<ItemStack> list = new ArrayList<>();
+        List<UUID> faces = new ArrayList<>();
         List<Rules.Change> hist = rules.history(r.code());
         if (hist != null) {
             for (Rules.Change c : hist) {
@@ -134,15 +198,17 @@ public final class RulePopups implements Listener {
                 }
                 lore.add((created ? "&7creata da: &f" : "&7di: &f") + name(c.byName()));
                 lore.add("&7il: &f" + date(c.time()));
-                list.add(head(c.by(), c.byName(), "&f" + field, lore));
+                list.add(pane("&f" + field, lore));
+                faces.add(resolve(c.by(), c.byName()));
             }
         }
-        openList(staff, "cronologia " + r.code(), list, onBack);
+        openList(staff, "cronologia " + r.code(), list, faces, onBack);
     }
 
     /** Player sanzionati con questa regola, dal piu' recente. */
     public void hitsList(Player staff, Rules.Rule r, Runnable onBack) {
         List<ItemStack> list = new ArrayList<>();
+        List<UUID> faces = new ArrayList<>();
         List<Rules.Hit> hits = rules.hits(r.code());
         if (hits != null) {
             for (Rules.Hit h : hits) {
@@ -151,10 +217,23 @@ public final class RulePopups implements Listener {
                 lore.add("&7da: &f" + name(h.byName()));
                 lore.add("&7il: &f" + date(h.time()));
                 lore.add("&7durata: &f" + durationLabel(h.durationMs()));
-                list.add(head(h.target(), h.targetName(), "&f" + name(h.targetName()), lore));
+                list.add(pane("&f" + name(h.targetName()), lore));
+                faces.add(resolve(h.target(), h.targetName()));
             }
         }
-        openList(staff, "sanzionati " + r.code(), list, onBack);
+        openList(staff, "sanzionati " + r.code(), list, faces, onBack);
+    }
+
+    /** UUID noto, altrimenti dal nome solo se in cache (nessun lookup di rete sul main thread); null se sconosciuto. */
+    private static UUID resolve(UUID uuid, String playerName) {
+        if (uuid != null) {
+            return uuid;
+        }
+        if (playerName == null || playerName.isBlank()) {
+            return null;
+        }
+        org.bukkit.OfflinePlayer off = Bukkit.getOfflinePlayerIfCached(playerName);
+        return off == null ? null : off.getUniqueId();
     }
 
     private static Material kindMaterial(Rules.Type t) {
@@ -310,9 +389,27 @@ public final class RulePopups implements Listener {
     private net.kyori.adventure.text.Component titleOf(Session s, int pages) {
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + DEF_IMAGE, DEF_IMAGE_FONT, DEF_ADV);
+        drawFaces(g, s);
         navText(g, s.page + 1, pages);
         UserProfilePowers.topTitle(plugin, g, s.title);
         return g.build();
+    }
+
+    /** Facce 2D 16x16 (scala 2) dentro le celle 18x18 della griglia 7x3: cella i = (32+18*(i%7), 50+18*(i/7)) + 1 pixel di margine. */
+    private void drawFaces(GuiTitle g, Session s) {
+        if (s.faces == null) {
+            return;
+        }
+        UserProfileGui up = plugin.getUserProfile();
+        for (int i = 0; i < PER_PAGE; i++) {
+            int idx = s.page * PER_PAGE + i;
+            if (idx >= s.entries.size()) {
+                break;
+            }
+            UUID f = faceId(s, idx);
+            int[] px = up == null || f == null ? null : up.loadedFace(f);
+            UserProfileGui.drawFaceAt(g, px, 33 + 18 * (i % 7), 51 + 18 * (i / 7), 2);
+        }
     }
 
     private void navText(GuiTitle g, int page, int pages) {
@@ -346,7 +443,8 @@ public final class RulePopups implements Listener {
             if (idx >= s.entries.size()) {
                 break;
             }
-            inv.setItem(gridSlot(i), s.entries.get(idx));
+            ItemStack e = s.entries.get(idx);
+            inv.setItem(gridSlot(i), s.faces == null ? e : flat(e));
         }
     }
 
@@ -436,7 +534,7 @@ public final class RulePopups implements Listener {
             int np = Math.max(0, Math.min(s.page + (slot == SLOT_NEXT ? 1 : -1), pages - 1));
             if (np != s.page) {
                 // il numero pagina e' nel titolo: serve un inventario nuovo
-                Bukkit.getScheduler().runTask(plugin, () -> openList(p, s.title, s.entries, s.onBack, np));
+                Bukkit.getScheduler().runTask(plugin, () -> openList(p, s.title, s.entries, s.faces, s.onBack, np));
             }
         }
     }
