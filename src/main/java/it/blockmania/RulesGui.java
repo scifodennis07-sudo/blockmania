@@ -44,7 +44,7 @@ public final class RulesGui implements Listener {
     private static final int IMG = -22;
     private static final int IMG_ADV = 179;   // dichiarato 179 (reale 186): convenzione Tickets/ItemsGui, vale x_img + IMG
     /** Barra frecce: su questa immagine sta in alto (container y 15..28); font e quote configurabili (rules-gui.*). */
-    private static final String DEF_NAV_FONT = "minecraft:tiny3";
+    private static final String DEF_NAV_FONT = "minecraft:tiny5";
     private static final char DEF_NAV_BASE = '';
     private static final char DEF_NAV_SHADOW = '';
     private static final int NAV_CX = 94;
@@ -364,6 +364,9 @@ public final class RulesGui implements Listener {
     private ItemStack ruleItem(Rules.Rule r) {
         // l'aspetto lo disegna il font nel titolo: qui solo l'item trasparente con nome e descrizione
         List<String> lore = new ArrayList<>();
+        // titolo in bianco in cima, poi descrizione, tipo, tempo
+        lore.add("&f" + r.title());
+        lore.add(" ");
         for (String line : wrap(r.text())) {
             lore.add("&7" + line);
         }
@@ -371,6 +374,7 @@ public final class RulesGui implements Listener {
         lore.add("&7Tipo: " + colorOf(r.type()) + Rules.typeLabel(r.type()));
         lore.add("&7Tempo: &f" + Rules.timeLabel(r));
         lore.add(" ");
+        lore.add("&eclicca per aprire");
         lore.add("&eQ = elimina");
         return pane("&f" + r.code(), lore);
     }
@@ -383,11 +387,19 @@ public final class RulesGui implements Listener {
         for (int slot : SLOTS_X) {
             inv.setItem(slot, pane("&cchiudi", List.of()));
         }
-        List<String> blue = List.of("&7Filtro: &f" + filterName(s.filter),
-                "&eclick sinistro: cambia filtro",
-                "&eclick destro: crea una regola");
+        // stesso stile dei filtri dei ticket: opzioni con » verde sulla corrente
+        List<String> blue = new ArrayList<>();
+        blue.add("&7scegli cosa vedere:");
+        blue.add(" ");
+        Rules.Type[] opts = {null, Rules.Type.BAN, Rules.Type.WARN, Rules.Type.MUTE, Rules.Type.REGOLAMENTO};
+        for (Rules.Type o : opts) {
+            blue.add(o == s.filter ? "&a» " + filterName(o) : "&8" + filterName(o));
+        }
+        blue.add(" ");
+        blue.add("&eclicca per cambiare");
+        blue.add("&eclick destro: crea una regola");
         for (int slot : SLOTS_BLUE) {
-            inv.setItem(slot, pane("&9filtro regole", blue));
+            inv.setItem(slot, pane("&bfiltra per", blue));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
@@ -461,11 +473,24 @@ public final class RulesGui implements Listener {
                 reopen(p, currentFilter);
                 return;
             }
-            Bukkit.getScheduler().runTask(plugin, () -> askContent(p, currentFilter, c));
+            Bukkit.getScheduler().runTask(plugin, () -> askTitle(p, currentFilter, c));
         }, cancel);
     }
 
-    private void askContent(Player p, Rules.Type currentFilter, String code) {
+    private void askTitle(Player p, Rules.Type currentFilter, String code) {
+        Runnable cancel = () -> reopen(p, currentFilter);
+        ui.askText(p, "titolo della regola", "TITOLO", "", tit -> {
+            String title = tit == null ? "" : tit.trim();
+            if (title.isEmpty()) {
+                GuiMsg.send(plugin, p, "&cil titolo della regola non puo' essere vuoto");
+                reopen(p, currentFilter);
+                return;
+            }
+            Bukkit.getScheduler().runTask(plugin, () -> askContent(p, currentFilter, code, title));
+        }, cancel);
+    }
+
+    private void askContent(Player p, Rules.Type currentFilter, String code, String title) {
         Runnable cancel = () -> reopen(p, currentFilter);
         ui.askText(p, "contenuto della regola", "CONTENUTO", "", txt -> {
             String text = txt == null ? "" : txt.trim();
@@ -474,11 +499,11 @@ public final class RulesGui implements Listener {
                 reopen(p, currentFilter);
                 return;
             }
-            Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, code, text));
+            Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, code, title, text));
         }, cancel);
     }
 
-    private void askType(Player p, Rules.Type currentFilter, String code, String text) {
+    private void askType(Player p, Rules.Type currentFilter, String code, String title, String text) {
         ui.openCommands(p, "tipo regola", List.of("ban", "warn", "mute", "regolamento"), cmd -> {
             Rules.Type t;
             try {
@@ -488,29 +513,29 @@ public final class RulesGui implements Listener {
                 return;
             }
             if (t == Rules.Type.BAN || t == Rules.Type.MUTE) {
-                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, text, t));
+                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, title, text, t));
             } else {
-                finishCreate(p, code, text, t, 0L);
+                finishCreate(p, code, title, text, t, 0L);
             }
         }, () -> reopen(p, currentFilter), false, null);
     }
 
-    private void askTime(Player p, Rules.Type currentFilter, String code, String text, Rules.Type t) {
+    private void askTime(Player p, Rules.Type currentFilter, String code, String title, String text, Rules.Type t) {
         String hint = t == Rules.Type.BAN ? "numero di minuti, permanente o blacklist" : "numero di minuti o permanente";
         ui.askText(p, "tempo (" + hint + ")", "TEMPO", "", in -> {
             String v = in == null ? "" : in.trim();
             String err = Rules.parseTimeError(t, v);
             if (err != null) {
                 GuiMsg.send(plugin, p, "&c" + err);
-                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, text, t));
+                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, title, text, t));
                 return;
             }
-            finishCreate(p, code, text, t, Rules.parseTime(t, v));
+            finishCreate(p, code, title, text, t, Rules.parseTime(t, v));
         }, () -> reopen(p, currentFilter));
     }
 
-    private void finishCreate(Player p, String code, String text, Rules.Type t, long minutes) {
-        Rules.Rule r = new Rules.Rule(code, text, t, minutes);
+    private void finishCreate(Player p, String code, String title, String text, Rules.Type t, long minutes) {
+        Rules.Rule r = Rules.Rule.created(code, title, text, t, minutes, p);
         if (rules.add(r)) {
             AdminCommand a = plugin.getAdminCommand();
             if (a != null) {
@@ -634,6 +659,14 @@ public final class RulesGui implements Listener {
         }
         ClickType ct = event.getClick();
         if (ct != ClickType.DROP && ct != ClickType.CONTROL_DROP) {
+            if (ct == ClickType.LEFT || ct == ClickType.SHIFT_LEFT) {
+                // apre il dettaglio; "indietro" riapre la lista con lo stesso filtro e pagina
+                plugin.guiClick(p);
+                final Rules.Type backFilter = s.filter;
+                final int backPage = s.page;
+                Bukkit.getScheduler().runTask(plugin, () -> plugin.getRuleDetailGui().open(p, code,
+                        () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, backFilter, backPage))));
+            }
             return;
         }
         plugin.guiClick(p);

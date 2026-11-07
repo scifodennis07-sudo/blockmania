@@ -323,6 +323,36 @@ public final class UserProfilePowers implements Listener {
                 default -> { }
             }
         }
+        if (label != null && (label.toLowerCase(java.util.Locale.ROOT).startsWith("modifica")
+                || label.toLowerCase(java.util.Locale.ROOT).startsWith("tipo regola"))) {
+            switch (cmd) {
+                case "code" -> {
+                    return new String[]{"&bcodice", "Cambia il codice della regola.", "&eclicca per cambiare il codice"};
+                }
+                case "title" -> {
+                    return new String[]{"&etitolo", "Cambia il titolo della regola.", "&eclicca per cambiare il titolo"};
+                }
+                case "text" -> {
+                    return new String[]{"&fdescrizione", "Cambia la descrizione della regola.", "&eclicca per cambiare la descrizione"};
+                }
+                case "type" -> {
+                    return new String[]{"&csanzione", "Cambia il tipo di sanzione e il tempo.", "&eclicca per cambiare la sanzione"};
+                }
+                case "ban" -> {
+                    return new String[]{"&cban", "La regola e' punita con un ban.", "&eclicca per scegliere il ban"};
+                }
+                case "warn" -> {
+                    return new String[]{"&ewarn", "La regola e' punita con un warn.", "&eclicca per scegliere il warn"};
+                }
+                case "mute" -> {
+                    return new String[]{"&6mute", "La regola e' punita con un mute.", "&eclicca per scegliere il mute"};
+                }
+                case "regolamento" -> {
+                    return new String[]{"&bregolamento", "Regola solo informativa, senza sanzione.", "&eclicca per scegliere il regolamento"};
+                }
+                default -> { }
+            }
+        }
         String[] base = actionInfo(cmd);
         return new String[]{base[0], base[1], "&eclicca per scegliere"};
     }
@@ -357,6 +387,8 @@ public final class UserProfilePowers implements Listener {
             case "add,remove,reset" -> IMG_WARN;
             case "set,full,setuses" -> IMG_SET_FULL_USES;
             case "full,setuses,reset" -> IMG_FULL_USES_RESET;
+            case "code,title,text" -> "";    // userprofile-19: codice, titolo, descrizione (modifica regola)
+            case "title,text,type" -> "";    // userprofile-20: titolo, descrizione, sanzione (modifica regola)
             case "set,full,infinite" -> IMG_SET_FULL_INF;
             case "full,infinite,reset" -> IMG_FULL_INF_RESET;
             default -> null;

@@ -60,6 +60,8 @@ public final class BlockMania extends JavaPlugin {
     private UserProfileRewards profileRewards;
     private UserProfileGui userProfile;
     private RulesGui rulesGui;
+    private RulePopups rulePopups;
+    private RuleDetailGui ruleDetailGui;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
@@ -192,6 +194,10 @@ public final class BlockMania extends JavaPlugin {
         // GUI regole (/adminmania rules): dopo profileUi e rules
         rulesGui = new RulesGui(this, rules, profileUi);
         getServer().getPluginManager().registerEvents(rulesGui, this);
+        rulePopups = new RulePopups(this, rules, profileUi);
+        getServer().getPluginManager().registerEvents(rulePopups, this);
+        ruleDetailGui = new RuleDetailGui(this, rules, profileUi);
+        getServer().getPluginManager().registerEvents(ruleDetailGui, this);
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
@@ -591,6 +597,14 @@ public final class BlockMania extends JavaPlugin {
 
     public RulesGui getRulesGui() {
         return rulesGui;
+    }
+
+    public RulePopups getRulePopups() {
+        return rulePopups;
+    }
+
+    public RuleDetailGui getRuleDetailGui() {
+        return ruleDetailGui;
     }
 
     public UserProfileGui getUserProfile() {

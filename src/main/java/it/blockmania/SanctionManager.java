@@ -454,12 +454,22 @@ public final class SanctionManager implements Listener {
                     return false; // gia' al massimo di warn
                 }
                 notifyRule(target, playerMessage(rule, msg, false));
+                logRuleHit(rule, target, staff, by);
                 fire(target);
                 return true;
             }
         }
+        logRuleHit(rule, target, staff, by);
         fire(target);
         return true;
+    }
+
+    /** Registra la sanzione nello storico della regola (Rules.logHit). */
+    private void logRuleHit(Rules.Rule rule, UUID target, CommandSender staff, UUID by) {
+        String tn = Bukkit.getOfflinePlayer(target).getName();
+        plugin.getRules().logHit(rule.code(), new Rules.Hit(System.currentTimeMillis(), target,
+                tn == null ? target.toString() : tn, by, staff == null ? "console" : staff.getName(),
+                rule.type(), rule.minutes()));
     }
 
     /** Testo per il player: "Sei stato bannato per la regola ..." da config sanctions.msg.* (placeholder %code% %text% %staff% %type%). */
