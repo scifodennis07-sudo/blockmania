@@ -83,6 +83,8 @@ public final class BlockVariantsGui implements Listener {
         var c = plugin.getConfig();
         GuiTitle t = new GuiTitle(plugin);
         t.text(c.getString(P + "title.text", "&8varianti"), c.getString(P + "title.font", ""), P + "title");
+        // nome della GUI centrato nella barra grigia in alto
+        UpgradeManager.barTitle(plugin, t, "VARIANTI BLOCCO " + number, "VARIANTI");
         String plain = number + "/" + max;
         String set = c.getString(P + "title.number.set", "bar");
         String shadowSet = c.getString(P + "title.number.shadow-set", "bar-shadow");

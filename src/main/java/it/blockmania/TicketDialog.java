@@ -64,14 +64,17 @@ public final class TicketDialog {
      * -2 righe = -18 px, +1 px compensato dall'ascent 73) + 9 zone cliccabili + 10 sotto.
      */
     private static final int LINES_ABOVE = 7;
-    private static final int LINES_BELOW = 12;
+    private static final int LINES_BELOW = 14;
+    // Allineamento verticale: il dialog e' centrato, quindi la riga del glifo sta a c + 13.5*(sopra-sotto) px schermo (scala 3).
+    // Con 7/12 il pannello stava ~22 px (7 px GUI) PIU' IN BASSO della GUI ticket dietro; con 7/14 sale di ~27 px (resta ~5 px alto:
+    // se serve il ritocco fine, abbassare di 1-2 l'ascent 73 di font/clicklink.json, i pulsanti cliccabili restano nella zona giusta).
     /**
      * Larghezza del body: 700 px (oltre lo schermo GUI a scala 3, ~640) cosi' i bordi bianchi di focus del widget testo
      * (le "bande" laterali, prima a +-100 px dal centro) escono dallo schermo. Le righe sono CENTRATE nel body (il link
      * scritto e' al centro dello schermo anche con body 200), quindi il pannello resta dov'e' senza spazi iniziali.
      * Se in gioco il pannello risultasse spostato: aggiungere sp((BODY_WIDTH-200)/2) all'inizio di ogni riga.
      */
-    private static final int BODY_WIDTH = 700;
+    private static final int BODY_WIDTH = 1024;   // massimo ammesso: i bordi di focus escono dallo schermo anche con GUI scale bassa
     /** Link massimi mostrati nella zona grigia (3 righe). */
     private static final int MAX_LINKS = 3;
 

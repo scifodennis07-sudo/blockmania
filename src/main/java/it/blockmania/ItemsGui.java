@@ -1,6 +1,10 @@
 package it.blockmania;
 
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.ShadowColor;
+import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -29,6 +33,17 @@ public final class ItemsGui implements Listener {
     private static final String P = "items-gui.";
     private static final int SIZE = 54;
 
+    // ---- pagina NOTE BLOCK disegnata con il font (PACK_V3.md, fase 2) ----
+    // cosi' quando sopra si apre un popup i cubetti restano dietro e vengono scuriti insieme allo sfondo.
+    /** Blocchi che hanno il cubetto nel pack (1..21): gli altri restano oggetti normali. */
+    private static final int NB_GLYPHS = 21;
+    /** Glifo del blocco N = U+E400 + (N-1), nei font items_r1..items_r4 (uno per riga della griglia). */
+    private static final char NB_BASE = '\ue400';
+    /** Ogni cubetto avanza di 17 pixel. */
+    private static final int NB_ADVANCE = 17;
+    /** Correzione dell'avanzamento: stessa degli altri testi delle GUI (centro 94, IMG -22 come Tickets). */
+    private static final int IMG = -22;
+
     private record Entry(ItemStack give, ItemStack show) {
     }
 
@@ -37,6 +52,8 @@ public final class ItemsGui implements Listener {
         private Inventory inventory;
         private int category;
         private int page;
+        /** Pagina dei note block con i cubetti disegnati dal font. */
+        private boolean glyphs;
         private final Map<Integer, String> actions = new HashMap<>();
         private final List<Entry> entries = new ArrayList<>();
 
@@ -163,6 +180,9 @@ public final class ItemsGui implements Listener {
             return out;
         }
         for (int cmd : numbers(category.get("cmds"))) {
+            if (material == Material.GLASS_PANE && cmd >= 101 && cmd <= 332) {
+                continue;   // i cubetti delle miniere ora sono disegnati dal font: questi modelli non esistono piu' nel pack
+            }
             LauncherItem launcher = null;
             for (LauncherItem li : plugin.getItems().values()) {
                 if (li.material() == material && li.customModelData() != null && li.customModelData() == cmd) {
@@ -216,10 +236,13 @@ public final class ItemsGui implements Listener {
 
     // ---------- titolo ----------
 
-    private Component title(int page, int pages) {
+    private Component title(int page, int pages, String categoryName, Holder holder) {
         var c = plugin.getConfig();
         GuiTitle t = new GuiTitle(plugin);
         t.text(c.getString(P + "title.text", "&8oggetti"), c.getString(P + "title.font", ""), P + "title");
+        // nome della GUI centrato nella barra grigia in alto
+        UpgradeManager.barTitle(plugin, t, categoryName == null || categoryName.isBlank() ? "OGGETTI"
+                : "OGGETTI " + categoryName, "OGGETTI");
         String plain = (page + 1) + "/" + pages;
         String set = c.getString(P + "title.number.set", "main");
         String shadowSet = c.getString(P + "title.number.shadow-set", "main-shadow");
@@ -227,7 +250,67 @@ public final class ItemsGui implements Listener {
         int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
         t.number(start, set, shadowSet, c.getBoolean(P + "title.number.shadow", true), plain,
                 c.getString(P + "title.number.font", ""));
+        drawBlockGlyphs(t, holder);
         return t.build();
+    }
+
+    /** True se questa pagina disegna i cubetti dei note block con il font. */
+    private boolean glyphMode(Holder holder, List<Map<?, ?>> cats) {
+        if (!plugin.getConfig().getBoolean(P + "block-glyphs", true) || cats.isEmpty()) {
+            return false;
+        }
+        return str(cats.get(holder.category).get("type"), "items").equalsIgnoreCase("blocks");
+    }
+
+    /** Numero del blocco disegnato con il font in questo slot della griglia (0 = nessuno: oggetto normale). */
+    private int glyphBlock(Holder holder, int gridIndex) {
+        if (!holder.glyphs) {
+            return 0;
+        }
+        int index = holder.page * perPage() + gridIndex;
+        if (index >= holder.entries.size() || index + 1 > NB_GLYPHS) {
+            return 0;
+        }
+        return index + 1;
+    }
+
+    private void drawBlockGlyphs(GuiTitle t, Holder holder) {
+        if (!holder.glyphs) {
+            return;
+        }
+        List<Integer> grid = slots("grid");
+        for (int i = 0; i < grid.size(); i++) {
+            int block = glyphBlock(holder, i);
+            int slot = grid.get(i);
+            int row = slot / 9;
+            if (block <= 0 || row < 1 || row > 4) {
+                continue;
+            }
+            int col = slot % 9;
+            Component glyph = Component.text(String.valueOf((char) (NB_BASE + block - 1)))
+                    .font(Key.key("minecraft", "items_r" + row))
+                    .color(TextColor.color(0xFFFFFF))
+                    .shadowColor(ShadowColor.none())
+                    .decoration(TextDecoration.ITALIC, false);
+            // bordo sinistro dello slot a x_img = 15 + 18*col
+            t.atComponent(15 + 18 * col + IMG, glyph, NB_ADVANCE);
+        }
+    }
+
+    /** Oggetto invisibile (clic e descrizione restano) al posto di quello vero, quando il disegno lo fa il font. */
+    private ItemStack ghost(ItemStack show) {
+        var c = plugin.getConfig();
+        Material m = Material.matchMaterial(c.getString(P + "invisible.material", "GLASS_PANE"));
+        ItemStack stack = new ItemStack(m == null || !m.isItem() ? Material.GLASS_PANE : m);
+        ItemMeta meta = stack.getItemMeta();
+        meta.setCustomModelData(c.getInt(P + "invisible.cmd", 999));
+        ItemMeta source = show.getItemMeta();
+        if (source != null) {
+            meta.displayName(source.displayName());
+            meta.lore(source.lore());
+        }
+        stack.setItemMeta(meta);
+        return stack;
     }
 
     // ---------- aprire e riempire ----------
@@ -260,7 +343,9 @@ public final class ItemsGui implements Listener {
         int pages = Math.max(1, (holder.entries.size() + perPage() - 1) / perPage());
         holder.page = Math.min(holder.page, pages - 1);
 
-        Inventory inv = Bukkit.createInventory(holder, SIZE, title(holder.page, pages));
+        holder.glyphs = glyphMode(holder, cats);
+        String catName = cats.isEmpty() ? "" : BlockMania.stripCodes(str(cats.get(holder.category).get("name"), ""));
+        Inventory inv = Bukkit.createInventory(holder, SIZE, title(holder.page, pages, catName, holder));
         holder.inventory = inv;
         fill(holder, cats, pages);
         player.openInventory(inv);
@@ -326,7 +411,11 @@ public final class ItemsGui implements Listener {
             if (index >= holder.entries.size()) {
                 break;
             }
-            put(inv, holder, grid.get(i), holder.entries.get(index).show().clone(), "give:" + index);
+            ItemStack show = holder.entries.get(index).show().clone();
+            if (glyphBlock(holder, i) > 0) {
+                show = ghost(show);   // il cubetto lo disegna il font nel titolo
+            }
+            put(inv, holder, grid.get(i), show, "give:" + index);
         }
     }
 

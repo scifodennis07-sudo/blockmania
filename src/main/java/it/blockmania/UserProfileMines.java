@@ -37,12 +37,6 @@ public final class UserProfileMines implements Listener {
     private static final String GUI = "mines-gui.";
     private static final String CFG = "userprofile.mines.";
 
-    /** Sfondi staff per 0..5 collegamenti verdi (da STAFF_GUIS.md di Sara). Vuoto = originali. */
-    private static final List<String> STAFF_BACKGROUNDS =
-            List.of("\uE110", "\uE111", "\uE112", "\uE113", "\uE114", "\uE115");
-    /** Sfondi con popup di conferma per 0..5 collegamenti verdi. Vuoto = conferma generica. */
-    private static final List<String> CONFIRM_BACKGROUNDS =
-            List.of("\uE118", "\uE119", "\uE11A", "\uE11B", "\uE11C", "\uE11D");
     /** Slot dei bottoni CONFERMA (verde) e ANNULLA (rosso) nel popup di conferma (riga 3, come userprofile-6). */
     private static final List<Integer> CONFIRM_YES = List.of(28, 29, 30);
     private static final List<Integer> CONFIRM_NO = List.of(32, 33, 34);
@@ -173,13 +167,6 @@ public final class UserProfileMines implements Listener {
         }
     }
 
-    private int modelOf(int mine, int runs, boolean locked) {
-        var c = plugin.getConfig();
-        int stages = Math.max(1, c.getInt(GUI + "stages", 10));
-        int grey = c.getInt(GUI + "cmd-start", 101) + (mine - 1) * (stages + 1);
-        return locked ? grey : grey + Math.min(stages, runs + 1);
-    }
-
     private int owned(Player target) {
         return plugin.getAmmo().getMine(target);
     }
@@ -259,7 +246,7 @@ public final class UserProfileMines implements Listener {
                 String ep = GUI + "states.empty";
                 String ename = c.getString(ep + ".name", "&8miniera non disponibile");
                 List<String> elore = c.getStringList(ep + ".lore");
-                put(inv, holder, pos.icon(), pane(ep, c.getInt(GUI + "empty-cmd", 332), ename, elore, general), null);
+                put(inv, holder, pos.icon(), invisible(ename, elore, general), null);
                 for (int slot : pos.extra()) {
                     put(inv, holder, slot, invisible(ename, elore, general), null);
                 }
@@ -312,7 +299,7 @@ public final class UserProfileMines implements Listener {
             } else if (have && mine < owned) {
                 lore.add("&8Per eliminarla togli prima la " + owned);
             }
-            put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs, key.equals("locked")), name, lore, r), action);
+            put(inv, holder, pos.icon(), invisible(name, lore, r), action);
             for (int slot : pos.extra()) {
                 put(inv, holder, slot, invisible(name, lore, r), action);
             }
@@ -325,62 +312,31 @@ public final class UserProfileMines implements Listener {
         return Math.max(0, onPage - 1);
     }
 
-    /** Sostituisce il carattere di sfondo del titolo originale con quello dato (per 0..5 verdi). */
-    private String swapBackground(String raw, int greens, List<String> wanted) {
-        List<String> original = plugin.getConfig().getStringList(GUI + "backgrounds");
-        if (wanted.isEmpty()) {
-            wanted = original;
-        }
-        if (greens >= wanted.size()) {
-            return raw;
-        }
-        String target = wanted.get(greens);
-        String shown = raw;
-        for (String bg : original) {
-            if (!bg.isEmpty() && !bg.equals(target)) {
-                shown = shown.replace(bg, target);
+    /** Un cubo (glifo del pack v3) per ogni posizione della pagina, calcolato sul giocatore target. */
+    private int[] cubes(Player target, int page) {
+        int perPage = Math.max(1, positions().size());
+        int owned = owned(target);
+        int max = maxRuns();
+        int[] out = new int[Math.min(perPage, 6)];
+        for (int i = 0; i < out.length; i++) {
+            int mine = page * perPage + i + 1;
+            if (mine > mineCount()) {
+                out[i] = 231;
+            } else {
+                int runs = Math.min(max, plugin.getAmmo().getCounter(target, "mine_runs_" + mine));
+                out[i] = MinesGui.cubeIndex(mine, runs, mine > owned);
             }
         }
-        return shown;
+        return out;
     }
 
-    private List<String> staffBackgrounds() {
-        List<String> cfg = plugin.getConfig().getStringList(CFG + "backgrounds");
-        return cfg.isEmpty() ? STAFF_BACKGROUNDS : cfg;
-    }
-
-    private List<String> confirmBackgrounds() {
-        List<String> cfg = plugin.getConfig().getStringList(CFG + "confirm.backgrounds");
-        return cfg.isEmpty() ? CONFIRM_BACKGROUNDS : cfg;
-    }
-
+    /**
+     * Titolo a font (pack v3): base + barre verdi + pulsante reset + cubi, tutto scurito sotto il popup di conferma
+     * (il pannello conferma sta sopra, non scurito), nome nella barra in alto e numero pagina come nelle GUI originali.
+     */
     private Component title(Player target, int page, int pages, boolean confirm) {
-        var c = plugin.getConfig();
-        String raw = c.getString(GUI + "title.text", "&8miniere");
-        int g = greens(target, page);
-        String shown = swapBackground(raw, g, confirm ? confirmBackgrounds() : staffBackgrounds());
-        GuiTitle t = new GuiTitle(plugin);
-        List<String> staff = confirm ? confirmBackgrounds() : staffBackgrounds();
-        if (!staff.isEmpty() && g < staff.size()) {
-            // glifo staff (font userprofile, advance 186 come le altre GUI del profilo)
-            t.at(-15, "&f" + staff.get(g), FONT_UP, 186);
-        } else {
-            t.text(shown, c.getString(GUI + "title.font", ""), GUI + "title", raw);
-        }
-        String pageRaw = c.getString(GUI + "title.page.text", "");
-        if (!confirm && pageRaw != null && !pageRaw.isBlank()) {
-            String plain = BlockMania.stripCodes(pageRaw)
-                    .replace("%page%", String.valueOf(page + 1))
-                    .replace("%pages%", String.valueOf(pages))
-                    .replace("%slash%", "/");
-            String set = c.getString(GUI + "title.page.set", "main");
-            String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
-            int center = c.getInt(GUI + "title.page.center", 73);
-            int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
-            t.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
-                    c.getString(GUI + "title.page.font", ""));
-        }
-        return t.build();
+        return MinesGui.fontTitle(plugin, greens(target, page), cubes(target, page), true, confirm,
+                "miniere " + UserProfilePowers.nameOf(target.getUniqueId()), page, pages, !confirm);
     }
 
     // ---------- aprire ----------

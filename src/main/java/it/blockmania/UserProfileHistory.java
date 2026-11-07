@@ -53,8 +53,8 @@ public final class UserProfileHistory implements Listener {
     private static final char DEF_NAV_BASE = '';
     private static final char DEF_NAV_SHADOW = '';
     /** Centro (pixel immagine) di barra e numero pagina; IMG = offset immagine/titolo, ADV = avanzamento immagine. */
-    private static final int DEF_BAR_CX = 95;
-    private static final int DEF_NAV_CX = 95;
+    private static final int DEF_BAR_CX = 94;
+    private static final int DEF_NAV_CX = 94;
     private static final int DEF_IMG = -22;
     private static final int DEF_ADV = 179;
     private static final int BAR_MAX = 58;
@@ -174,6 +174,7 @@ public final class UserProfileHistory implements Listener {
         String bar = "cronologia";
         barText(g, bar, plugin.getConfig().getInt("userprofile.history.bar-x", DEF_BAR_CX), img);
         navText(g, s.page + 1, pages, plugin.getConfig().getInt("userprofile.history.nav-x", DEF_NAV_CX), img);
+        UserProfilePowers.topTitle(plugin, g, "cronologia " + kindName(s.kind) + " " + UserProfilePowers.nameOf(s.target));
         return g.build();
     }
 

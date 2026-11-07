@@ -1850,9 +1850,7 @@ power-attack:
 #  GUI DELLE MINIERE  (/mines)
 #  Ogni miniera e' un quadrato 2x2: il pannello col modello sta nello slot "icon", gli altri 3
 #  slot ("extra") mostrano lo stesso nome e la stessa lore.
-#  Modelli (cmd): ogni miniera ne ha 11 di fila: il grigio (non sbloccata) e le fasi 1..10.
-#  cmd-start 101: miniera 1 = 101 grigio, 102 = 1-1 ... 111 = 1-10; miniera 2 = 112 grigio, 113 = 2-1 ...
-#  L'ultimo della miniera 21 (21-10) e' il 331. I quadrati senza miniera usano empty-cmd (332).
+#  Grafica (pack v3): sfondo, collegamenti verdi e cubetti sono disegnati col font nel titolo; gli slot sono invisibili.
 #  Segnaposto: %number% %blocks% (da scavare) %broken% (scavati ora) %left% %total% (scavati in tutto)
 #              %runs% (volte rifatta) %max_runs% %price% %redo_price% %coin% %blockcoin% %mine% %page% %pages%
 # ----------------------------------------------------------------------
@@ -1876,13 +1874,7 @@ mines:
 mines-gui:
   count: 21                    # quante miniere esistono
   max-runs: 10                 # dopo tante volte la miniera e' platino e non si rifa piu
-  stages: 10                   # quanti modelli ha ogni miniera (uno per volta rifatta)
-  cmd-start: 101               # modello grigio della miniera 1
-  empty-cmd: 332               # modello dei quadrati senza miniera
-  # sfondo della GUI per numero di collegamenti verdi (0 verdi, 1 verde ... 5 verdi). Il carattere di
-  # title.text viene sostituito da solo con quello giusto. I collegamenti verdi di una pagina sono
-  # le miniere sbloccate in quella pagina meno 1.
-  backgrounds: ["\u3c05", "\u3c07", "\u3c08", "\u3c09", "\u3c10", "\u3c11"]
+  # la GUI miniere e' composta a font (pack v3): una base, le barre verdi e i cubetti sono glifi (vedi MinesGui)
   blocks:
     default: 3000              # blocchi da scavare in ogni miniera (puoi mettere "5: 4500" per cambiarne una)
   prices: {}                   # prezzo in blockcoin per comprare la miniera (default = i suoi blocchi)
@@ -1988,11 +1980,6 @@ mines-gui:
       pitch: 1.2
 
   title:
-    text: "&f{shift:-15}\u3c05"
-    font: ""
-    widths:
-      "\u3c05": 179
-    advance: 0
     page:
       text: "%page%/%pages%"
       set: main
@@ -2108,7 +2095,7 @@ items-gui:
     - id: glass_pane
       type: items
       material: GLASS_PANE
-      cmds: "1-20,101-332,501-514,999"
+      cmds: "1-20,501-514,999"
       name: "&fpannello"
       lore:
         - ""

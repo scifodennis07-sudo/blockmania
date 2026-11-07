@@ -367,6 +367,7 @@ public final class UserProfileGui implements Listener {
         drawBar(g, MUTE_X, MUTE_STEP, MUTE_W, MUTE_Y, notches(s.mute(), MUTE_N), C_RED);
         drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()));
         drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED);
+        UserProfilePowers.topTitle(plugin, g, "profilo " + UserProfilePowers.nameOf(target));
         return g.build();
     }
 

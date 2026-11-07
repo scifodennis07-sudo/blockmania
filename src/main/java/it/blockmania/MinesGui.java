@@ -166,18 +166,6 @@ public final class MinesGui implements Listener {
         }
     }
 
-    /**
-     * Modello del pannello. Ogni miniera ha stages+1 modelli di fila: prima il grigio (bloccata),
-     * poi le fasi 1..stages (la fase sale a ogni volta che rifai la miniera).
-     * Con cmd-start 101 e 10 fasi: miniera 1 = 101 grigio, 102 = 1-1 ... 111 = 1-10; miniera 2 = 112 ...
-     */
-    private int modelOf(int mine, int runs, boolean locked) {
-        var c = plugin.getConfig();
-        int stages = Math.max(1, c.getInt(GUI + "stages", 10));
-        int grey = c.getInt(GUI + "cmd-start", 101) + (mine - 1) * (stages + 1);
-        return locked ? grey : grey + Math.min(stages, runs + 1);
-    }
-
     private String[] general(Player player, int page, int pages) {
         AmmoManager ammo = plugin.getAmmo();
         return new String[]{
@@ -224,7 +212,7 @@ public final class MinesGui implements Listener {
                 String ep = GUI + "states.empty";
                 String ename = c.getString(ep + ".name", "&8miniera non disponibile");
                 List<String> elore = c.getStringList(ep + ".lore");
-                put(inv, holder, pos.icon(), pane(ep, c.getInt(GUI + "empty-cmd", 332), ename, elore, general, false), null);
+                put(inv, holder, pos.icon(), invisible(ename, elore, general, false), null);
                 for (int slot : pos.extra()) {
                     put(inv, holder, slot, invisible(ename, elore, general, false), null);
                 }
@@ -271,7 +259,7 @@ public final class MinesGui implements Listener {
             }
             String click = actionKey.equals("buy") ? "buy:" + mine : actionKey.equals("far") ? "far:" + mine
                     : "enter:" + mine;
-            put(inv, holder, pos.icon(), pane(bp, modelOf(mine, runs, key.equals("locked")), name, lore, r, false), click);
+            put(inv, holder, pos.icon(), invisible(name, lore, r, false), click);
             for (int slot : pos.extra()) {
                 put(inv, holder, slot, invisible(name, lore, r, false), click);
             }
@@ -280,31 +268,102 @@ public final class MinesGui implements Listener {
 
     // ---------- titolo ----------
 
-    /**
-     * Lo sfondo cambia in base alle miniere sbloccate: a ogni collegamento verde in piu' si usa
-     * il carattere dopo nella lista "backgrounds" (0 verdi = il primo, 5 verdi = l'ultimo).
-     * I collegamenti verdi di una pagina sono (miniere sbloccate in quella pagina) - 1.
-     */
-    private Component title(Player player, int page, int pages) {
-        var c = plugin.getConfig();
+    // ---------- titolo (pack v3: tutto a font, una sola GUI base) ----------
+
+    /** Fonts del pack v3: immagini intere / cubetti riga alta / cubetti riga bassa (vedi PACK_V3.md). */
+    static final String F_MINES = "minecraft:mines";
+    static final String F_R1 = "minecraft:mines_r1";
+    static final String F_R2 = "minecraft:mines_r2";
+    private static final char G_BASE = '\uE200';
+    private static final char G_RESET = '\uE201';       // pulsante reset blu (solo staff)
+    private static final char G_LINK = '\uE201';        // E202..E206 = barre verdi 1..5 (G_LINK + i)
+    private static final char G_CONFIRM = '\uE207';     // pannello "conferma o annulla"
+    private static final char G_CUBE = '\uE300';        // + indice cubo
+    /** Colonna (shift = X-15) e riga (1 = alta, 2 = bassa) dei 6 quadrati della pagina, nell'ordine di slots.positions. */
+    private static final int[] POS_X = {3, 3, 57, 57, 111, 111};
+    private static final int[] POS_ROW = {1, 2, 2, 1, 1, 2};
+    /** Tinta dello sfondo scurito sotto i popup (stessa dei ticket: x0.6). */
+    private static final int DIM_FACTOR = 154;
+
+    /** Indice del cubo nell'atlante: (N-1)*11+(k-1), k=1..10 fasi colorate, 11 = grigio; 231 = quadrato senza miniera. */
+    static int cubeIndex(int mine, int runs, boolean locked) {
+        int k = locked ? 11 : Math.max(1, Math.min(10, runs + 1));
+        return (mine - 1) * 11 + (k - 1);
+    }
+
+    /** Un cubo per ogni posizione della pagina (-1 = niente), calcolato sul giocatore. */
+    int[] cubes(Player player, int page) {
         int perPage = Math.max(1, positions().size());
-        int onPage = Math.max(0, Math.min(perPage, plugin.getAmmo().getMine(player) - page * perPage));
-        int greens = Math.max(0, onPage - 1);
-        String raw = c.getString(GUI + "title.text", "&8miniere");
-        String shown = raw;
-        List<String> backgrounds = c.getStringList(GUI + "backgrounds");
-        if (greens < backgrounds.size()) {
-            String target = backgrounds.get(greens);
-            for (String bg : backgrounds) {
-                if (!bg.isEmpty() && !bg.equals(target)) {
-                    shown = shown.replace(bg, target);
-                }
+        int owned = plugin.getAmmo().getMine(player);
+        int max = maxRuns();
+        int[] out = new int[Math.min(perPage, POS_X.length)];
+        for (int i = 0; i < out.length; i++) {
+            int mine = page * perPage + i + 1;
+            if (mine > mineCount()) {
+                out[i] = 231;
+            } else {
+                out[i] = cubeIndex(mine, Math.min(max, runs(player, mine)), mine > owned);
             }
         }
-        GuiTitle t = new GuiTitle(plugin);
-        t.text(shown, c.getString(GUI + "title.font", ""), GUI + "title", raw);
+        return out;
+    }
+
+    /** Quanti collegamenti verdi: (miniere sbloccate in questa pagina) - 1. */
+    int greens(Player player, int page) {
+        int perPage = Math.max(1, positions().size());
+        int onPage = Math.max(0, Math.min(perPage, plugin.getAmmo().getMine(player) - page * perPage));
+        return Math.max(0, onPage - 1);
+    }
+
+    /** Scurisce i colori di un titolo gia' composto (x0.6), come Tickets.tint. */
+    static Component tint(Component c, net.kyori.adventure.text.format.TextColor inherited) {
+        net.kyori.adventure.text.format.TextColor col = c.color() != null ? c.color() : inherited;
+        net.kyori.adventure.text.format.TextColor nc = col == null
+                ? net.kyori.adventure.text.format.TextColor.color(0x999999)
+                : net.kyori.adventure.text.format.TextColor.color(col.red() * DIM_FACTOR / 255,
+                        col.green() * DIM_FACTOR / 255, col.blue() * DIM_FACTOR / 255);
+        List<Component> kids = new ArrayList<>();
+        for (Component k : c.children()) {
+            kids.add(tint(k, col));
+        }
+        return c.color(nc).children(kids);
+    }
+
+    /**
+     * Titolo completo della GUI miniere. staffReset: pulsante reset blu al posto dell'info; dim: sfondo scurito
+     * e pannello di conferma sopra; top: nome nella barra in alto; showPage: numero pagina.
+     * Tutte le immagini a immagine intera avanzano 186 (reali): dopo l'ultima si mette il cursore 7 px indietro
+     * (convenzione dei ticket: IMG = -22), cosi' titolo e numero pagina cadono dove cadevano nelle GUI originali.
+     */
+    static Component fontTitle(BlockMania plugin, int greens, int[] cubes, boolean staffReset, boolean dim,
+                               String top, int page, int pages, boolean showPage) {
+        GuiTitle content = new GuiTitle(plugin);
+        content.at(-15, "&f" + G_BASE, F_MINES, 186);
+        for (int i = 1; i <= Math.min(5, greens); i++) {
+            content.at(-15, "&f" + (char) (G_LINK + i), F_MINES, 186);
+        }
+        if (staffReset) {
+            content.at(-15, "&f" + G_RESET, F_MINES, 186);
+        }
+        for (int i = 0; i < cubes.length && i < POS_X.length; i++) {
+            if (cubes[i] < 0) {
+                continue;
+            }
+            content.at(POS_X[i], "&f" + (char) (G_CUBE + cubes[i]), POS_ROW[i] == 1 ? F_R1 : F_R2, 30);
+        }
+        GuiTitle g = new GuiTitle(plugin);
+        Component body = content.build();
+        g.atComponent(0, dim ? tint(body, null) : body, content.cursor());
+        if (dim) {
+            g.at(-15, "&f" + G_CONFIRM, F_MINES, 186);
+        }
+        g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro rispetto al reale
+        if (top != null && !top.isBlank()) {
+            UserProfilePowers.topTitle(plugin, g, top);
+        }
+        var c = plugin.getConfig();
         String pageRaw = c.getString(GUI + "title.page.text", "");
-        if (pageRaw != null && !pageRaw.isBlank()) {
+        if (showPage && pageRaw != null && !pageRaw.isBlank()) {
             String plain = BlockMania.stripCodes(pageRaw)
                     .replace("%page%", String.valueOf(page + 1))
                     .replace("%pages%", String.valueOf(pages))
@@ -313,10 +372,14 @@ public final class MinesGui implements Listener {
             String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
             int center = c.getInt(GUI + "title.page.center", 73);
             int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
-            t.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
+            g.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
                     c.getString(GUI + "title.page.font", ""));
         }
-        return t.build();
+        return g.build();
+    }
+
+    private Component title(Player player, int page, int pages) {
+        return fontTitle(plugin, greens(player, page), cubes(player, page), false, false, "miniere", page, pages, true);
     }
 
     // ---------- aprire e usare ----------

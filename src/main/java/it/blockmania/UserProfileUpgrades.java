@@ -28,7 +28,7 @@ import java.util.UUID;
 public final class UserProfileUpgrades implements Listener {
 
     private static final int SIZE = 54;
-    private static final String IMG_STAFF = "\ue116";
+    private static final String IMG_STAFF = "\uE201"; // pulsante reset blu (font minecraft:mines)
 
     private final BlockMania plugin;
     private final UserProfilePowers ui;
@@ -92,7 +92,7 @@ public final class UserProfileUpgrades implements Listener {
         }
         int pages = um.pageCount();
         Holder h = new Holder(staff.getUniqueId(), target.getUniqueId(), Math.max(0, Math.min(page, pages - 1)), onBack);
-        Inventory inv = Bukkit.createInventory(h, SIZE, title(h.page, pages));
+        Inventory inv = Bukkit.createInventory(h, SIZE, title(h.page, pages, target.getName()));
         h.inventory = inv;
         fill(inv, h, target, li);
         staff.openInventory(inv);
@@ -145,11 +145,16 @@ public final class UserProfileUpgrades implements Listener {
     //  Disegno (copia del rendering dei potenziamenti, sul target)
     // ------------------------------------------------------------------
 
-    private Component title(int page, int pages) {
+    private Component title(int page, int pages, String targetName) {
         var c = plugin.getConfig();
         GuiTitle t = new GuiTitle(plugin);
-        // sfondo staff (tasto reset al posto dell'info): U+E116 nel font minecraft:userprofile, advance 186
-        t.at(-15, "&f" + IMG_STAFF, "minecraft:userprofile", 186);
+        // sfondo: lo STESSO dei potenziamenti originali + pulsante RESET blu (glifo U+E201, font minecraft:mines) al posto
+        // dell'info. x = cursore - 186 lo mette nello stesso pixel dell'immagine e lascia il cursore dov'era
+        // (numero pagina e nome nella barra restano dove stanno nei potenziamenti normali).
+        t.text(c.getString(UpgradeManager.GUI + "title.text", "&8potenziamenti"),
+                c.getString(UpgradeManager.GUI + "title.font", ""), UpgradeManager.GUI + "title");
+        int before = t.cursor();
+        t.at(before - 186, "&f" + IMG_STAFF, "minecraft:mines", 186);
         String pg = UpgradeManager.GUI + "title.page.";
         String pageRaw = c.getString(pg + "text", "");
         if (pageRaw != null && !pageRaw.isBlank()) {
@@ -163,6 +168,9 @@ public final class UserProfileUpgrades implements Listener {
             int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
             t.number(start, set, shadowSet, c.getBoolean(pg + "shadow", true), plain, c.getString(pg + "font", ""));
         }
+        // nome della GUI centrato nella barra grigia in alto
+        UpgradeManager.barTitle(plugin, t, "POTENZIAMENTI DI " + targetName, "POTENZ DI " + targetName,
+                "POTENZ " + targetName);
         return t.build();
     }
 

@@ -873,18 +873,18 @@ public final class Rewards implements Listener {
 
     private GuiTitle newTitle(String image) {
         var c = plugin.getConfig();
-        String imgFont = imageOverride.get("font");
-        if (imgFont != null && !imgFont.isEmpty()) {
-            // vista staff: l'immagine e' nel font del pack (minecraft:userprofile), avanzamento vero 186
-            GuiTitle st = new GuiTitle(plugin);
-            st.at(-15, "&f" + image, imgFont, c.getInt(GUI + "staff-image-advance", 186));
-            return st;
-        }
         String raw = "&f{shift:-15}" + image;
         // l'avanzamento si misura sempre come la prima immagine (stessa larghezza per tutte)
         String measure = "&f{shift:-15}" + c.getString(GUI + "image-main", "㴀");
         GuiTitle t = new GuiTitle(plugin);
         t.text(raw, c.getString(GUI + "title.font", ""), GUI + "title", measure);
+        if (staffTitle()) {
+            // vista staff: stessa immagine originale + pulsante RESET blu (glifo U+E201 del font minecraft:mines, 186 veri)
+            // al posto di "info". x = cursore - 186 tiene il pulsante nello stesso pixel dell'immagine anche se
+            // l'immagine originale e' dichiarata piu' stretta di 186 e lascia il cursore dove lo lasciava prima.
+            int before = t.cursor();
+            t.at(before - 186, "&f" + STAFF_RESET, "minecraft:mines", 186);
+        }
         return t;
     }
 
@@ -1003,6 +1003,65 @@ public final class Rewards implements Listener {
         return Math.min(7, reached(player, type) * 7 / levels);
     }
 
+    // ------------------------------------------------------------------
+    //  Titolo della GUI nella barra grigia in alto (stesso font e stessa quota del codice dei ticket)
+    // ------------------------------------------------------------------
+
+    private static final String STAFF_RESET = "\uE201";    // pulsante reset blu (font minecraft:mines, pack v3)
+    private static final char BAR_TITLE = '';       // font minecraft:tiny2, lettere
+    private static final char BAR_TITLE_SH = '';    // ombra
+    private static final int BAR_TITLE_CENTER = 94 + IMG; // centro della barra in alto (come Tickets.tinyText(.., 94, ..))
+    private static final int BAR_TITLE_MAX = 112;         // larghezza massima (pixel) del testo nella barra
+
+    private boolean staffTitle() {
+        return imageOverride.containsKey("staff");
+    }
+
+    /** Titolo della barra: nella vista staff diventa "<COSA> DI <NOME>" e il nome si accorcia per entrare nella barra. */
+    private String barTitleText(Player target, String what) {
+        String base = what.toUpperCase(Locale.ROOT);
+        if (!staffTitle() || target == null) {
+            return base;
+        }
+        String name = target.getName().toUpperCase(Locale.ROOT).replace('_', ' ');
+        String prefix = base + " DI ";
+        while (name.length() > 1 && tinyAdvance(prefix + name) > BAR_TITLE_MAX) {
+            name = name.substring(0, name.length() - 1);
+        }
+        return prefix + name;
+    }
+
+    /** Scrive il titolo centrato nella barra in alto. Il font tiny2 non ha lo spazio: ogni parola e' scritta a parte. */
+    private GuiTitle barTitle(GuiTitle t, Player target, String what) {
+        String text = barTitleText(target, what).trim();
+        StringBuilder safe = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        text = safe.toString().replaceAll(" +", " ").trim();
+        while (tinyAdvance(text) > BAR_TITLE_MAX && text.length() > 1) {
+            text = text.substring(0, text.length() - 1).trim();
+        }
+        if (text.isEmpty()) {
+            return t;
+        }
+        boolean shadow = plugin.getConfig().getBoolean(GUI + "text-shadow", true);
+        int start = BAR_TITLE_CENTER - Math.max(0, tinyAdvance(text) - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            if (shadow) {
+                t.at(start + off + 1, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_TITLE_SH), "minecraft:tiny2", wa);
+            }
+            t.at(start + off, "&f" + tinyLetters(w, BAR_TITLE), "minecraft:tiny2", wa);
+            off += wa + 4;
+        }
+        return t;
+    }
+
     private Component titleMain(Player player, int page) {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(pageImage(page));
@@ -1029,6 +1088,7 @@ public final class Rewards implements Listener {
         int center = c.getInt(GUI + "page-center", 73);
         int start = center - GuiTitle.widthOf(plugin, "main", plain) / 2;
         t.number(start, "main", "main-shadow", c.getBoolean(GUI + "text-shadow", true), plain, font());
+        barTitle(t, player, "ricompense");
         return t.build();
     }
 
@@ -1038,6 +1098,7 @@ public final class Rewards implements Listener {
                 c.getString(GUI + (type.equals("pass") ? "image-pass" : "image-levels"), type.equals("pass") ? "㴂" : "㴁")));
         barText(t, c.getString(GUI + "bar-text.level", "livello %n%"), reached(player, type), c.getInt(GUI + "bar-center", 73));
         navNumber(t, page, pagesOf(type));
+        barTitle(t, player, type.equals("pass") ? "battlepass" : italianType(type));
         return t.build();
     }
 
@@ -1047,6 +1108,7 @@ public final class Rewards implements Listener {
         GuiTitle t = newTitle(img(waiting ? "daily-wait" : "daily-ready",
                 c.getString(GUI + (waiting ? "image-daily-wait" : "image-daily-ready"), "㴄")));
         barText(t, c.getString(GUI + "bar-text.daily", "giorno %n%"), daysClaimed(player), c.getInt(GUI + "bar-center", 73));
+        barTitle(t, player, "giornaliera");
         return t.build();
     }
 
@@ -1205,20 +1267,20 @@ public final class Rewards implements Listener {
                     }
                     pages = pagesOf(holder.type);
                     holder.page = Math.max(0, Math.min(page, pages - 1));
-                    title = confirm ? newTitle(confirmImage).build() : titleLevels(target, holder.type, holder.page);
+                    title = confirm ? barTitle(newTitle(confirmImage), target, italianType(holder.type)).build() : titleLevels(target, holder.type, holder.page);
                 }
                 case "daily" -> {
                     holder.type = "daily";
                     pages = 1;
                     holder.page = 0;
-                    title = confirm ? newTitle(confirmImage).build() : titleDaily(target);
+                    title = confirm ? barTitle(newTitle(confirmImage), target, "giornaliera").build() : titleDaily(target);
                 }
                 default -> {
                     holder.kind = "main";
                     pages = pageCount();
                     holder.page = Math.max(0, Math.min(page, pages - 1));
                     holder.mainPage = holder.page;
-                    title = confirm ? newTitle(confirmImage).build() : titleMain(target, holder.page);
+                    title = confirm ? barTitle(newTitle(confirmImage), target, "ricompense").build() : titleMain(target, holder.page);
                 }
             }
             Inventory inv = Bukkit.createInventory(holder, SIZE, title);

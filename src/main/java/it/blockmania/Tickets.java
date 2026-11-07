@@ -98,6 +98,8 @@ public final class Tickets implements Listener {
     private static final int BAR_MAX = 58;
     /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5. */
     private static final int POPUP_CX = 94;
+    /** Fondo (pixel immagine) delle etichette di stato/sezione nella barra del ticket. */
+    private static final int CHIP_BOTTOM = 50;
 
     // stella piena (disegnata a pixel come le facce): 1 = dentro, 2 = bordo interno
     private static final String[] STAR_MASK = {
@@ -1166,6 +1168,7 @@ public final class Tickets implements Listener {
         Ticket last = lastTicketOf(id);
 
         GuiTitle g = newTitle(IMG_MAIN);
+        UserProfilePowers.topTitle(plugin, g, "ticket");
         if (last != null) {
             int st = statusOf(last);
             g.at(36 + IMG, "&f" + LTICK[st], "", 28);
@@ -1280,7 +1283,7 @@ public final class Tickets implements Listener {
         h.filter = filter;
 
         GuiTitle g = newTitle(IMG_LIST);
-        tinyText(g, FILTERS[filter], 95, true, '', '');
+        UserProfilePowers.topTitle(plugin, g, filter == 0 ? "lista ticket" : "ticket " + FILTERS[filter]);
         navText(g, page + 1, pages, 96);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
@@ -1476,15 +1479,19 @@ public final class Tickets implements Listener {
         // barra in alto: stato e sezione
         int si = statusOf(t);
         int ci = 3 + catIndex(t.category);
-        g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
-        g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
+        if (clip == null || clip[1] > CHIP_BOTTOM) {
+            g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
+            g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
+        }   // se il popup parte sopra y50 (popup lista/link/tag, y45) le etichette toccherebbero il suo bordo: non si disegnano
         if (clip == null) {
             tinyText(g, t.code, 94, true, '', '');
         }
 
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
         // faccia 2D del player nel primo slot della barra
-        drawFace(g, faceOf(t.owner), 15, 33, 2);
+        if (clip == null) {
+            drawFace(g, faceOf(t.owner), 15, 33, 2);   // sotto un popup la testa non si disegna (coprirebbe il popup)
+        }
         if (!staffView && !t.open) {
             int filled = t.rating > 0 ? t.rating : (t.rating == 0 ? stars.getOrDefault(viewer.getUniqueId(), 0) : 0);
             drawStars(g, filled);
@@ -1899,6 +1906,9 @@ public final class Tickets implements Listener {
         GuiTitle g = chatTicket != null && bg != null
                 ? popupOverChat(p, chatTicket, chatScroll.getOrDefault(p.getUniqueId(), 0), IMG_ITEMS)
                 : popupTitle(bg, IMG_ITEMS);
+        if (chatTicket == null || bg == null) {
+            UserProfilePowers.topTitle(plugin, g, kind.equals("stafflist") ? "lista staff" : "ticket");
+        }
         tinyText(g, bar, POPUP_CX, true, BAR, BAR_SH);
         navText(g, page + 1, pages, POPUP_CX + 1, NAV2, NAV2_SH);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());

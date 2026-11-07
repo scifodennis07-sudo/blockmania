@@ -36,13 +36,6 @@ import java.util.UUID;
  */
 public final class UserProfileRewards implements Listener {
 
-    private static final String FONT_UP = "minecraft:userprofile";
-    private static final String IMG_MAIN = "";          // ricompense.png (3D00)
-    private static final String IMG_LEVELS = "";        // ricompense-2 (3D01: percorso dei livelli)
-    private static final String IMG_PASS = "";          // ricompense-3 (3D02: battlepass)
-    private static final String IMG_DAILY_READY = "";   // ricompense-4 (3D03)
-    private static final String IMG_DAILY_WAIT = "";    // ricompense-5 (3D04)
-    private static final String IMG_CONFIRM_MAIN = "";  // conferma sopra la pagina base
     /** Slot dei bottoni CONFERMA / ANNULLA (come UserProfilePowers.confirm: stessi pixel dei glifi userprofile-6/7). */
     private static final int[] SLOTS_YES = {19, 20, 21, 28, 29, 30};
     private static final int[] SLOTS_NO = {23, 24, 25, 32, 33, 34};
@@ -136,13 +129,9 @@ public final class UserProfileRewards implements Listener {
     }
 
     private Map<String, String> images() {
+        // vista staff = GUI originali + pulsante reset (lo disegna Rewards.newTitle): niente immagini alternative
         Map<String, String> m = new HashMap<>();
-        m.put("font", cfg("font", FONT_UP));
-        m.put("main", cfg("main", IMG_MAIN));
-        m.put("levels", cfg("levels", IMG_LEVELS));
-        m.put("pass", cfg("pass", IMG_PASS));
-        m.put("daily-ready", cfg("daily-ready", IMG_DAILY_READY));
-        m.put("daily-wait", cfg("daily-wait", IMG_DAILY_WAIT));
+        m.put("staff", "1");
         return m;
     }
 
@@ -183,7 +172,7 @@ public final class UserProfileRewards implements Listener {
         if (target == null) {
             return;
         }
-        String confirmImage = s.confirmYes != null ? cfg("confirm-main", IMG_CONFIRM_MAIN) : null;
+        String confirmImage = null; // le conferme usano ui.confirm (nessuna immagine di conferma nel pack v3)
         Rewards.StaffView v = rewards().staffView(target, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images(), confirmImage);
         if (s.kind.equals("main")) {
@@ -272,18 +261,15 @@ public final class UserProfileRewards implements Listener {
             s.page += parse(act.substring(7));
             later(() -> show(p, s));
         } else if (act.startsWith("type:")) {
+            // Cliccando una tipologia NON si apre piu' la GUI dei bauli/livelli: solo il popup comandi
             String type = act.substring(5);
+            s.kind = "main";
+            s.type = type;
             if (type.equals("daily")) {
-                s.kind = "daily";
-                s.type = "daily";
+                later(() -> dailyMenu(p, s));
             } else {
-                s.kind = "levels";
-                s.type = type;
-                Player t = Bukkit.getPlayer(s.target);
-                int per = type.equals("pass") ? 7 : 15;
-                s.page = t == null ? 0 : Math.max(0, (Math.max(1, rewards().reached(t, type)) - 1) / per);
+                later(() -> levelMenu(p, s, 0));
             }
-            later(() -> show(p, s));
         } else if (act.startsWith("lvl:")) {
             final int level = parse(act.substring(4));
             later(() -> levelMenu(p, s, level));
@@ -445,19 +431,15 @@ public final class UserProfileRewards implements Listener {
             }
             case "daily" -> ui.confirm(staff, "Azzerare la giornaliera di " + t.getName() + "?",
                     () -> resetDaily(staff, s), () -> later(() -> show(staff, s)));
-            default -> {
-                // pagina base: conferma disegnata nell'immagine
-                s.confirmYes = () -> {
-                    Player tt = targetOf(staff, s);
-                    if (tt == null) {
-                        return;
-                    }
-                    rewards().resetAll(tt);
-                    staff.sendMessage(plugin.color("&a" + tt.getName() + ": tutte le ricompense azzerate."));
-                    show(staff, s);
-                };
+            default -> ui.confirm(staff, "Azzerare TUTTE le ricompense di " + t.getName() + "?", () -> {
+                Player tt = targetOf(staff, s);
+                if (tt == null) {
+                    return;
+                }
+                rewards().resetAll(tt);
+                staff.sendMessage(plugin.color("&a" + tt.getName() + ": tutte le ricompense azzerate."));
                 show(staff, s);
-            }
+            }, () -> later(() -> show(staff, s)));
         }
     }
 

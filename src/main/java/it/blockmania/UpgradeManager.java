@@ -505,11 +505,76 @@ public final class UpgradeManager implements Listener {
         return buildTitle(page, pages).build();
     }
 
+    // ---------- nome della GUI centrato nella barra grigia in alto ----------
+
+    /** Glifi del testo / dell'ombra della barra in alto (gli stessi del codice ticket: font default, U+F100 + carattere). */
+    private static final char BAR_TEXT = '';
+    private static final char BAR_SHADOW = '';
+    /** Centro della barra (pixel immagine) e correzione IMG: identici a Tickets (centro 94, IMG -22). */
+    private static final int BAR_CENTER = 94;
+    private static final int BAR_IMG = -22;
+    /** Larghezza massima del nome nella barra (interno barra ~126 px). */
+    private static final int BAR_MAX_W = 120;
+
+    private static String barSafe(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : (s == null ? "" : s.toUpperCase(Locale.ROOT)).toCharArray()) {
+            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        return sb.toString().replaceAll(" +", " ").trim();
+    }
+
+    private static int barAdvance(String text) {
+        int total = 0;
+        for (char ch : text.toCharArray()) {
+            total += (ch == ' ' || ch == 'I' || ch == '1') ? 4 : 6;
+        }
+        return total;
+    }
+
+    private static String barLetters(String text, char base) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? (char) (base + ch) : ' ');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Scrive il nome della GUI centrato nella barra grigia in alto, con ombra (stesso sistema del codice dei ticket).
+     * Prova i testi nell'ordine e usa il primo che sta nella barra; se nessuno ci sta tronca l'ultimo.
+     * Da chiamare dopo lo sfondo (immagine a -15 con avanzamento 179).
+     */
+    static void barTitle(BlockMania plugin, GuiTitle g, String... candidates) {
+        String text = null;
+        for (String cand : candidates) {
+            String s = barSafe(cand);
+            if (!s.isEmpty() && barAdvance(s) <= BAR_MAX_W) {
+                text = s;
+                break;
+            }
+        }
+        if (text == null) {
+            text = candidates.length == 0 ? "" : barSafe(candidates[candidates.length - 1]);
+            while (barAdvance(text) > BAR_MAX_W && text.length() > 1) {
+                text = text.substring(0, text.length() - 1).trim();
+            }
+        }
+        if (text.isEmpty()) {
+            return;
+        }
+        int total = barAdvance(text);
+        int st = BAR_CENTER - Math.max(0, total - 1) / 2;
+        g.at(st + 1 + BAR_IMG, GuiTitle.shadowCode(plugin) + barLetters(text, BAR_SHADOW), "", total);
+        g.at(st + BAR_IMG, "&f" + barLetters(text, BAR_TEXT), "", total);
+    }
+
     private GuiTitle buildTitle(int page, int pages) {
         var c = plugin.getConfig();
         GuiTitle t = new GuiTitle(plugin);
         t.text(c.getString(GUI + "title.text", "&8potenziamenti"), c.getString(GUI + "title.font", ""),
                 GUI + "title");
+        barTitle(plugin, t, "POTENZIAMENTI");
         String pageRaw = c.getString(GUI + "title.page.text", "");
         if (pageRaw != null && !pageRaw.isBlank()) {
             String plain = BlockMania.stripCodes(pageRaw)

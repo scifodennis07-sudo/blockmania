@@ -72,11 +72,11 @@ public final class UserProfilePowers implements Listener {
     private static final char NAV2_SH = '';
     private static final String FONT_TINY3 = "minecraft:tiny3";   // = tiny2 alzato di 18 px (barra del popup userprofile)
     private static final String FONT_TINY4 = "minecraft:tiny4";   // font alto: testo sopra il bordo, per la barra dell'anvil
-    private static final int ANVIL_BAR_CX = 93;                   // centro barra anvil (container 23..153)
+    private static final int ANVIL_BAR_CX = 99;                   // centro barra anvil (container 23..153)
     private static final int ANVIL_BAR_MAX = 112;
     private static final int BAR_MAX = 62;
-    private static final int BAR_CX = 95;     // barra centrale (63,33,64,14) -> centro x 95
-    private static final int NAV_CX = 96;     // barra frecce (71,109,48,12) -> centro x 95/96
+    private static final int BAR_CX = 94;     // barra centrale (63,33,64,14) -> centro x 95
+    private static final int NAV_CX = 94;     // barra frecce (71,109,48,12) -> centro x 95/96
 
     private final BlockMania plugin;
     private final Set<UUID> switching = new HashSet<>();
@@ -187,6 +187,7 @@ public final class UserProfilePowers implements Listener {
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + bg, FONT_UP, 186);
         g.at(-15, "&f" + IMG_CONFIRM, FONT_UP, 179);
+        topTitle(plugin, g, "conferma");
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         List<String> yes = new ArrayList<>();
         yes.add("&7" + (text == null ? "" : text));
@@ -279,6 +280,7 @@ public final class UserProfilePowers implements Listener {
         g.at(-15, "&f" + img, FONT_UP, 179);
         tinyBar(g, label == null ? "" : label);
         navText(g, page + 1, pages);
+        topTitle(plugin, g, label == null ? "" : label);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         final int pg = page;
@@ -353,6 +355,39 @@ public final class UserProfilePowers implements Listener {
             g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), FONT_TINY3, wa);
             off += wa + 4;
         }
+    }
+
+    // titolo grande nella barra grigia in alto (sopra il pannello): stessi glifi del codice dei ticket (font default)
+    private static final char TOP = '\uf100';
+    private static final char TOP_SH = '\uf200';
+    private static final int TOP_CX = 94;
+    private static final int TOP_MAX = 112;
+
+    /** Scrive il nome della GUI centrato nella barra grigia in alto (colori pieni, sopra qualunque popup). */
+    public static void topTitle(BlockMania plugin, GuiTitle g, String raw) {
+        String text = tinySafe(raw == null ? "" : raw).toUpperCase(java.util.Locale.ROOT);
+        if (text.isEmpty()) {
+            return;
+        }
+        text = fit(text, TOP_MAX);
+        int total = tinyAdvance(text);
+        int st = TOP_CX - Math.max(0, total - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, TOP_SH), "", wa);
+            g.at(st + off + IMG, "&f" + tinyLetters(w, TOP), "", wa);
+            off += wa + 4;
+        }
+    }
+
+    /** Nome del giocatore per i titoli (anche offline). */
+    public static String nameOf(UUID id) {
+        String n = id == null ? null : Bukkit.getOfflinePlayer(id).getName();
+        return n == null ? "" : n;
     }
 
     /** Accorcia il testo per farlo stare nella barra: toglie "di", poi "ball", poi taglia la parola piu' lunga. */
