@@ -1,8 +1,10 @@
 package it.blockmania;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -380,6 +382,141 @@ public final class SanctionManager implements Listener {
         fire(p);
     }
 
+    // ------------------------------------------------------------------ sanzione da regola
+
+    /** Durata "infinita" per permanente / blacklist (in millisecondi). */
+    private static final long FOREVER_MS = Long.MAX_VALUE / 2;
+
+    /**
+     * Applica una regola (ban / mute / warn) a un giocatore. staffMsg null, vuoto o "null" = nessun messaggio staff.
+     * La cronologia riceve "[codice] testo" (+ " | staff: msg"); il player riceve il messaggio da config sanctions.msg.*.
+     * Ritorna false se la regola non sanziona (REGOLAMENTO) o non e' applicabile.
+     */
+    public boolean applyRule(CommandSender staff, UUID target, Rules.Rule rule, String staffMsg) {
+        if (rule == null || target == null || rule.type() == Rules.Type.REGOLAMENTO) {
+            return false;
+        }
+        String msg = staffMsg == null ? "" : staffMsg.trim();
+        if (msg.equalsIgnoreCase("null")) {
+            msg = "";
+        }
+        UUID by = staff instanceof Player sp ? sp.getUniqueId() : null;
+        boolean blacklist = rule.type() == Rules.Type.BAN && rule.minutes() == Rules.BLACKLIST;
+        boolean forever = rule.minutes() == Rules.PERMANENT || rule.minutes() == Rules.BLACKLIST;
+        long ms = forever ? FOREVER_MS : rule.minutes() * 60_000L;
+        String reason = "[" + rule.code() + "] " + rule.text() + (msg.isEmpty() ? "" : " | staff: " + msg);
+        String note = "msg:" + playerMessage(rule, msg, blacklist);
+        String label = forever ? (blacklist ? "blacklist" : "permanente") : fmt(ms);
+        switch (rule.type()) {
+            case BAN -> {
+                if (ms <= 0) {
+                    return false;
+                }
+                synchronized (this) {
+                    State s = state(target);
+                    long now = System.currentTimeMillis();
+                    if (s.banEnd > now) {
+                        s.banEnd = plus(s.banEnd, ms);
+                    } else {
+                        s.banStart = now;
+                        s.banEnd = plus(now, ms);
+                        s.banFromWarns = false;
+                    }
+                    record(target, Kind.BAN, "ADD", by, ms, reason, note);
+                    save();
+                }
+                kickIfBanned(target);
+                testNotice(by, target, "BAN a %t, regola " + rule.code() + " (" + label + ")");
+            }
+            case MUTE -> {
+                if (ms <= 0) {
+                    return false;
+                }
+                synchronized (this) {
+                    State s = state(target);
+                    long now = System.currentTimeMillis();
+                    if (s.muteEnd > now) {
+                        s.muteEnd = plus(s.muteEnd, ms);
+                    } else {
+                        s.muteStart = now;
+                        s.muteEnd = plus(now, ms);
+                    }
+                    record(target, Kind.MUTE, "ADD", by, ms, reason, note);
+                    save();
+                }
+                notifyRule(target, playerMessage(rule, msg, false));
+                testNotice(by, target, "MUTE a %t, regola " + rule.code() + " (" + label + ")");
+            }
+            default -> {
+                int before = warns(target);
+                addWarn(target, by, reason);
+                if (warns(target) <= before) {
+                    return false; // gia' al massimo di warn
+                }
+                notifyRule(target, playerMessage(rule, msg, false));
+                fire(target);
+                return true;
+            }
+        }
+        fire(target);
+        return true;
+    }
+
+    /** Testo per il player: "Sei stato bannato per la regola ..." da config sanctions.msg.* (placeholder %code% %text% %staff% %type%). */
+    private String playerMessage(Rules.Rule rule, String staffMsg, boolean blacklist) {
+        String type = switch (rule.type()) {
+            case BAN -> blacklist ? "messo in blacklist" : "bannato";
+            case MUTE -> "mutato";
+            default -> "warnato";
+        };
+        String key = switch (rule.type()) {
+            case BAN -> blacklist ? "blacklist" : "ban";
+            case MUTE -> "mute";
+            default -> "warn";
+        };
+        String def = blacklist
+                ? "&cSei stato messo in blacklist per la regola \"%code%\" \"%text%\""
+                : "&cSei stato %type% per la regola \"%code%\" \"%text%\"";
+        String t = plugin.getConfig().getString("sanctions.msg." + key, def);
+        if (!staffMsg.isEmpty()) {
+            t += plugin.getConfig().getString("sanctions.msg.staff", " &7Messaggio staff: &f\"%staff%\"");
+        }
+        return t.replace("%type%", type).replace("%code%", rule.code()).replace("%text%", rule.text())
+                .replace("%staff%", staffMsg);
+    }
+
+    /** Messaggio al player in chat + bossbar (mute / warn). Solo con sanctions.enforce: true. */
+    private void notifyRule(UUID p, String text) {
+        if (!enforce()) {
+            return;
+        }
+        runMain(() -> {
+            Player pl = Bukkit.getPlayer(p);
+            if (pl == null) {
+                return;
+            }
+            GuiMsg.send(plugin, pl, text);
+            BossBar bar = BossBar.bossBar(plugin.color(text), 1.0f, BossBar.Color.RED, BossBar.Overlay.PROGRESS);
+            pl.showBossBar(bar);
+            Bukkit.getScheduler().runTaskLater(plugin, () -> pl.hideBossBar(bar), 200L);
+        });
+    }
+
+    /** Messaggio salvato dell'ultimo ban da regola ancora in corso, "" se non c'e'. */
+    private synchronized String ruleBanMessage(UUID p) {
+        State s = states.get(p);
+        long start = s == null ? 0 : s.banStart;
+        for (Entry e : entries.descendingMap().values()) {
+            if (e.target().equals(p) && e.kind() == Kind.BAN && "ADD".equals(e.action())) {
+                if (e.time() >= start && e.note() != null && e.note().startsWith("msg:")) {
+                    return e.note().substring(4);
+                }
+                return "";
+            }
+        }
+        return "";
+    }
+
     // ------------------------------------------------------------------ cronologia
 
     public boolean deleteEntry(long id, UUID by) {
@@ -482,6 +619,10 @@ public final class SanctionManager implements Listener {
     }
 
     private Component banMessage(UUID p, long remaining) {
+        String ruleMsg = ruleBanMessage(p);
+        if (!ruleMsg.isEmpty()) {
+            return plugin.color(ruleMsg);
+        }
         Component c = Component.empty()
                 .append(plugin.color("&cSei stato bannato."))
                 .append(Component.newline())

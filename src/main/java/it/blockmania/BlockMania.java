@@ -51,6 +51,7 @@ public final class BlockMania extends JavaPlugin {
     private Tickets tickets;
     private AdminCommand adminCommand;
     private SanctionManager sanctions;
+    private Rules rules;
     private PlayerCounters counters;
     private UserProfilePowers profileUi;
     private UserProfileHistory profileHistory;
@@ -58,6 +59,7 @@ public final class BlockMania extends JavaPlugin {
     private UserProfileUpgrades profileUpgrades;
     private UserProfileRewards profileRewards;
     private UserProfileGui userProfile;
+    private RulesGui rulesGui;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
@@ -165,6 +167,9 @@ public final class BlockMania extends JavaPlugin {
         power = new Power(this);
         getServer().getPluginManager().registerEvents(power, this);
         power.start();
+        // regole (rules.yml): create PRIMA delle GUI che le usano
+        rules = new Rules(this);
+        rules.load();
         // profilo player (/adminmania userprofile): l'ordine conta, le GUI usano i servizi creati prima
         sanctions = new SanctionManager(this);
         getServer().getPluginManager().registerEvents(sanctions, this);
@@ -184,6 +189,9 @@ public final class BlockMania extends JavaPlugin {
         userProfile = new UserProfileGui(this);
         getServer().getPluginManager().registerEvents(userProfile, this);
         userProfile.start();
+        // GUI regole (/adminmania rules): dopo profileUi e rules
+        rulesGui = new RulesGui(this, rules, profileUi);
+        getServer().getPluginManager().registerEvents(rulesGui, this);
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
@@ -549,6 +557,10 @@ public final class BlockMania extends JavaPlugin {
         return adminCommand;
     }
 
+    public Rules getRules() {
+        return rules;
+    }
+
     public SanctionManager getSanctions() {
         return sanctions;
     }
@@ -575,6 +587,10 @@ public final class BlockMania extends JavaPlugin {
 
     public UserProfileRewards getProfileRewards() {
         return profileRewards;
+    }
+
+    public RulesGui getRulesGui() {
+        return rulesGui;
     }
 
     public UserProfileGui getUserProfile() {

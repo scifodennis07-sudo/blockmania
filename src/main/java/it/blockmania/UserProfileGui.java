@@ -99,6 +99,17 @@ public final class UserProfileGui implements Listener {
     private static final int[] S_RW_B = {52, 53};
     private static final int S_POWER = 44;
 
+    // barra stamina: fascia libera tra le barre sanzioni (finiscono a y=85) e i box oggetti (iniziano a y=101), pixel dell'immagine
+    private static final int STA_X = 18;       // bordo sinistro (contorno)
+    private static final int STA_W = 148;      // larghezza totale col contorno -> x 18..165
+    private static final int STA_Y = 90;       // bordo alto (contorno)
+    private static final int STA_H = 8;        // altezza totale col contorno -> y 90..97
+    private static final int C_STA_FILL = 0xFFD83A;
+    private static final int C_STA_EDGE = 0x2B2B2B;
+    private static final int C_STA_EMPTY = 0x555555;
+    /** Riga 3 della griglia (slot 27..35 = y 86..103): copre tutta la fascia della stamina e nient'altro. */
+    private static final int[] S_STAMINA = {27, 28, 29, 30, 31, 32, 33, 34, 35};
+
     /** Icone palla / oggetto della riga alta: slot, oggetto, nome, colore, ha le "sparate in totale". */
     private record Icon(int slot, PlayerCounters.Item item, String name, String color, boolean fired) {
     }
@@ -296,7 +307,18 @@ public final class UserProfileGui implements Listener {
 
     private String sig(UUID target, Snap s) {
         return (faces.containsKey(target) ? "F" : "f") + (Bukkit.getPlayer(target) != null ? "O" : "o")
-                + notches(s.mute(), MUTE_N) + "/" + notches(s.ban(), BAN_N) + "/" + s.warns() + (s.banFromWarns() ? "P" : "n");
+                + notches(s.mute(), MUTE_N) + "/" + notches(s.ban(), BAN_N) + "/" + s.warns() + (s.banFromWarns() ? "P" : "n")
+                + "/S" + staminaPercent(target);   // la barra stamina si ridisegna quando cambia la percentuale
+    }
+
+    /** Stamina del target in % (0-100), oppure -1 se e' offline (barra grigia vuota). */
+    private int staminaPercent(UUID target) {
+        Player tp = Bukkit.getPlayer(target);
+        Power pw = plugin.getPower();
+        if (tp == null || pw == null) {
+            return -1;
+        }
+        return (int) Math.round(Math.max(0.0, Math.min(1.0, pw.stamina(tp))) * 100.0);
     }
 
     // ------------------------------------------------------------------
@@ -360,6 +382,31 @@ public final class UserProfileGui implements Listener {
         }
     }
 
+    /** Barra stamina: contorno scuro, sfondo grigio e riempimento giallo proporzionale (riga alta chiara, bassa scura). */
+    private void drawStamina(GuiTitle g, int percent) {
+        int inX = STA_X + 1;
+        int inW = STA_W - 2;
+        int inH = STA_H - 2;
+        int filled = percent < 0 ? 0 : (int) Math.round(inW * Math.min(100, percent) / 100.0);
+        for (int row = 0; row < STA_H; row++) {
+            int y = STA_Y + row;
+            if (row == 0 || row == STA_H - 1) {
+                g.atComponent(STA_X + IMG, glyph(PX1.repeat(STA_W), tk(y), C_STA_EDGE), STA_W);
+                continue;
+            }
+            g.atComponent(STA_X + IMG, glyph(PX1, tk(y), C_STA_EDGE), 1);
+            int r = row - 1;
+            int fc = r == 0 ? shade(C_STA_FILL, 1.35) : r == inH - 1 ? shade(C_STA_FILL, 0.75) : C_STA_FILL;
+            if (filled > 0) {
+                g.atComponent(inX + IMG, glyph(PX1.repeat(filled), tk(y), fc), filled);
+            }
+            if (inW - filled > 0) {
+                g.atComponent(inX + filled + IMG, glyph(PX1.repeat(inW - filled), tk(y), C_STA_EMPTY), inW - filled);
+            }
+            g.atComponent(inX + inW + IMG, glyph(PX1, tk(y), C_STA_EDGE), 1);
+        }
+    }
+
     private Component title(UUID target, Snap s) {
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + IMG_MAIN, FONT, 179);
@@ -367,6 +414,7 @@ public final class UserProfileGui implements Listener {
         drawBar(g, MUTE_X, MUTE_STEP, MUTE_W, MUTE_Y, notches(s.mute(), MUTE_N), C_RED);
         drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()));
         drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED);
+        drawStamina(g, staminaPercent(target));
         UserProfilePowers.topTitle(plugin, g, "profilo " + UserProfilePowers.nameOf(target));
         return g.build();
     }
@@ -519,6 +567,9 @@ public final class UserProfileGui implements Listener {
             set(h, ic.slot(), counterItem(ic, target, pc, online), "item:" + ic.item().name());
         }
         set(h, S_POWER, powerItem(target, pc, online), "item:" + PlayerCounters.Item.POWER_CHARGES.name());
+
+        // stamina: click = comandi (set, refill, infinite, empty, normal)
+        setAll(h, S_STAMINA, staminaItem(target), "stamina");
 
         // miniere, potenziamenti, ricompense, exp: aprono le GUI originali sul player (devono essere online)
         String off = online ? "" : "&cIl giocatore deve essere online.";
@@ -673,6 +724,22 @@ public final class UserProfileGui implements Listener {
         return pane(ic.color() + ic.name(), lore);
     }
 
+    private ItemStack staminaItem(UUID target) {
+        int pct = staminaPercent(target);
+        Player tp = Bukkit.getPlayer(target);
+        Power pw = plugin.getPower();
+        List<String> lore = new ArrayList<>();
+        if (pct < 0 || tp == null || pw == null) {
+            lore.add("&8il player e' offline: stamina non disponibile");
+        } else {
+            lore.add("&7livello: &f" + pct + "%");
+            lore.add("&7modalita': &f" + pw.mode(tp));
+            lore.add("");
+            lore.add("&eclick: comandi stamina");
+        }
+        return pane("&eSTAMINA", lore);
+    }
+
     private ItemStack powerItem(UUID target, PlayerCounters pc, boolean online) {
         int charges = pc.value(target, PlayerCounters.Item.POWER_CHARGES);
         List<String> lore = new ArrayList<>();
@@ -798,6 +865,10 @@ public final class UserProfileGui implements Listener {
             } else {
                 sanctionMenu(p, target, kind);
             }
+        } else if (action.equals("stamina")) {
+            if (!right) {
+                staminaMenu(p, target);
+            }
         } else if (action.startsWith("item:")) {
             PlayerCounters.Item it = PlayerCounters.Item.valueOf(action.substring(5));
             if (right) {
@@ -829,6 +900,68 @@ public final class UserProfileGui implements Listener {
                 open(p, target);
             }
         });
+    }
+
+    // ------------------------------------------------------------------
+    //  Stamina
+    // ------------------------------------------------------------------
+
+    private void staminaMenu(Player p, UUID target) {
+        if (Bukkit.getPlayer(target) == null) {
+            GuiMsg.send(plugin, p, "&cIl giocatore e' offline: stamina non disponibile.");
+            return;
+        }
+        if (!authorize(p, target, "profile", "edit", 0)) {
+            return;
+        }
+        plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), List.of("set", "refill", "infinite", "empty", "normal"),
+                cmd -> Bukkit.getScheduler().runTask(plugin, () -> staminaPick(p, target, cmd)),
+                () -> back(p, target), false, null);
+    }
+
+    private void staminaPick(Player p, UUID target, String cmd) {
+        if (!p.isOnline()) {
+            return;
+        }
+        if (!authorize(p, target, "profile", "edit", 0)) {
+            back(p, target);
+            return;
+        }
+        UserProfilePowers ui = plugin.getProfileUi();
+        Runnable cancel = () -> back(p, target);
+        if (cmd.equals("set")) {
+            ui.askNumber(p, "stamina %", "SETTA STAMINA 0 100", 0, 100, v -> applyStamina(p, target, "set", (int) v), cancel);
+        } else {
+            ui.confirm(p, cmd + " stamina", () -> applyStamina(p, target, cmd, 0), cancel);
+        }
+    }
+
+    private void applyStamina(Player p, UUID target, String cmd, int percent) {
+        if (!p.isOnline()) {
+            return;
+        }
+        Player tp = Bukkit.getPlayer(target);
+        Power pw = plugin.getPower();
+        if (tp == null || pw == null) {
+            GuiMsg.send(plugin, p, "&cIl giocatore e' offline: stamina non disponibile.");
+            back(p, target);
+            return;
+        }
+        if (!authorize(p, target, "profile", "edit", percent)) {
+            back(p, target);
+            return;
+        }
+        switch (cmd) {
+            case "set" -> pw.setPercent(tp, percent);
+            case "refill" -> pw.refill(tp);
+            case "infinite" -> pw.setMode(tp, "infinite");
+            case "empty" -> pw.setMode(tp, "empty");
+            default -> pw.setMode(tp, "normal");
+        }
+        audit(p, "profile.edit stamina " + cmd + " " + nameOf(target) + (cmd.equals("set") ? " " + percent : ""));
+        GuiMsg.send(plugin, p, "&astamina " + cmd + " eseguito su " + nameOf(target));
+        plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+        back(p, target);
     }
 
     // ------------------------------------------------------------------
@@ -867,14 +1000,7 @@ public final class UserProfileGui implements Listener {
         UserProfilePowers ui = plugin.getProfileUi();
         Runnable cancel = () -> back(p, target);
         switch (cmd) {
-            case "add" -> {
-                if (kind == SanctionManager.Kind.WARN) {
-                    ui.confirm(p, "aggiungere un warn", () -> doSanction(p, target, kind, cmd, 0), cancel);
-                } else {
-                    long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
-                    ui.askNumber(p, "minuti di " + k, "AGGIUNGI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
-                }
-            }
+            case "add" -> askRuleCode(p, target, kind);
             case "reduce" -> {
                 long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
                 ui.askNumber(p, "minuti da togliere", "RIDUCI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
@@ -882,6 +1008,48 @@ public final class UserProfileGui implements Listener {
             case "remove", "reset" -> ui.confirm(p, cmd + " " + k, () -> doSanction(p, target, kind, cmd, 0), cancel);
             default -> back(p, target);
         }
+    }
+
+    /** Flusso "add" con regola: codice -> messaggio staff -> conferma -> SanctionManager.applyRule. */
+    private void askRuleCode(Player p, UUID target, SanctionManager.Kind kind) {
+        UserProfilePowers ui = plugin.getProfileUi();
+        Runnable cancel = () -> back(p, target);
+        ui.askText(p, "codice regola", "CODICE REGOLA", "", code -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            Rules.Rule rule = plugin.getRules().get(code == null ? "" : code.trim());
+            if (rule == null || rule.type() == Rules.Type.REGOLAMENTO || !rule.type().name().equals(kind.name())) {
+                GuiMsg.send(plugin, p, "&cregola inesistente o di altro tipo");
+                sanctionMenu(p, target, kind); // torna al popup
+                return;
+            }
+            ui.askText(p, "messaggio per il player", "MESSAGGIO STAFF", "null", msg -> Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!p.isOnline()) {
+                    return;
+                }
+                ui.confirm(p, "sanzionare con la regola " + rule.code(),
+                        () -> Bukkit.getScheduler().runTask(plugin, () -> doRuleSanction(p, target, kind, rule, msg)), cancel);
+            }), cancel);
+        }), cancel);
+    }
+
+    /** Applica la regola scelta, con permessi, audit e messaggio allo staff. */
+    private void doRuleSanction(Player p, UUID target, SanctionManager.Kind kind, Rules.Rule rule, String msg) {
+        String k = kind.name().toLowerCase(java.util.Locale.ROOT);
+        if (!authorize(p, target, "sanctions", k, 0)) {
+            back(p, target);
+            return;
+        }
+        boolean ok = plugin.getSanctions().applyRule(p, target, rule, msg);
+        if (ok) {
+            audit(p, "sanctions." + k + " add " + nameOf(target) + " regola " + rule.code());
+            GuiMsg.send(plugin, p, "&a" + k + " add eseguito su " + nameOf(target) + " (regola " + rule.code() + ")");
+            plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+        } else {
+            GuiMsg.send(plugin, p, "&cnessuna sanzione applicata (regola non applicabile o limite warn raggiunto)");
+        }
+        back(p, target);
     }
 
     private void doSanction(Player p, UUID target, SanctionManager.Kind kind, String cmd, long minutes) {

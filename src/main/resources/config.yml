@@ -2637,6 +2637,12 @@ sanctions:
   max-minutes:                 # massimo scrivibile nella finestra dei minuti (mute / ban) dal profilo
     mute: 43200                # 30 giorni
     ban: 525600                # 1 anno
+  msg:                         # messaggi al player per le sanzioni da regola. Placeholder: %type% %code% %text% %staff%
+    ban: '&cSei stato %type% per la regola "%code%" "%text%"'
+    blacklist: '&cSei stato %type% per la regola "%code%" "%text%"'
+    mute: '&cSei stato %type% per la regola "%code%" "%text%"'
+    warn: '&cSei stato %type% per la regola "%code%" "%text%"'
+    staff: ' &7Messaggio staff: &f"%staff%"'   # aggiunto in coda solo se lo staff ha scritto un messaggio
 
 # ----------------------------------------------------------------------
 #  TICKET  (/ticket per i player, /adminmania ticket per lo staff)

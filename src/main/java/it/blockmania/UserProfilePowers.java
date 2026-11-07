@@ -112,6 +112,10 @@ public final class UserProfilePowers implements Listener {
         LongConsumer onOk;
         Runnable onCancel;
         boolean done;
+        // modalita' testo libero (askText)
+        boolean text;
+        String initial = "";
+        Consumer<String> onText;
     }
 
     // ------------------------------------------------------------------
@@ -173,6 +177,44 @@ public final class UserProfilePowers implements Listener {
             switching.remove(id);
         }
         GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi un numero " + range + " nella barra e clicca sul tasto verde.");
+    }
+
+    /**
+     * Anvil di testo libero (max 100 caratteri): stessa grafica di askNumber, nella casella c'e' "initial".
+     * Il testo vuoto e' accettato (onOk(""))); la X chiama onCancel.
+     */
+    public void askText(Player staff, String title, String barText, String initial, Consumer<String> onOk, Runnable onCancel) {
+        AnvilSession s = new AnvilSession();
+        s.text = true;
+        s.title = title == null ? "testo" : title;
+        s.barText = barText == null ? s.title : barText;
+        s.initial = initial == null ? "" : initial;
+        s.onText = onOk;
+        s.onCancel = onCancel == null ? () -> { } : onCancel;
+        GuiTitle at = new GuiTitle(plugin);
+        int dx = plugin.getConfig().getInt("tickets.anvil-shift", -52);
+        at.at(-15 + dx, "&f" + IMG_ANVIL, "", 179);
+        anvilBar(at, dx, s.barText);
+        AnvilView view = MenuType.ANVIL.builder().title(at.build()).build(staff);
+        s.view = view;
+        // l'oggetto 0 e' la casella di testo: il suo nome e' il testo iniziale (testo semplice, senza colori)
+        ItemStack in = new ItemStack(Material.GLASS_PANE);
+        ItemMeta im = in.getItemMeta();
+        im.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
+        im.displayName(Component.text(s.initial.isEmpty() ? " " : s.initial));
+        im.lore(lore(List.of("&cannulla", "&7Torna indietro senza fare niente.")));
+        in.setItemMeta(im);
+        view.setItem(0, in);
+        view.setItem(1, pane("&e" + s.title, List.of("&7Scrivi il testo (max 100 caratteri).", "&7Poi clicca sul tasto verde.")));
+        UUID id = staff.getUniqueId();
+        anvils.put(id, s);
+        switching.add(id);
+        try {
+            staff.openInventory(view);
+        } finally {
+            switching.remove(id);
+        }
+        GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi il testo nella barra e clicca sul tasto verde.");
     }
 
     /** Slot dei bottoni del pannello conferma (glifo popup_confirm U+E207: riga 3). */
@@ -601,6 +643,14 @@ public final class UserProfilePowers implements Listener {
             return;
         }
         AnvilView av = (AnvilView) event.getView();
+        if (s.text) {
+            String raw = av.getRenameText() == null ? s.initial : av.getRenameText();
+            boolean okText = raw.length() <= 100;
+            event.setResult(pane(okText ? "&ainvia" : "&ctesto troppo lungo",
+                    List.of(okText ? "&7" + (raw.isEmpty() ? "(vuoto)" : raw) : "&7Massimo 100 caratteri.")));
+            av.setRepairCost(0);
+            return;
+        }
         String txt = av.getRenameText() == null ? "" : av.getRenameText();
         Long v = parse(txt, s.min);
         boolean ok = v != null && v >= s.min && v <= s.max;
@@ -651,6 +701,20 @@ public final class UserProfilePowers implements Listener {
 
     private void submitAnvil(Player p, AnvilSession s) {
         AnvilView av = s.view;
+        if (s.text) {
+            // testo libero: se non e' stato modificato vale il testo iniziale; vuoto ok
+            String raw = av.getRenameText() == null ? s.initial : av.getRenameText();
+            if (raw.length() > 100) {
+                err(p, "Il testo puo' avere al massimo 100 caratteri.");
+                reopenAnvil(p, s);
+                return;
+            }
+            s.done = true;
+            p.closeInventory();
+            final String val = raw.trim();
+            later(() -> s.onText.accept(val));
+            return;
+        }
         Long v = parse(av.getRenameText(), s.min);
         if (v == null) {
             err(p, "Valore non valido: scrivi solo numeri " + rangeText(s.min, s.max) + ".");
@@ -671,6 +735,10 @@ public final class UserProfilePowers implements Listener {
     private void reopenAnvil(Player p, AnvilSession s) {
         s.done = true;
         p.closeInventory();
+        if (s.text) {
+            later(() -> askText(p, s.title, s.barText, s.initial, s.onText, s.onCancel));
+            return;
+        }
         later(() -> askNumber(p, s.title, s.barText, s.min, s.max, s.onOk, s.onCancel));
     }
 

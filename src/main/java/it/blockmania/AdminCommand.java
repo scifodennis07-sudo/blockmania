@@ -486,6 +486,20 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             deny(sender, "questo comando è solo per lo staff");
             return true;
         }
+        // /adminmania rules (alias regole): GUI delle regole, stesso permesso di "sanctions see"
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("rules") || args[0].equalsIgnoreCase("regole"))) {
+            if (!(sender instanceof Player rp)) {
+                sender.sendMessage("solo i giocatori possono aprire le regole");
+                return true;
+            }
+            if (!allowed(rp, "sanctions", "see")) {
+                log(sender, "NEGATO sanctions.see | " + String.join(" ", args));
+                deny(sender, "il tuo ruolo (" + roleName(sender) + ") non può vedere le regole");
+                return true;
+            }
+            plugin.getRulesGui().open(rp);
+            return true;
+        }
         if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
             help(sender, args.length > 1 ? group(args[1]) : "");
             return true;
@@ -742,6 +756,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(plugin.text("&8  » &7esempio: &f" + example(g)));
             }
         }
+        if (only.isEmpty() && allowed(sender, "sanctions", "see")) {
+            sender.sendMessage(plugin.text("&e/adminmania rules &7(regole: apre la GUI delle regole, alias regole)"));
+        }
         if (only.isEmpty()) {
             sender.sendMessage(plugin.text("&8scrivi /adminmania help <gruppo> per gli esempi. Italiano: economia, profilo, oggetti, costruzione, negozi, sistema"));
         }
@@ -768,6 +785,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             out.add("ticket");
             if (allowed(sender, "profile", "see")) {
                 out.add("userprofile");
+            }
+            if (allowed(sender, "sanctions", "see")) {
+                out.add("rules");
             }
             for (String g : GROUPS) {
                 if (anyAllowed(sender, g)) {
