@@ -421,8 +421,8 @@ public final class UserProfileHistory implements Listener {
         if (slot == SLOT_PREV || slot == SLOT_NEXT) {
             plugin.guiClick(p);
             int pages = pageCount(entries(s).size());
-            // scorrimento circolare: dopo l'ultima pagina si torna alla prima, e prima della prima si va all'ultima
-            int np = (s.page + (slot == SLOT_NEXT ? 1 : -1) + pages) % pages;
+            // nessun giro: ai limiti non succede niente
+            int np = Math.max(0, Math.min(s.page + (slot == SLOT_NEXT ? 1 : -1), pages - 1));
             if (np != s.page) {
                 s.page = np;
                 refreshTarget(s.target);

@@ -54,6 +54,9 @@ public final class BlockMania extends JavaPlugin {
     private PlayerCounters counters;
     private UserProfilePowers profileUi;
     private UserProfileHistory profileHistory;
+    private UserProfileMines profileMines;
+    private UserProfileUpgrades profileUpgrades;
+    private UserProfileRewards profileRewards;
     private UserProfileGui userProfile;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
@@ -172,6 +175,12 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(profileUi, this);
         profileHistory = new UserProfileHistory(this, sanctions, profileUi);
         getServer().getPluginManager().registerEvents(profileHistory, this);
+        profileMines = new UserProfileMines(this, profileUi);
+        getServer().getPluginManager().registerEvents(profileMines, this);
+        profileUpgrades = new UserProfileUpgrades(this, profileUi);
+        getServer().getPluginManager().registerEvents(profileUpgrades, this);
+        profileRewards = new UserProfileRewards(this, profileUi);
+        getServer().getPluginManager().registerEvents(profileRewards, this);
         userProfile = new UserProfileGui(this);
         getServer().getPluginManager().registerEvents(userProfile, this);
         userProfile.start();
@@ -554,6 +563,18 @@ public final class BlockMania extends JavaPlugin {
 
     public UserProfileHistory getProfileHistory() {
         return profileHistory;
+    }
+
+    public UserProfileMines getProfileMines() {
+        return profileMines;
+    }
+
+    public UserProfileUpgrades getProfileUpgrades() {
+        return profileUpgrades;
+    }
+
+    public UserProfileRewards getProfileRewards() {
+        return profileRewards;
     }
 
     public UserProfileGui getUserProfile() {

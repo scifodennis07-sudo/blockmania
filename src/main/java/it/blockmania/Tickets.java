@@ -170,6 +170,7 @@ public final class Tickets implements Listener {
         private String kind;
         private int ticketId;
         private int page;
+        private int pages = 1;
         private int filter;
         private int scroll;
         private Player viewer;
@@ -1272,9 +1273,10 @@ public final class Tickets implements Listener {
         restoreInventory(p);
         List<Ticket> list = listFor(p.getUniqueId(), filter);
         int pages = Math.max(1, (list.size() + 20) / 21);
-        page = Math.floorMod(page, pages);
+        page = Math.max(0, Math.min(page, pages - 1));
         Holder h = new Holder("list");
         h.page = page;
+        h.pages = pages;
         h.filter = filter;
 
         GuiTitle g = newTitle(IMG_LIST);
@@ -1891,6 +1893,7 @@ public final class Tickets implements Listener {
         Holder h = new Holder(kind);
         h.ticketId = ticketId;
         h.page = page;
+        h.pages = pages;
         h.viewer = p;
         Ticket chatTicket = ticketId > 0 ? tickets.get(ticketId) : null;
         GuiTitle g = chatTicket != null && bg != null
@@ -1950,7 +1953,7 @@ public final class Tickets implements Listener {
         }
         List<String> all = new ArrayList<>(found);
         int pages = Math.max(1, (all.size() + 20) / 21);
-        page = Math.floorMod(page, pages);
+        page = Math.max(0, Math.min(page, pages - 1));
         Holder h = popup(p, "links", t.id, "link", page, pages, "chat", "&cindietro",
                 List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true, staffView ? IMG_CHAT : IMG_PCHAT);
         h.links = all;
@@ -1990,7 +1993,7 @@ public final class Tickets implements Listener {
             cand.add(u);
         }
         int pages = Math.max(1, (cand.size() + 20) / 21);
-        page = Math.floorMod(page, pages);
+        page = Math.max(0, Math.min(page, pages - 1));
         Holder h = popup(p, "tag", t.id, "tag staff", page, pages, "chat", "&cindietro",
                 List.of("&7Dai accesso al ticket a un altro staffer.", "&7Poi gli scrivi un messaggio."), true, IMG_CHAT);
         for (int i = 0; i < 21; i++) {
@@ -2061,7 +2064,7 @@ public final class Tickets implements Listener {
         }
         list.sort((a, b) -> Long.compare(b.updated, a.updated));
         int pages = Math.max(1, (list.size() + 20) / 21);
-        page = Math.floorMod(page, pages);
+        page = Math.max(0, Math.min(page, pages - 1));
         String bar = switch (mode) {
             case "mine" -> "tuoi";
             case "closed" -> "chiusi";
@@ -2284,6 +2287,10 @@ public final class Tickets implements Listener {
             openList(p, 0, (h.filter + 1) % FILTERS.length);
         } else if (action.startsWith("page:")) {
             int d = Integer.parseInt(action.substring(5));
+            // nessun giro: ai limiti non succede niente (niente riapertura, niente flash)
+            if (h.page + d < 0 || h.page + d >= h.pages) {
+                return;
+            }
             if (h.kind.equals("stafflist")) {
                 openStaffList(p, h.mode, h.page + d);
             } else if (h.kind.equals("links") && t != null) {

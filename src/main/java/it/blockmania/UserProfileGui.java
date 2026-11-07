@@ -519,11 +519,31 @@ public final class UserProfileGui implements Listener {
         }
         set(h, S_POWER, powerItem(target, pc, online), "item:" + PlayerCounters.Item.POWER_CHARGES.name());
 
-        // placeholder: potenziamenti e ricompense (per ora lore base)
-        setAll(h, S_UPG_A, pane("&6potenziamenti", List.of("&7Presto qui vedrai e gestirai i potenziamenti.", "&8in arrivo")), null);
-        setAll(h, S_UPG_B, pane("&6potenziamenti", List.of("&7Presto qui vedrai e gestirai i potenziamenti.", "&8in arrivo")), null);
-        setAll(h, S_RW_A, pane("&dricompense", List.of("&7Presto qui vedrai e gestirai le ricompense.", "&8in arrivo")), null);
-        setAll(h, S_RW_B, pane("&dricompense", List.of("&7Presto qui vedrai e gestirai le ricompense.", "&8in arrivo")), null);
+        // miniere, potenziamenti, ricompense, exp: aprono le GUI originali sul player (devono essere online)
+        String off = online ? "" : "&cIl giocatore deve essere online.";
+        setAll(h, S_UPG_A, pane("&6miniere", linesOf("&7Click: apre le miniere del giocatore.", off)), "mines");
+        setAll(h, S_UPG_B, pane("&6potenziamenti", linesOf("&7Click: apre i potenziamenti del giocatore.", off)), "upg");
+        setAll(h, S_RW_A, pane("&dricompense", linesOf("&7Click: apre le ricompense del giocatore.", off)), "rw");
+        List<String> expLore = new ArrayList<>();
+        Player tp = Bukkit.getPlayer(target);
+        if (tp != null && plugin.getProfileRewards() != null) {
+            expLore.addAll(plugin.getProfileRewards().expLore(tp));
+        }
+        expLore.add("");
+        expLore.add("&7Click: comandi exp (aggiungi, rimuovi, setta, reset).");
+        if (!online) {
+            expLore.add(off);
+        }
+        setAll(h, S_RW_B, pane("&5exp", expLore), "exp");
+    }
+
+    private static List<String> linesOf(String a, String b) {
+        List<String> l = new ArrayList<>();
+        l.add(a);
+        if (!b.isEmpty()) {
+            l.add(b);
+        }
+        return l;
     }
 
     // ------------------------------------------------------------------
@@ -779,12 +799,26 @@ public final class UserProfileGui implements Listener {
             }
         } else if (action.startsWith("item:")) {
             PlayerCounters.Item it = PlayerCounters.Item.valueOf(action.substring(5));
-            if (it == PlayerCounters.Item.POWER_CHARGES && right) {
-                it = PlayerCounters.Item.POWER_USES;
-            } else if (right) {
+            if (right) {
                 return;
             }
             itemMenu(p, target, it);
+        } else if (action.equals("mines") || action.equals("upg") || action.equals("rw") || action.equals("exp")) {
+            if (right) {
+                return;
+            }
+            Player tp = Bukkit.getPlayer(target);
+            if (tp == null) {
+                p.sendMessage(plugin.text("&cIl giocatore deve essere online."));
+                return;
+            }
+            Runnable back = () -> back(p, target);
+            switch (action) {
+                case "mines" -> plugin.getProfileMines().open(p, tp, back);
+                case "upg" -> plugin.getProfileUpgrades().open(p, tp, back);
+                case "rw" -> plugin.getProfileRewards().open(p, tp, back);
+                default -> plugin.getProfileRewards().openExp(p, tp, back);
+            }
         }
     }
 

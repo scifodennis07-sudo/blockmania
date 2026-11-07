@@ -72,8 +72,8 @@ public final class UserProfilePowers implements Listener {
     private static final char NAV2_SH = '';
     private static final String FONT_TINY3 = "minecraft:tiny3";   // = tiny2 alzato di 18 px (barra del popup userprofile)
     private static final String FONT_TINY4 = "minecraft:tiny4";   // font alto: testo sopra il bordo, per la barra dell'anvil
-    private static final int ANVIL_BAR_CX = 88;                   // centro barra anvil (container 23..153)
-    private static final int ANVIL_BAR_MAX = 122;
+    private static final int ANVIL_BAR_CX = 93;                   // centro barra anvil (container 23..153)
+    private static final int ANVIL_BAR_MAX = 112;
     private static final int BAR_MAX = 62;
     private static final int BAR_CX = 95;     // barra centrale (63,33,64,14) -> centro x 95
     private static final int NAV_CX = 96;     // barra frecce (71,109,48,12) -> centro x 95/96
@@ -125,7 +125,13 @@ public final class UserProfilePowers implements Listener {
         if (anvils.containsKey(p.getUniqueId())) {
             return true;
         }
-        return p.getOpenInventory().getTopInventory().getHolder() instanceof Holder;
+        if (p.getOpenInventory().getTopInventory().getHolder() instanceof Holder) {
+            return true;
+        }
+        UserProfileMines m = plugin.getProfileMines();
+        UserProfileUpgrades u = plugin.getProfileUpgrades();
+        UserProfileRewards r = plugin.getProfileRewards();
+        return (m != null && m.owns(p)) || (u != null && u.owns(p)) || (r != null && r.owns(p));
     }
 
     /** Popup comandi a 3 icone per pagina, con frecce che scorrono. */
@@ -258,7 +264,7 @@ public final class UserProfilePowers implements Listener {
     private void showCommands(Player p, String label, List<String> cmds, int page, Consumer<String> onPick, Runnable onBack,
                               boolean historyButton, Runnable onHistory) {
         int pages = Math.max(1, cmds.size() - 2);
-        page = Math.floorMod(page, pages);
+        page = Math.max(0, Math.min(pages - 1, page));
         List<String> trio = cmds.subList(page, Math.min(cmds.size(), page + 3));
         String img = imageFor(trio, label);
         boolean drawn = img != null;

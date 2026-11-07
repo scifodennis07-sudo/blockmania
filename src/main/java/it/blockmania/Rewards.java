@@ -96,6 +96,13 @@ public final class Rewards implements Listener {
     private final Random random = new Random();
     private final NamespacedKey chequeKey;
     private BukkitTask task;
+    /** Immagini alternative (vista staff): chiave -> glifo. Vuota = quelle normali. Usata solo da staffView (thread principale). */
+    private Map<String, String> imageOverride = Map.of();
+
+    private String img(String key, String def) {
+        String v = imageOverride.get(key);
+        return v == null || v.isEmpty() ? def : v;
+    }
 
     public Rewards(BlockMania plugin) {
         this.plugin = plugin;
@@ -619,11 +626,16 @@ public final class Rewards implements Listener {
     }
 
     private String pageImage(int page) {
-        List<Map<?, ?>> p = pages();
-        if (page >= 0 && page < p.size() && p.get(page).get("image") != null) {
-            return String.valueOf(p.get(page).get("image"));
+        String forced = imageOverride.get("main:" + page);
+        if (forced != null && !forced.isEmpty()) {
+            return forced;
         }
-        return plugin.getConfig().getString(GUI + "image-main", "㴀");
+        List<Map<?, ?>> p = pages();
+        String normal = plugin.getConfig().getString(GUI + "image-main", "㴀");
+        if (page >= 0 && page < p.size() && p.get(page).get("image") != null) {
+            normal = String.valueOf(p.get(page).get("image"));
+        }
+        return img("main", normal);
     }
 
     private List<String> pageTypes(int page) {
@@ -861,6 +873,13 @@ public final class Rewards implements Listener {
 
     private GuiTitle newTitle(String image) {
         var c = plugin.getConfig();
+        String imgFont = imageOverride.get("font");
+        if (imgFont != null && !imgFont.isEmpty()) {
+            // vista staff: l'immagine e' nel font del pack (minecraft:userprofile), avanzamento vero 186
+            GuiTitle st = new GuiTitle(plugin);
+            st.at(-15, "&f" + image, imgFont, c.getInt(GUI + "staff-image-advance", 186));
+            return st;
+        }
         String raw = "&f{shift:-15}" + image;
         // l'avanzamento si misura sempre come la prima immagine (stessa larghezza per tutte)
         String measure = "&f{shift:-15}" + c.getString(GUI + "image-main", "㴀");
@@ -1015,7 +1034,8 @@ public final class Rewards implements Listener {
 
     private Component titleLevels(Player player, String type, int page) {
         var c = plugin.getConfig();
-        GuiTitle t = newTitle(c.getString(GUI + (type.equals("pass") ? "image-pass" : "image-levels"), type.equals("pass") ? "㴂" : "㴁"));
+        GuiTitle t = newTitle(img(type.equals("pass") ? "pass" : "levels",
+                c.getString(GUI + (type.equals("pass") ? "image-pass" : "image-levels"), type.equals("pass") ? "㴂" : "㴁")));
         barText(t, c.getString(GUI + "bar-text.level", "livello %n%"), reached(player, type), c.getInt(GUI + "bar-center", 73));
         navNumber(t, page, pagesOf(type));
         return t.build();
@@ -1023,7 +1043,9 @@ public final class Rewards implements Listener {
 
     private Component titleDaily(Player player) {
         var c = plugin.getConfig();
-        GuiTitle t = newTitle(c.getString(GUI + (dailyClaimedToday(player) || !dailyReady(player) ? "image-daily-wait" : "image-daily-ready"), "㴄"));
+        boolean waiting = dailyClaimedToday(player) || !dailyReady(player);
+        GuiTitle t = newTitle(img(waiting ? "daily-wait" : "daily-ready",
+                c.getString(GUI + (waiting ? "image-daily-wait" : "image-daily-ready"), "㴄")));
         barText(t, c.getString(GUI + "bar-text.daily", "giorno %n%"), daysClaimed(player), c.getInt(GUI + "bar-center", 73));
         return t.build();
     }
@@ -1144,6 +1166,138 @@ public final class Rewards implements Listener {
         if (event.getInventory().getHolder() instanceof Holder) {
             event.setCancelled(true);
         }
+    }
+
+    // ------------------------------------------------------------------
+    //  Vista per lo staff (usata da UserProfileRewards): la GUI di 'target' con altre immagini e altre azioni
+    // ------------------------------------------------------------------
+
+    /**
+     * Una GUI ricompense di 'target' costruita ma NON aperta (l'inventario vero lo crea UserProfileRewards col suo holder,
+     * cosi' i click non passano da onClick di questa classe).
+     * actions: slot -> "close", "back", "page:+-1", "scroll:+-1", "type:<tipo>", "lvl:<N>", "daily", "reset", "deny".
+     */
+    public record StaffView(ItemStack[] contents, Map<Integer, String> actions, Component title, int page, int pages) {
+    }
+
+    /**
+     * kind: main | levels | daily. images: sostituisce i glifi delle immagini (chiavi: main, main:N, levels, pass, daily-ready,
+     * daily-wait); null o vuota = immagini normali. confirmImage: se non e' vuoto il titolo e' solo quell'immagine
+     * (popup di conferma disegnato nell'immagine) e i numeri non si disegnano.
+     */
+    public StaffView staffView(Player target, String kind, String type, int mainPage, int page,
+                               Map<String, String> images, String confirmImage) {
+        Map<String, String> old = imageOverride;
+        imageOverride = images == null ? Map.of() : images;
+        try {
+            String k = kind == null ? "main" : kind;
+            Holder holder = new Holder(k);
+            holder.type = type == null ? "" : type;
+            holder.mainPage = mainPage;
+            Component title;
+            int pages;
+            boolean confirm = confirmImage != null && !confirmImage.isEmpty();
+            switch (k) {
+                case "levels" -> {
+                    if (!known(holder.type) || holder.type.equals("daily")) {
+                        holder.kind = "main";
+                        return staffView(target, "main", "", mainPage, 0, images, confirmImage);
+                    }
+                    pages = pagesOf(holder.type);
+                    holder.page = Math.max(0, Math.min(page, pages - 1));
+                    title = confirm ? newTitle(confirmImage).build() : titleLevels(target, holder.type, holder.page);
+                }
+                case "daily" -> {
+                    holder.type = "daily";
+                    pages = 1;
+                    holder.page = 0;
+                    title = confirm ? newTitle(confirmImage).build() : titleDaily(target);
+                }
+                default -> {
+                    holder.kind = "main";
+                    pages = pageCount();
+                    holder.page = Math.max(0, Math.min(page, pages - 1));
+                    holder.mainPage = holder.page;
+                    title = confirm ? newTitle(confirmImage).build() : titleMain(target, holder.page);
+                }
+            }
+            Inventory inv = Bukkit.createInventory(holder, SIZE, title);
+            holder.inventory = inv;
+            switch (holder.kind) {
+                case "levels" -> fillLevels(inv, holder, target);
+                case "daily" -> fillDaily(inv, holder, target);
+                default -> fillMain(inv, holder, target);
+            }
+            // il tasto "informazioni" diventa RESET
+            String[] r = repl(target, holder.kind.equals("levels") ? holder.type : "broken");
+            String resetName = "&c&lRESET";
+            List<String> resetLore = holder.kind.equals("levels")
+                    ? List.of("&7Azzera i livelli di questa tipologia.", "&eClicca (poi conferma).")
+                    : holder.kind.equals("daily")
+                    ? List.of("&7Azzera giorni e ritiro di oggi.", "&eClicca (poi conferma).")
+                    : List.of("&7Azzera TUTTE le ricompense.", "&eClicca (poi conferma).");
+            List<Integer> resetSlots = holder.kind.equals("levels") ? slots("info-sub", 15, 16) : slots("info", 7, 8);
+            for (int slot : resetSlots) {
+                put(inv, holder, slot, pane(invisibleCmd(), resetName, resetLore, r, false), "reset");
+            }
+            if (holder.kind.equals("levels")) {
+                int levels = levelsOf(holder.type);
+                int per = perPage(holder.type);
+                for (int i = 0; i < per; i++) {
+                    int level = holder.page * per + i + 1;
+                    if (level > levels) {
+                        break;
+                    }
+                    int slot = slotOf(holder.type, i);
+                    ItemStack it = inv.getItem(slot);
+                    if (it != null && it.hasItemMeta()) {
+                        ItemMeta meta = it.getItemMeta();
+                        List<Component> lore = meta.lore() == null ? new ArrayList<>() : new ArrayList<>(meta.lore());
+                        lore.add(plugin.text("&8» &eClicca per modificare questo livello"));
+                        meta.lore(lore);
+                        it.setItemMeta(meta);
+                    }
+                    holder.actions.put(slot, "lvl:" + level);
+                }
+            }
+            return new StaffView(inv.getContents(), new HashMap<>(holder.actions), title, holder.page, pages);
+        } finally {
+            imageOverride = old;
+        }
+    }
+
+    /** Numero massimo di livelli di una tipologia (per i popup dello staff). */
+    public int staffMaxLevel(String type) {
+        return known(type) ? levelsOf(type) : 0;
+    }
+
+    /** Righe di lore per l'icona exp del profilo staff: exp totale, livello del pass, quanto manca, ritiri. */
+    public List<String> staffExpLines(Player target) {
+        AmmoManager a = plugin.getAmmo();
+        int exp = a.getCounter(target, "rw_exp");
+        int levels = levelsOf("pass");
+        int reach = reached(target, "pass");
+        long per = expPerLevel();
+        long into = Math.max(0, exp - threshold("pass", reach));
+        int claimedPass = claims(target, "pass").cardinality();
+        int claimedOthers = 0;
+        for (String t : TYPES) {
+            if (!t.equals("pass") && !t.equals("daily")) {
+                claimedOthers += claims(target, t).cardinality();
+            }
+        }
+        List<String> out = new ArrayList<>();
+        out.add("&7Exp totale: &f" + exp);
+        out.add("&7Livello pass: &f" + reach + "&8/&f" + levels);
+        if (reach >= levels) {
+            out.add("&7Exp nel livello: &fmassimo raggiunto");
+        } else {
+            out.add("&7Exp nel livello: &f" + into + "&8/&f" + per);
+            out.add("&7Mancano al prossimo: &f" + Math.max(0, per - into));
+        }
+        out.add("&7Livelli pass ritirati: &f" + claimedPass + "&8/&f" + reach);
+        out.add("&7Exp ottenuti dai ritiri: &f" + ((long) claimedOthers * expPerClaim()));
+        return out;
     }
 
     // ------------------------------------------------------------------

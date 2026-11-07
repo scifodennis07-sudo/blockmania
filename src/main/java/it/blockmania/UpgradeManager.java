@@ -226,9 +226,9 @@ public final class UpgradeManager implements Listener {
         return bestMine < 0 ? 0 : cap;
     }
 
-    private enum State { AVAILABLE, LOCKED, NONE, MAX }
+    enum State { AVAILABLE, LOCKED, NONE, MAX }
 
-    private State stateOf(Player player, String id) {
+    State stateOf(Player player, String id) {
         int level = getLevel(player, id);
         if (level >= maxLevel(id)) {
             return State.MAX;
@@ -241,7 +241,7 @@ public final class UpgradeManager implements Listener {
 
     // ---------- oggetti della GUI ----------
 
-    private static final String GUI = "upgrade-gui.";
+    static final String GUI = "upgrade-gui.";
 
     private Material material(String path, Material fallback) {
         Material m = Material.matchMaterial(plugin.getConfig().getString(path + ".material", fallback.name()));
@@ -249,7 +249,7 @@ public final class UpgradeManager implements Listener {
     }
 
     /** Pannello di vetro con il modello (custom-model-data), il nome e la lore presi dal config. */
-    private ItemStack pane(String path, int fallbackCmd, String name, List<String> lore, String[] r, boolean hideTooltip) {
+    ItemStack pane(String path, int fallbackCmd, String name, List<String> lore, String[] r, boolean hideTooltip) {
         ItemStack stack = new ItemStack(material(path, Material.GLASS_PANE));
         ItemMeta meta = stack.getItemMeta();
         meta.setCustomModelData(plugin.getConfig().getInt(path + ".cmd", fallbackCmd));
@@ -291,11 +291,11 @@ public final class UpgradeManager implements Listener {
     }
 
     /** Pannello invisibile (modello 999). Con name/lore mostra il testo quando ci passi sopra. */
-    private ItemStack invisible(String name, List<String> lore, String[] r, boolean hideTooltip) {
+    ItemStack invisible(String name, List<String> lore, String[] r, boolean hideTooltip) {
         return pane(GUI + "invisible", 999, name, lore, r, hideTooltip);
     }
 
-    private List<Integer> slotList(String path) {
+    List<Integer> slotList(String path) {
         List<Integer> out = new ArrayList<>();
         var c = plugin.getConfig();
         if (c.isList(path)) {
@@ -313,7 +313,7 @@ public final class UpgradeManager implements Listener {
         return out;
     }
 
-    private List<String> orderedUpgrades() {
+    List<String> orderedUpgrades() {
         List<String> all = ids();
         List<String> out = new ArrayList<>();
         for (String id : plugin.getConfig().getStringList(GUI + "order")) {
@@ -342,10 +342,10 @@ public final class UpgradeManager implements Listener {
         return out;
     }
 
-    private record Position(int icon, int button, List<Integer> extra) {
+    record Position(int icon, int button, List<Integer> extra) {
     }
 
-    private List<Position> positions() {
+    List<Position> positions() {
         List<Position> out = new ArrayList<>();
         for (Map<?, ?> map : plugin.getConfig().getMapList(GUI + "slots.positions")) {
             try {
@@ -366,7 +366,7 @@ public final class UpgradeManager implements Listener {
         return out;
     }
 
-    private int pageCount() {
+    int pageCount() {
         int perPage = Math.max(1, positions().size());
         return Math.max(1, (orderedUpgrades().size() + perPage - 1) / perPage);
     }
@@ -383,7 +383,7 @@ public final class UpgradeManager implements Listener {
         }
     }
 
-    private String[] general(Player player, int page, int pages) {
+    String[] general(Player player, int page, int pages) {
         AmmoManager ammo = plugin.getAmmo();
         String ammoType = plugin.getConfig().getString("bossbar.ammo-type", "standardball");
         return new String[]{
@@ -398,7 +398,7 @@ public final class UpgradeManager implements Listener {
         };
     }
 
-    private String[] upgradeValues(Player player, String id, LauncherItem li, String[] general) {
+    String[] upgradeValues(Player player, String id, LauncherItem li, String[] general) {
         int level = getLevel(player, id);
         int max = maxLevel(id);
         boolean maxed = level >= max;

@@ -1573,6 +1573,74 @@ public final class MineTemplates implements Listener {
         plugin.send(player, "mine-enter", "%mine%", String.valueOf(mine));
     }
 
+    /** Profilo staff: lo staffer visita la miniera personale di un altro giocatore (la prepara se serve). */
+    public void visit(Player visitor, UUID owner, int mine) {
+        if (minesWorld == null && Bukkit.getWorld(worldName()) == null) {
+            plugin.send(visitor, "mine-world-loading");
+            Bukkit.getScheduler().runTask(plugin, this::world);
+            return;
+        }
+        UUID vid = visitor.getUniqueId();
+        Instance current = instance(owner, mine);
+        if (current.loading) {
+            plugin.send(visitor, "mine-loading", "%mine%", String.valueOf(mine));
+            return;
+        }
+        loadAsync(mine, t -> {
+            Player p = Bukkit.getPlayer(vid);
+            if (p == null) {
+                return;
+            }
+            if (t == null) {
+                plugin.send(p, "mine-unavailable", "%mine%", String.valueOf(mine));
+                return;
+            }
+            proceedVisit(p, owner, t, mine);
+        });
+    }
+
+    private void proceedVisit(Player visitor, UUID owner, Template t, int mine) {
+        World w = world();
+        if (w == null) {
+            plugin.send(visitor, "mine-unavailable", "%mine%", String.valueOf(mine));
+            return;
+        }
+        UUID vid = visitor.getUniqueId();
+        Instance inst = instance(owner, mine);
+        if (inst.loading) {
+            return;
+        }
+        inst.lastActive = System.currentTimeMillis();
+        if (w != visitor.getWorld()) {
+            visitor.getPersistentDataContainer().set(returnKey, PersistentDataType.STRING, encode(visitor.getLocation()));
+        }
+        if (inst.loaded && !inst.unloadStarted && inst.applied >= t.info.stamp()) {
+            teleportVisit(visitor, owner, t, mine);
+            return;
+        }
+        inst.loading = true;
+        Job job = jobFor(t, inst, w);
+        job.done = () -> {
+            inst.loading = false;
+            inst.lastActive = System.currentTimeMillis();
+            Player p = Bukkit.getPlayer(vid);
+            if (p != null && !inst.deleted) {
+                teleportVisit(p, owner, t, mine);
+            }
+        };
+        enqueue(job);
+    }
+
+    private void teleportVisit(Player visitor, UUID owner, Template t, int mine) {
+        World w = world();
+        Info i = t.info;
+        Location to = new Location(w, plotX(owner) + i.sx(), baseY() + i.sy(),
+                plotZ(mine) + i.sz(), i.yaw(), i.pitch());
+        visitor.teleport(to);
+        instance(owner, mine).lastActive = System.currentTimeMillis();
+        plugin.send(visitor, "mine-enter", "%mine%", String.valueOf(mine));
+    }
+
     /** /mines exit: ti riporta dov'eri prima di entrare in una miniera. */
     public void leave(Player player) {
         String raw = player.getPersistentDataContainer().get(returnKey, PersistentDataType.STRING);
