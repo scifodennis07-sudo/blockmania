@@ -1,5 +1,10 @@
 package it.blockmania;
 
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.ShadowColor;
+import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -37,7 +42,7 @@ public final class RulesGui implements Listener {
     private static final String IMG_BASE = "\u3e0b";  // regole.png (TODO: allineare a chars di regole.json)
     private static final String IMG_CONF = "\u3e0c";  // regole-2.png (conferma)
     private static final int IMG = -22;
-    private static final int IMG_ADV = 186;
+    private static final int IMG_ADV = 179;   // dichiarato 179 (reale 186): convenzione Tickets/ItemsGui, vale x_img + IMG
     /** Barra frecce: su questa immagine sta in alto (container y 15..28); font e quote configurabili (rules-gui.*). */
     private static final String DEF_NAV_FONT = "minecraft:tiny3";
     private static final char DEF_NAV_BASE = '';
@@ -60,6 +65,29 @@ public final class RulesGui implements Listener {
     private static final int[] CONFIRM_NO = {32, 33, 34};
 
     private static final int WRAP = 35;
+
+    // ---------- targhette delle regole disegnate a font (contratto col pack di Sara) ----------
+    // Costanti facili da cambiare se ascent/advance reali del pack differiscono.
+    /** Font per riga chest 1..5: "minecraft:rules_r1".."rules_r5". */
+    private static final String RULE_FONT_PREFIX = "rules_r";
+    /** Sfondo = U+E000 + colore (0..7). */
+    private static final char RULE_BG_BASE = '';
+    private static final int RULE_COLORS = 8;
+    /** Cifra d = U+E010 + d, punto = U+E01A. */
+    private static final char RULE_DIGIT_BASE = '';
+    private static final char RULE_DOT = '';
+    /** Avanzamento reale del glifo sfondo (come i cubi noteblock: 17). */
+    private static final int RULE_BG_ADV = 17;
+    /** Avanzamento di una cifra e del punto. */
+    private static final int RULE_DIGIT_ADV = 4;
+    private static final int RULE_DOT_ADV = 2;
+    /** Scostamento delle cifre dallo sfondo (dati reali di Sara): x_cifre = x_sfondo + 6 + (16 - larghezzaTesto)/2. */
+    private static final int RULE_DIGIT_DX = 0;
+    /** Larghezza visibile dello sfondo. */
+    private static final int RULE_CELL = 16;
+    /** Bordo sinistro dello slot in pixel immagine = 15 + 18*colonna (come ItemsGui). */
+    private static final int RULE_CELL_X0 = 15;
+    private static final int RULE_CELL_STEP = 18;
 
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
@@ -126,8 +154,8 @@ public final class RulesGui implements Listener {
         List<Rules.Rule> all = list(s);
         int pages = pageCount(all.size());
         s.page = Math.max(0, Math.min(page, pages - 1));
-        s.titleKey = key(s, pages);
-        h.inventory = Bukkit.createInventory(h, SIZE, title(s, pages));
+        s.titleKey = key(s, pages, all);
+        h.inventory = Bukkit.createInventory(h, SIZE, title(s, pages, all));
         fill(s, all);
         show(staff, h, s);
     }
@@ -168,8 +196,20 @@ public final class RulesGui implements Listener {
         return Math.max(1, (n + PER_PAGE - 1) / PER_PAGE);
     }
 
-    private static String key(Session s, int pages) {
-        return s.filter + ":" + s.page + "/" + pages;
+    /** Regole visibili nella pagina corrente. */
+    private static List<Rules.Rule> pageRules(Session s, List<Rules.Rule> all) {
+        int from = Math.min(all.size(), s.page * PER_PAGE);
+        int to = Math.min(all.size(), from + PER_PAGE);
+        return all.subList(from, to);
+    }
+
+    /** Chiave del titolo: le targhette fanno parte del titolo, quindi contano anche i codici in pagina. */
+    private static String key(Session s, int pages, List<Rules.Rule> all) {
+        StringBuilder k = new StringBuilder(s.filter + ":" + s.page + "/" + pages);
+        for (Rules.Rule r : pageRules(s, all)) {
+            k.append('|').append(r.code());
+        }
+        return k.toString();
     }
 
     private static String filterName(Rules.Type t) {
@@ -186,12 +226,70 @@ public final class RulesGui implements Listener {
         return v.isEmpty() ? def : v.charAt(0);
     }
 
-    private net.kyori.adventure.text.Component title(Session s, int pages) {
+    private net.kyori.adventure.text.Component title(Session s, int pages, List<Rules.Rule> all) {
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + IMG_BASE, FONT_RULES, IMG_ADV);
         navText(g, s.page + 1, pages);
+        drawRuleTags(g, s, all);
         UserProfilePowers.topTitle(plugin, g, "regole " + filterName(s.filter));
         return g.build();
+    }
+
+    /** Glifo bianco (nessuna tinta, nessuna ombra) nel font della riga chest indicata. */
+    private static Component ruleGlyph(char ch, int row) {
+        return Component.text(String.valueOf(ch))
+                .font(Key.key("minecraft", RULE_FONT_PREFIX + row))
+                .color(TextColor.color(0xFFFFFF))
+                .shadowColor(ShadowColor.none())
+                .decoration(TextDecoration.ITALIC, false);
+    }
+
+    /** Colore della targhetta = (primo numero del codice - 1) mod 8. */
+    private static int tagColor(String code) {
+        int dot = code.indexOf('.');
+        String first = dot < 0 ? code : code.substring(0, dot);
+        try {
+            return Math.floorMod(Integer.parseInt(first.trim()) - 1, RULE_COLORS);
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    /** Avanzamento di un carattere del codice (0 = non disegnabile). */
+    private static int tagAdvance(char ch) {
+        if (ch >= '0' && ch <= '9') {
+            return RULE_DIGIT_ADV;
+        }
+        return ch == '.' ? RULE_DOT_ADV : 0;
+    }
+
+    /** Sfondo + cifre di ogni regola della pagina, cella per cella (stessa x dei cubi noteblock di ItemsGui). */
+    private void drawRuleTags(GuiTitle g, Session s, List<Rules.Rule> all) {
+        List<Rules.Rule> page = pageRules(s, all);
+        for (int i = 0; i < page.size(); i++) {
+            int slot = GRID_START + i;
+            int row = slot / 9;
+            if (row < 1 || row > 5) {
+                continue;
+            }
+            String code = page.get(i).code();
+            int cellX = RULE_CELL_X0 + RULE_CELL_STEP * (slot % 9) + IMG;
+            g.atComponent(cellX, ruleGlyph((char) (RULE_BG_BASE + tagColor(code)), row), RULE_BG_ADV);
+            int width = -1;
+            for (char ch : code.toCharArray()) {
+                width += tagAdvance(ch);
+            }
+            int x = cellX + RULE_DIGIT_DX + (RULE_CELL - width) / 2;
+            for (char ch : code.toCharArray()) {
+                int adv = tagAdvance(ch);
+                if (adv == 0) {
+                    continue;
+                }
+                char glyph = ch == '.' ? RULE_DOT : (char) (RULE_DIGIT_BASE + (ch - '0'));
+                g.atComponent(x, ruleGlyph(glyph, row), adv);
+                x += adv;
+            }
+        }
     }
 
     /** Numero pagina nel riquadro frecce (stessi glifi dei popup, font e centro configurabili). */
@@ -230,15 +328,6 @@ public final class RulesGui implements Listener {
         return stack;
     }
 
-    private static Material materialOf(Rules.Type t) {
-        return switch (t) {
-            case BAN -> Material.RED_CONCRETE;
-            case WARN -> Material.YELLOW_CONCRETE;
-            case MUTE -> Material.ORANGE_CONCRETE;
-            case REGOLAMENTO -> Material.PAPER;
-        };
-    }
-
     private static String colorOf(Rules.Type t) {
         return switch (t) {
             case BAN -> "&c";
@@ -273,21 +362,17 @@ public final class RulesGui implements Listener {
     }
 
     private ItemStack ruleItem(Rules.Rule r) {
-        ItemStack stack = new ItemStack(materialOf(r.type()));
-        ItemMeta meta = stack.getItemMeta();
-        meta.displayName(plugin.text("&f" + r.code()));
-        List<net.kyori.adventure.text.Component> lore = new ArrayList<>();
+        // l'aspetto lo disegna il font nel titolo: qui solo l'item trasparente con nome e descrizione
+        List<String> lore = new ArrayList<>();
         for (String line : wrap(r.text())) {
-            lore.add(plugin.text("&7" + line));
+            lore.add("&7" + line);
         }
-        lore.add(plugin.text(" "));
-        lore.add(plugin.text("&7Tipo: " + colorOf(r.type()) + Rules.typeLabel(r.type())));
-        lore.add(plugin.text("&7Tempo: &f" + Rules.timeLabel(r)));
-        lore.add(plugin.text(" "));
-        lore.add(plugin.text("&eQ = elimina"));
-        meta.lore(lore);
-        stack.setItemMeta(meta);
-        return stack;
+        lore.add(" ");
+        lore.add("&7Tipo: " + colorOf(r.type()) + Rules.typeLabel(r.type()));
+        lore.add("&7Tempo: &f" + Rules.timeLabel(r));
+        lore.add(" ");
+        lore.add("&eQ = elimina");
+        return pane("&f" + r.code(), lore);
     }
 
     private void fill(Session s, List<Rules.Rule> all) {
@@ -343,7 +428,7 @@ public final class RulesGui implements Listener {
         List<Rules.Rule> all = list(s);
         int pages = pageCount(all.size());
         s.page = Math.max(0, Math.min(s.page, pages - 1));
-        if (key(s, pages).equals(s.titleKey)) {
+        if (key(s, pages, all).equals(s.titleKey)) {
             fill(s, all);
         } else {
             // il titolo (filtro o numero pagina) cambia: serve un inventario nuovo
