@@ -33,8 +33,9 @@ import java.util.UUID;
 public final class RulesGui implements Listener {
 
     // ---------- grafica del pack ----------
-    private static final String IMG_BASE = "㸋";      // regole.png
-    private static final String IMG_CONF = "㸌";      // regole-2.png (conferma)
+    private static final String FONT_RULES = "minecraft:regole";
+    private static final String IMG_BASE = "\u3e0b";  // regole.png (TODO: allineare a chars di regole.json)
+    private static final String IMG_CONF = "\u3e0c";  // regole-2.png (conferma)
     private static final int IMG = -22;
     private static final int IMG_ADV = 186;
     /** Barra frecce: su questa immagine sta in alto (container y 15..28); font e quote configurabili (rules-gui.*). */
@@ -187,7 +188,7 @@ public final class RulesGui implements Listener {
 
     private net.kyori.adventure.text.Component title(Session s, int pages) {
         GuiTitle g = new GuiTitle(plugin);
-        g.at(-15, "&f" + IMG_BASE, "", IMG_ADV);
+        g.at(-15, "&f" + IMG_BASE, FONT_RULES, IMG_ADV);
         navText(g, s.page + 1, pages);
         UserProfilePowers.topTitle(plugin, g, "regole " + filterName(s.filter));
         return g.build();
@@ -447,7 +448,7 @@ public final class RulesGui implements Listener {
         h.session = s;
         h.confirm = true;
         GuiTitle g = new GuiTitle(plugin);
-        g.at(-15, "&f" + IMG_CONF, "", IMG_ADV);
+        g.at(-15, "&f" + IMG_CONF, FONT_RULES, IMG_ADV);
         UserProfilePowers.topTitle(plugin, g, "conferma");
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         List<String> yes = List.of("&7Elimina la regola " + code + ".", "", "&eclicca per confermare");

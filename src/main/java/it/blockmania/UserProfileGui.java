@@ -102,8 +102,8 @@ public final class UserProfileGui implements Listener {
     // barra stamina: fascia libera tra le barre sanzioni (finiscono a y=85) e i box oggetti (iniziano a y=101), pixel dell'immagine
     private static final int STA_X = 18;       // bordo sinistro (contorno)
     private static final int STA_W = 148;      // larghezza totale col contorno -> x 18..165
-    private static final int STA_Y = 90;       // bordo alto (contorno)
-    private static final int STA_H = 8;        // altezza totale col contorno -> y 90..97
+    private static final int STA_Y = 91;       // bordo alto (contorno)
+    private static final int STA_H = 5;        // altezza totale col contorno -> y 91..95 (contorno 1 px + riempimento 3 px)
     private static final int C_STA_FILL = 0xFFD83A;
     private static final int C_STA_EDGE = 0x2B2B2B;
     private static final int C_STA_EMPTY = 0x555555;
@@ -914,7 +914,7 @@ public final class UserProfileGui implements Listener {
         if (!authorize(p, target, "profile", "edit", 0)) {
             return;
         }
-        plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), List.of("set", "refill", "infinite", "empty", "normal"),
+        plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), List.of("set", "full", "infinite", "reset"),
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> staminaPick(p, target, cmd)),
                 () -> back(p, target), false, null);
     }
@@ -953,10 +953,9 @@ public final class UserProfileGui implements Listener {
         }
         switch (cmd) {
             case "set" -> pw.setPercent(tp, percent);
-            case "refill" -> pw.refill(tp);
+            case "full" -> pw.refill(tp);
             case "infinite" -> pw.setMode(tp, "infinite");
-            case "empty" -> pw.setMode(tp, "empty");
-            default -> pw.setMode(tp, "normal");
+            default -> pw.setPercent(tp, 0);   // reset: stamina a 0
         }
         audit(p, "profile.edit stamina " + cmd + " " + nameOf(target) + (cmd.equals("set") ? " " + percent : ""));
         GuiMsg.send(plugin, p, "&astamina " + cmd + " eseguito su " + nameOf(target));

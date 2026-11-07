@@ -51,7 +51,9 @@ public final class UserProfilePowers implements Listener {
     private static final String IMG_MUTE_B = "\uE10B";            // userprofile-12
     private static final String IMG_SET_FULL_USES = "\uE10E";    // userprofile-15: set, full, setuses
     private static final String IMG_FULL_USES_RESET = "\uE10F";  // userprofile-16: full, setuses, reset
-    private static final String IMG_WARN = "\uE10C";              // userprofile-13: add, remove, reset
+    private static final String IMG_SET_FULL_INF = "";     // userprofile-17: set, full, infinite (stamina)
+    private static final String IMG_FULL_INF_RESET = "";   // userprofile-18: full, infinite, reset (stamina)
+    private static final String IMG_WARN ="\uE10C";              // userprofile-13: add, remove, reset
     private static final String IMG_ANVIL = "㸈";              // incudine personalizzata (pack ticket)
     private static final String DIM = "&#555555";
     private static final int SIZE = 54;
@@ -302,8 +304,32 @@ public final class UserProfilePowers implements Listener {
         };
     }
 
+    /** {nome, descrizione, riga finale "clicca per ..."}: testi specifici per il popup stamina, altrimenti quelli generici. */
+    private static String[] actionInfo(String cmd, String label) {
+        if (label != null && label.toLowerCase(java.util.Locale.ROOT).startsWith("stamina")) {
+            switch (cmd) {
+                case "set" -> {
+                    return new String[]{"&eimposta", "Imposta la stamina a una percentuale.", "&eclicca per impostare la stamina"};
+                }
+                case "full" -> {
+                    return new String[]{"&bpiena", "Riempie la stamina.", "&eclicca per riempire la stamina"};
+                }
+                case "infinite" -> {
+                    return new String[]{"&dinfinita", "La stamina non finisce mai.", "&eclicca per rendere infinita la stamina"};
+                }
+                case "reset" -> {
+                    return new String[]{"&4svuota", "Svuota la stamina.", "&eclicca per svuotare la stamina"};
+                }
+                default -> { }
+            }
+        }
+        String[] base = actionInfo(cmd);
+        return new String[]{base[0], base[1], "&eclicca per scegliere"};
+    }
+
     private static Material fallbackMaterial(String cmd) {
         return switch (cmd) {
+            case "infinite" -> Material.NETHER_STAR;
             case "give", "add" -> Material.EMERALD;
             case "remove" -> Material.REDSTONE;
             case "reduce" -> Material.CLOCK;
@@ -331,6 +357,8 @@ public final class UserProfilePowers implements Listener {
             case "add,remove,reset" -> IMG_WARN;
             case "set,full,setuses" -> IMG_SET_FULL_USES;
             case "full,setuses,reset" -> IMG_FULL_USES_RESET;
+            case "set,full,infinite" -> IMG_SET_FULL_INF;
+            case "full,infinite,reset" -> IMG_FULL_INF_RESET;
             default -> null;
         };
     }
@@ -379,8 +407,8 @@ public final class UserProfilePowers implements Listener {
         }
         for (int i = 0; i < trio.size() && i < 3; i++) {
             String cmd = trio.get(i);
-            String[] info = actionInfo(cmd);
-            List<String> lore = List.of("&7" + info[1], "", "&eclicca per scegliere");
+            String[] info = actionInfo(cmd, label);
+            List<String> lore = List.of("&7" + info[1], "", info[2]);
             ItemStack st = drawn ? pane(info[0], lore) : item(fallbackMaterial(cmd), info[0], lore);
             put(h, SLOTS_ICON[i], st, () -> later(() -> onPick.accept(cmd)));
         }
