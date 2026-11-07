@@ -2126,7 +2126,7 @@ items-gui:
 # ----------------------------------------------------------------------
 #  GUI DELLE VARIANTI (clic destro su un note block in /bm items)
 #  Mostra le 10 varianti del blocco. Le frecce passano al blocco prima/dopo, al centro c'e' il numero (3/21).
-#  Gli slot si contano da 0 (riga 1 = 0-8, riga 2 = 9-17 ...). Il disegno e' custom-gui/shopitem-2.png.
+#  Gli slot si contano da 0 (riga 1 = 0-8, riga 2 = 9-17 ...). Il disegno e' custom-gui/shop/shopitem-2.png.
 #  Il numero e' scritto nel titolo (title.number): se non e' centrato cambia center (+1 = un pixel a destra)
 #  e, se e' piu in alto o in basso, l'ascent del set "bar" nel default.json.
 # ----------------------------------------------------------------------

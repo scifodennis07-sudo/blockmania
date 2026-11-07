@@ -561,12 +561,12 @@ public final class Tickets implements Listener {
     }
 
     private void err(Player p, String text) {
-        p.sendMessage(plugin.color("&c" + text));
+        GuiMsg.send(plugin, p, "&c" + text);
         plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
     }
 
     private void ok(Player p, String text) {
-        p.sendMessage(plugin.color("&a" + text));
+        GuiMsg.send(plugin, p, "&a" + text);
         plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
     }
 
@@ -1479,19 +1479,17 @@ public final class Tickets implements Listener {
         // barra in alto: stato e sezione
         int si = statusOf(t);
         int ci = 3 + catIndex(t.category);
-        if (clip == null || clip[1] > CHIP_BOTTOM) {
-            g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
-            g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
-        }   // se il popup parte sopra y50 (popup lista/link/tag, y45) le etichette toccherebbero il suo bordo: non si disegnano
+        // etichette sempre disegnate (scurite sotto i popup, come il resto dello sfondo)
+        g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
+        g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
         if (clip == null) {
             tinyText(g, t.code, 94, true, '', '');
         }
 
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
         // faccia 2D del player nel primo slot della barra
-        if (clip == null) {
-            drawFace(g, faceOf(t.owner), 15, 33, 2);   // sotto un popup la testa non si disegna (coprirebbe il popup)
-        }
+        // la testa si disegna sempre: sotto un popup drawFace salta le righe coperte (dimClipTop/dimClipX0)
+        drawFace(g, faceOf(t.owner), 15, 33, 2);
         if (!staffView && !t.open) {
             int filled = t.rating > 0 ? t.rating : (t.rating == 0 ? stars.getOrDefault(viewer.getUniqueId(), 0) : 0);
             drawStars(g, filled);

@@ -789,7 +789,7 @@ public final class UserProfileGui implements Listener {
             p.closeInventory();
         } else if (action.equals("head")) {
             if (right && isStaff(target)) {
-                p.sendMessage(plugin.text("&7staffprofile non ancora disponibile."));
+                GuiMsg.send(plugin, p, "&7staffprofile non ancora disponibile.");
             }
         } else if (action.startsWith("sanc:")) {
             SanctionManager.Kind kind = SanctionManager.Kind.valueOf(action.substring(5));
@@ -810,7 +810,7 @@ public final class UserProfileGui implements Listener {
             }
             Player tp = Bukkit.getPlayer(target);
             if (tp == null) {
-                p.sendMessage(plugin.text("&cIl giocatore deve essere online."));
+                GuiMsg.send(plugin, p, "&cIl giocatore deve essere online.");
                 return;
             }
             Runnable back = () -> back(p, target);
@@ -920,7 +920,7 @@ public final class UserProfileGui implements Listener {
             }
         }
         audit(p, "sanctions." + k + " " + cmd + " " + nameOf(target) + (minutes > 0 ? " " + minutes + "m" : ""));
-        p.sendMessage(plugin.color("&a" + k + " " + cmd + " eseguito su " + nameOf(target)));
+        GuiMsg.send(plugin, p, "&a" + k + " " + cmd + " eseguito su " + nameOf(target));
         plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
         back(p, target);
     }
@@ -941,7 +941,7 @@ public final class UserProfileGui implements Listener {
     private void itemMenu(Player p, UUID target, PlayerCounters.Item it) {
         PlayerCounters pc = plugin.getCounters();
         if (!pc.isOnline(target)) {
-            p.sendMessage(plugin.color("&cIl player e' offline: i contatori si possono solo guardare."));
+            GuiMsg.send(plugin, p, "&cIl player e' offline: i contatori si possono solo guardare.");
             plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
             return;
         }
@@ -1045,11 +1045,11 @@ public final class UserProfileGui implements Listener {
         }
         String err = plugin.getCounters().apply(target, it, cmd, n, p);
         if (err != null) {
-            p.sendMessage(plugin.color("&c" + err));
+            GuiMsg.send(plugin, p, "&c" + err);
             plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
         } else {
             audit(p, "profile." + verbOf(cmd) + " " + cmd + " " + it.name().toLowerCase(java.util.Locale.ROOT) + " " + nameOf(target) + (n > 0 ? " " + n : ""));
-            p.sendMessage(plugin.color("&a" + cmd + " " + labelOf(it) + " eseguito su " + nameOf(target)));
+            GuiMsg.send(plugin, p, "&a" + cmd + " " + labelOf(it) + " eseguito su " + nameOf(target));
             plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
         }
         back(p, target);

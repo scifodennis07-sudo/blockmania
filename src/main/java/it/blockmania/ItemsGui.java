@@ -297,6 +297,62 @@ public final class ItemsGui implements Listener {
         }
     }
 
+    /** Rettangolo (x0, y0, x1, y1, pixel immagine, ombra compresa) del popup delle varianti dei note block. */
+    static final int[] VARIANTS_POPUP = {38, 44, 150, 133};
+    /** Prima riga (pixel immagine) dei cubetti nella griglia e passo tra le righe. */
+    private static final int NB_TOP = 51;
+    private static final int NB_ROW_STEP = 18;
+    private static final int NB_CELL = 16;
+
+    /**
+     * Sfondo SCURITO della lista dei note block, da scrivere DOPO il popup (che e' opaco) nel titolo di un popup
+     * aperto da questa GUI: numero pagina e cubetti a font (1..21) scuriti (x0.6), saltando i cubetti che
+     * cadrebbero dentro il rettangolo del popup (clip: x0, y0, x1, y1 in pixel immagine).
+     * Le posizioni sono quelle del titolo normale (cursore dopo l'immagine 179 dichiarata, IMG = -22).
+     */
+    void drawDimmedBackdrop(GuiTitle t, int number, int[] clip) {
+        var c = plugin.getConfig();
+        int per = perPage();
+        int page = Math.max(0, (number - 1) / per);
+        int pages = Math.max(1, (plugin.getMaxBlock() + per - 1) / per);
+        // numero pagina della lista (barra in alto), scurito
+        String plain = (page + 1) + "/" + pages;
+        String set = c.getString(P + "title.number.set", "main");
+        String shadowSet = c.getString(P + "title.number.shadow-set", "main-shadow");
+        String nfont = c.getString(P + "title.number.font", "");
+        int start = c.getInt(P + "title.number.center", 73) - GuiTitle.widthOf(plugin, set, plain) / 2;
+        if (c.getBoolean(P + "title.number.shadow", true)) {
+            t.at(start + 1, "&#262626" + GuiTitle.glyphs(plugin, shadowSet, plain), nfont);
+        }
+        t.at(start, "&#999999" + GuiTitle.glyphs(plugin, set, plain), nfont);
+        if (!c.getBoolean(P + "block-glyphs", true)) {
+            return;
+        }
+        List<Integer> grid = slots("grid");
+        for (int i = 0; i < grid.size(); i++) {
+            int block = page * per + i + 1;
+            if (block > NB_GLYPHS || block > plugin.getMaxBlock()) {
+                continue;
+            }
+            int slot = grid.get(i);
+            int row = slot / 9;
+            if (row < 1 || row > 4) {
+                continue;
+            }
+            int x = 15 + 18 * (slot % 9);
+            int y = NB_TOP + NB_ROW_STEP * (row - 1);
+            if (clip != null && x < clip[2] && x + NB_CELL > clip[0] && y < clip[3] && y + NB_CELL > clip[1]) {
+                continue;   // sta sotto al popup
+            }
+            Component glyph = Component.text(String.valueOf((char) (NB_BASE + block - 1)))
+                    .font(Key.key("minecraft", "items_r" + row))
+                    .color(TextColor.color(0x999999))
+                    .shadowColor(ShadowColor.none())
+                    .decoration(TextDecoration.ITALIC, false);
+            t.atComponent(x + IMG, glyph, NB_ADVANCE);
+        }
+    }
+
     /** Oggetto invisibile (clic e descrizione restano) al posto di quello vero, quando il disegno lo fa il font. */
     private ItemStack ghost(ItemStack show) {
         var c = plugin.getConfig();

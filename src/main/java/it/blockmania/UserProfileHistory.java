@@ -166,6 +166,11 @@ public final class UserProfileHistory implements Listener {
         return v.isEmpty() ? def : v.charAt(0);
     }
 
+    /** Sfondo della cronologia per la conferma (immagine intera, advance reale 186). */
+    private void drawBg(GuiTitle c) {
+        c.at(-15, "&f" + cfg("image", DEF_IMAGE), cfg("image-font", DEF_IMAGE_FONT), 186);
+    }
+
     private net.kyori.adventure.text.Component title(Session s, int pages) {
         int img = plugin.getConfig().getInt("userprofile.history.img-offset", DEF_IMG);
         int adv = plugin.getConfig().getInt("userprofile.history.image-advance", DEF_ADV);
@@ -409,7 +414,7 @@ public final class UserProfileHistory implements Listener {
             final SanctionManager.Kind kind = s.kind;
             final int page = s.page;
             final Runnable back = s.onBack;
-            Bukkit.getScheduler().runTask(plugin, () -> ui.confirm(p, "Resettare tutto: " + kindName(kind) + "?", () -> {
+            Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Resettare tutto: " + kindName(kind) + "?", c -> drawBg(c), () -> {
                 switch (kind) {
                     case BAN -> sm.resetBan(target, p.getUniqueId());
                     case MUTE -> sm.resetMute(target, p.getUniqueId());
@@ -444,7 +449,7 @@ public final class UserProfileHistory implements Listener {
         final SanctionManager.Kind kind = s.kind;
         final int page = s.page;
         final Runnable back = s.onBack;
-        Bukkit.getScheduler().runTask(plugin, () -> ui.confirm(p, "Eliminare questa voce della cronologia?", () -> {
+        Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Eliminare questa voce della cronologia?", c -> drawBg(c), () -> {
             sm.deleteEntry(entryId, p.getUniqueId());
             Bukkit.getScheduler().runTask(plugin, () -> open(p, target, kind, page, back));
         }, () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, target, kind, page, back))));

@@ -409,7 +409,7 @@ public final class SanctionManager implements Listener {
             return;
         }
         event.setCancelled(true);
-        pl.sendMessage(plugin.color("&cSei mutato. &7Tempo rimasto: &f" + fmt(st.endMs() - System.currentTimeMillis())));
+        GuiMsg.send(plugin, pl, "&cSei mutato. &7Tempo rimasto: &f" + fmt(st.endMs() - System.currentTimeMillis()));
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
@@ -435,7 +435,7 @@ public final class SanctionManager implements Listener {
             return;
         }
         event.setCancelled(true);
-        pl.sendMessage(plugin.color("&cSei mutato. &7Tempo rimasto: &f" + fmt(st.endMs() - System.currentTimeMillis())));
+        GuiMsg.send(plugin, pl, "&cSei mutato. &7Tempo rimasto: &f" + fmt(st.endMs() - System.currentTimeMillis()));
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -526,8 +526,8 @@ public final class SanctionManager implements Listener {
             Player pl = Bukkit.getPlayer(p);
             Status st = mute(p);
             if (pl != null && st.active()) {
-                pl.sendMessage(plugin.color("&cSei stato mutato. &7Tempo: &f"
-                        + fmt(st.endMs() - System.currentTimeMillis())));
+                GuiMsg.send(plugin, pl, "&cSei stato mutato. &7Tempo: &f"
+                        + fmt(st.endMs() - System.currentTimeMillis()));
             }
         });
     }
@@ -544,15 +544,15 @@ public final class SanctionManager implements Listener {
         }
         runMain(() -> {
             String name = Bukkit.getOfflinePlayer(target).getName();
-            Component msg = plugin.color("&e[TEST] &f" + text.replace("%t", name == null ? target.toString() : name)
-                    + " &7(nessuna sanzione reale applicata)");
+            String msg = "&e[TEST] &f" + text.replace("%t", name == null ? target.toString() : name)
+                    + " &7(nessuna sanzione reale applicata)";
             Player a = by == null ? null : Bukkit.getPlayer(by);
             if (a != null) {
-                a.sendMessage(msg);
+                GuiMsg.send(plugin, a, msg);
             }
             Player t = Bukkit.getPlayer(target);
             if (t != null && t != a) {
-                t.sendMessage(msg);
+                GuiMsg.send(plugin, t, msg);
             }
         });
     }

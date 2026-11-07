@@ -86,7 +86,7 @@ public final class UserProfileRewards implements Listener {
     /** Apre le ricompense di "target" (deve essere online). onBack = cosa fare con la X (di solito riaprire il profilo). */
     public void open(Player staff, Player target, Runnable onBack) {
         if (target == null || !target.isOnline()) {
-            staff.sendMessage(plugin.color("&cIl giocatore deve essere online per gestire le sue ricompense."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire le sue ricompense.");
             return;
         }
         Session s = new Session();
@@ -106,7 +106,7 @@ public final class UserProfileRewards implements Listener {
     /** Popup comandi sull'exp del pass: aggiungi, rimuovi, setta, azzera. */
     public void openExp(Player staff, Player target, Runnable onBack) {
         if (target == null || !target.isOnline()) {
-            staff.sendMessage(plugin.color("&cIl giocatore deve essere online per gestire i suoi exp."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire i suoi exp.");
             return;
         }
         final UUID id = target.getUniqueId();
@@ -155,7 +155,7 @@ public final class UserProfileRewards implements Listener {
     private Player targetOf(Player staff, Session s) {
         Player t = Bukkit.getPlayer(s.target);
         if (t == null) {
-            staff.sendMessage(plugin.color("&cIl giocatore non e' piu' online."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
             sessions.remove(staff.getUniqueId());
             Runnable back = s.back;
             if (back != null) {
@@ -300,6 +300,19 @@ public final class UserProfileRewards implements Listener {
         }
     }
 
+    /** Conferma che lascia dietro, scurita, la GUI ricompense da cui si arriva (stessa pagina, stesso titolo). */
+    private void confirmDim(Player staff, Session s, String text, Runnable onYes) {
+        Player t = targetOf(staff, s);
+        if (t == null) {
+            return;
+        }
+        final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
+                s.kind.equals("main") ? s.mainPage : s.page, images());
+        // lo scurimento lo fa confirmOver; il nome nella barra e' quello della conferma
+        ui.confirmOver(staff, text, g -> g.atComponent(0, v.title(), v.cursor()),
+                onYes, () -> later(() -> show(staff, s)));
+    }
+
     private void later(Runnable r) {
         Bukkit.getScheduler().runTask(plugin, () -> r.run());
     }
@@ -335,8 +348,8 @@ public final class UserProfileRewards implements Listener {
             case "give" -> applyLevel(staff, s, type, Math.min(max, now + 1));
             case "remove" -> applyLevel(staff, s, type, Math.max(0, now - 1));
             case "full" -> applyLevel(staff, s, type, max);
-            case "reset" -> ui.confirm(staff, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
-                    () -> applyLevel(staff, s, type, 0), () -> later(() -> show(staff, s)));
+            case "reset" -> confirmDim(staff, s, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
+                    () -> applyLevel(staff, s, type, 0));
             case "set" -> ui.askNumber(staff, "setta livello " + Rewards.italianType(type),
                     "SETTA " + label + " " + now + "/" + max, 0, max,
                     v -> later(() -> applyLevel(staff, s, type, (int) v)),
@@ -351,8 +364,8 @@ public final class UserProfileRewards implements Listener {
             return;
         }
         rewards().setReached(t, type, level);
-        staff.sendMessage(plugin.color("&a" + t.getName() + ": " + Rewards.italianType(type) + " ora al livello &f"
-                + rewards().reached(t, type) + "&a/&f" + rewards().staffMaxLevel(type) + "&a."));
+        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": " + Rewards.italianType(type) + " ora al livello &f"
+                + rewards().reached(t, type) + "&a/&f" + rewards().staffMaxLevel(type) + "&a.");
         show(staff, s);
     }
 
@@ -382,8 +395,8 @@ public final class UserProfileRewards implements Listener {
             case "remove" -> setDays(staff, s, Math.max(0, now - 1));
             case "set" -> ui.askNumber(staff, "setta giorni", "SETTA GIORNI " + now, 0, 100000,
                     v -> later(() -> setDays(staff, s, (int) v)), () -> later(() -> show(staff, s)));
-            case "reset" -> ui.confirm(staff, "Azzerare la giornaliera di " + t.getName() + "?",
-                    () -> resetDaily(staff, s), () -> later(() -> show(staff, s)));
+            case "reset" -> confirmDim(staff, s, "Azzerare la giornaliera di " + t.getName() + "?",
+                    () -> resetDaily(staff, s));
             default -> later(() -> show(staff, s));
         }
     }
@@ -394,7 +407,7 @@ public final class UserProfileRewards implements Listener {
             return;
         }
         plugin.getAmmo().setCounter(t, "rw_days", Math.max(0, days));
-        staff.sendMessage(plugin.color("&a" + t.getName() + ": giorni di giornaliera ora &f" + Math.max(0, days) + "&a."));
+        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": giorni di giornaliera ora &f" + Math.max(0, days) + "&a.");
         show(staff, s);
     }
 
@@ -407,7 +420,7 @@ public final class UserProfileRewards implements Listener {
         for (String k : new String[] {"rw_days", "rw_dayclaim", "rw_daydate", "rw_daymin"}) {
             a.setCounter(t, k, 0);
         }
-        staff.sendMessage(plugin.color("&a" + t.getName() + ": giornaliera azzerata."));
+        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": giornaliera azzerata.");
         show(staff, s);
     }
 
@@ -426,20 +439,20 @@ public final class UserProfileRewards implements Listener {
         switch (s.kind) {
             case "levels" -> {
                 final String type = s.type;
-                ui.confirm(staff, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
-                        () -> applyLevel(staff, s, type, 0), () -> later(() -> show(staff, s)));
+                confirmDim(staff, s, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
+                        () -> applyLevel(staff, s, type, 0));
             }
-            case "daily" -> ui.confirm(staff, "Azzerare la giornaliera di " + t.getName() + "?",
-                    () -> resetDaily(staff, s), () -> later(() -> show(staff, s)));
-            default -> ui.confirm(staff, "Azzerare TUTTE le ricompense di " + t.getName() + "?", () -> {
+            case "daily" -> confirmDim(staff, s, "Azzerare la giornaliera di " + t.getName() + "?",
+                    () -> resetDaily(staff, s));
+            default -> confirmDim(staff, s, "Azzerare TUTTE le ricompense di " + t.getName() + "?", () -> {
                 Player tt = targetOf(staff, s);
                 if (tt == null) {
                     return;
                 }
                 rewards().resetAll(tt);
-                staff.sendMessage(plugin.color("&a" + tt.getName() + ": tutte le ricompense azzerate."));
+                GuiMsg.send(plugin, staff, "&a" + tt.getName() + ": tutte le ricompense azzerate.");
                 show(staff, s);
-            }, () -> later(() -> show(staff, s)));
+            });
         }
     }
 
@@ -450,7 +463,7 @@ public final class UserProfileRewards implements Listener {
     private void runExp(Player staff, UUID id, String cmd, Runnable onBack) {
         Player t = Bukkit.getPlayer(id);
         if (t == null) {
-            staff.sendMessage(plugin.color("&cIl giocatore non e' piu' online."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
             if (onBack != null) {
                 onBack.run();
             }
@@ -486,13 +499,13 @@ public final class UserProfileRewards implements Listener {
     private void setExp(Player staff, UUID id, long value, Runnable after) {
         Player t = Bukkit.getPlayer(id);
         if (t == null) {
-            staff.sendMessage(plugin.color("&cIl giocatore non e' piu' online."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
             return;
         }
         int v = (int) Math.max(0, Math.min(Integer.MAX_VALUE, value));
         plugin.getAmmo().setCounter(t, "rw_exp", v);
-        staff.sendMessage(plugin.color("&a" + t.getName() + ": exp ora &f" + v + "&a (livello pass &f"
-                + rewards().reached(t, "pass") + "&a)."));
+        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": exp ora &f" + v + "&a (livello pass &f"
+                + rewards().reached(t, "pass") + "&a).");
         after.run();
     }
 

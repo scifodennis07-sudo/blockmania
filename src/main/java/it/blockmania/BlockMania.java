@@ -1144,6 +1144,18 @@ public final class BlockMania extends JavaPlugin {
             }
         }
 
+        // con una GUI aperta il messaggio va SEMPRE anche nella bossbar in alto (qualunque sia il canale), con l'icona dello stile
+        boolean guiOpen = to instanceof Player gp && hasOpenGui(gp);
+        String bossIcon = "";
+        if (guiOpen && !actionBar) {
+            bossIcon = m != null && m.contains("icon") ? m.getString("icon", "") : getConfig().getString(base + ".icon", "");
+            if (bossIcon == null || bossIcon.equalsIgnoreCase("none")) {
+                bossIcon = "";
+            } else if (!bossIcon.isBlank()) {
+                bossIcon = bossIcon + " ";
+            }
+        }
+
         for (String line : lines) {
             String t = tiny(keyMarks(icon + prefix + line + suffix));
             if (uniform) {
@@ -1154,6 +1166,17 @@ public final class BlockMania extends JavaPlugin {
                 t = t.replace(replacements[i], uniform ? value : highlight + value + baseColor);
             }
             String legacy = baseColor + t;
+            if (guiOpen && !actionBar) {
+                String tb = tiny(keyMarks(bossIcon + prefix + line + suffix));
+                if (uniform) {
+                    tb = stripCodes(tb);
+                }
+                for (int i = 0; i + 1 < replacements.length; i += 2) {
+                    String value = uniform ? stripCodes(replacements[i + 1]) : replacements[i + 1];
+                    tb = tb.replace(replacements[i], uniform ? value : highlight + value + baseColor);
+                }
+                showBossMessage((Player) to, baseColor + tb);
+            }
             if (actionBar && hasOpenGui((Player) to)) {
                 showBossMessage((Player) to, legacy);
                 return;

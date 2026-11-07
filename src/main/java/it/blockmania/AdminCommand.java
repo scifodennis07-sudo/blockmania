@@ -371,7 +371,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
     // ------------------------------------------------------------------
 
     private void deny(CommandSender sender, String text) {
-        sender.sendMessage(plugin.text("&c" + text));
+        GuiMsg.sendTiny(plugin, sender, "&c" + text);
         if (sender instanceof Player p) {
             plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
         }
@@ -397,7 +397,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (args.length < 2) {
-            sender.sendMessage(plugin.text("&7usa: &f/adminmania userprofile <nome>"));
+            GuiMsg.sendTiny(plugin, sender, "&7usa: &f/adminmania userprofile <nome>");
             return true;
         }
         UUID id;
@@ -501,7 +501,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (args.length < 2 && !g.equals("shops")) {
-            sender.sendMessage(plugin.text("&7scrivi cosa vuoi fare in &f" + g + "&7: &f" + groupNames(sender, g)));
+            GuiMsg.sendTiny(plugin, sender, "&7scrivi cosa vuoi fare in &f" + g + "&7: &f" + groupNames(sender, g));
             return true;
         }
         String[] t = translate(args);

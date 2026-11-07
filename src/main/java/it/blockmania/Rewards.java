@@ -1008,10 +1008,15 @@ public final class Rewards implements Listener {
     // ------------------------------------------------------------------
 
     private static final String STAFF_RESET = "\uE201";    // pulsante reset blu (font minecraft:mines, pack v3)
-    private static final char BAR_TITLE = '';       // font minecraft:tiny2, lettere
-    private static final char BAR_TITLE_SH = '';    // ombra
+    private static final char BAR_TITLE = '\uf100';    // font default (stessi glifi di UserProfilePowers.topTitle), lettere
+    private static final char BAR_TITLE_SH = '\uf200'; // ombra
     private static final int BAR_TITLE_CENTER = 94 + IMG; // centro della barra in alto (come Tickets.tinyText(.., 94, ..))
     private static final int BAR_TITLE_MAX = 112;         // larghezza massima (pixel) del testo nella barra
+
+    /** Cursore (pixel) alla fine dell'ultimo titolo composto da barTitle: serve per ridisegnare il titolo scurito sotto una conferma. */
+    private int lastCursor;
+    /** true mentre si compone lo sfondo da scurire sotto una conferma: il nome nella barra lo scrive la conferma. */
+    private boolean noBarTitle;
 
     private boolean staffTitle() {
         return imageOverride.containsKey("staff");
@@ -1033,6 +1038,10 @@ public final class Rewards implements Listener {
 
     /** Scrive il titolo centrato nella barra in alto. Il font tiny2 non ha lo spazio: ogni parola e' scritta a parte. */
     private GuiTitle barTitle(GuiTitle t, Player target, String what) {
+        if (noBarTitle) {
+            lastCursor = t.cursor();
+            return t;
+        }
         String text = barTitleText(target, what).trim();
         StringBuilder safe = new StringBuilder();
         for (char ch : text.toCharArray()) {
@@ -1043,6 +1052,7 @@ public final class Rewards implements Listener {
             text = text.substring(0, text.length() - 1).trim();
         }
         if (text.isEmpty()) {
+            lastCursor = t.cursor();
             return t;
         }
         boolean shadow = plugin.getConfig().getBoolean(GUI + "text-shadow", true);
@@ -1054,11 +1064,12 @@ public final class Rewards implements Listener {
             }
             int wa = tinyAdvance(w);
             if (shadow) {
-                t.at(start + off + 1, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_TITLE_SH), "minecraft:tiny2", wa);
+                t.at(start + off + 1, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_TITLE_SH), "", wa);
             }
-            t.at(start + off, "&f" + tinyLetters(w, BAR_TITLE), "minecraft:tiny2", wa);
+            t.at(start + off, "&f" + tinyLetters(w, BAR_TITLE), "", wa);
             off += wa + 4;
         }
+        lastCursor = t.cursor();
         return t;
     }
 
@@ -1239,7 +1250,7 @@ public final class Rewards implements Listener {
      * cosi' i click non passano da onClick di questa classe).
      * actions: slot -> "close", "back", "page:+-1", "scroll:+-1", "type:<tipo>", "lvl:<N>", "daily", "reset", "deny".
      */
-    public record StaffView(ItemStack[] contents, Map<Integer, String> actions, Component title, int page, int pages) {
+    public record StaffView(ItemStack[] contents, Map<Integer, String> actions, Component title, int page, int pages, int cursor) {
     }
 
     /**
@@ -1322,9 +1333,20 @@ public final class Rewards implements Listener {
                     holder.actions.put(slot, "lvl:" + level);
                 }
             }
-            return new StaffView(inv.getContents(), new HashMap<>(holder.actions), title, holder.page, pages);
+            return new StaffView(inv.getContents(), new HashMap<>(holder.actions), title, holder.page, pages, lastCursor);
         } finally {
             imageOverride = old;
+        }
+    }
+
+    /** Come staffView, ma senza il nome nella barra in alto: serve come sfondo da scurire sotto una conferma. */
+    public StaffView staffViewBackground(Player target, String kind, String type, int mainPage, int page,
+                                         Map<String, String> images) {
+        noBarTitle = true;
+        try {
+            return staffView(target, kind, type, mainPage, page, images, null);
+        } finally {
+            noBarTitle = false;
         }
     }
 

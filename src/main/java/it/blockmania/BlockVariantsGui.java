@@ -92,6 +92,8 @@ public final class BlockVariantsGui implements Listener {
         int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
         t.number(start, set, shadowSet, c.getBoolean(P + "title.number.shadow", true), plain,
                 c.getString(P + "title.number.font", ""));
+        // la lista dei note block resta DIETRO al popup, scurita (il popup e' opaco: si scrive dopo)
+        plugin.getItemsGui().drawDimmedBackdrop(t, number, ItemsGui.VARIANTS_POPUP);
         return t.build();
     }
 

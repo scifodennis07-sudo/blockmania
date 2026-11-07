@@ -172,7 +172,7 @@ public final class UserProfileMines implements Listener {
     }
 
     private void msg(Player staff, String text) {
-        staff.sendMessage(plugin.color(text));
+        GuiMsg.send(plugin, staff, text);
     }
 
     /** Stessi controlli ruolo di /adminmania (gruppo profile). */
@@ -386,11 +386,6 @@ public final class UserProfileMines implements Listener {
         List<Integer> no = slotList(CFG + "confirm.no-slots");
         yes = yes.isEmpty() ? CONFIRM_YES : yes;
         no = no.isEmpty() ? CONFIRM_NO : no;
-        if (true) {
-            // conferma generica (userprofile-6/7)
-            ui.confirm(staff, text, onYes, reopen);
-            return;
-        }
         Holder h = new Holder();
         h.target = tid;
         h.page = page;

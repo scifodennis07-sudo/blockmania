@@ -172,21 +172,57 @@ public final class UserProfilePowers implements Listener {
         } finally {
             switching.remove(id);
         }
-        staff.sendMessage(plugin.color("&7" + s.title + ": scrivi un numero " + range + " nella barra e clicca sul tasto verde."));
+        GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi un numero " + range + " nella barra e clicca sul tasto verde.");
     }
 
-    /** Conferma generica (userprofile-6/7). */
+    /** Slot dei bottoni del pannello conferma (glifo popup_confirm U+E207: riga 3). */
+    private static final int[] CONFIRM_YES = {28, 29, 30};
+    private static final int[] CONFIRM_NO = {32, 33, 34};
+
+    /**
+     * Conferma generica: lo sfondo e' quello della GUI da cui parte il comando, scurito. Se il popup comandi
+     * di questo servizio e' aperto si vede quello (profilo + popup), altrimenti il profilo principale.
+     * Le GUI di altre classi (miniere, potenziamenti, ricompense, cronologia) devono usare confirmOver.
+     */
     public void confirm(Player staff, String text, Runnable onYes, Runnable onNo) {
-        String bg = IMG_EMPTY;
-        if (staff.getOpenInventory().getTopInventory().getHolder() instanceof Holder cur && cur.image != null) {
-            bg = cur.image;
+        String cur = "";
+        boolean cmds = false;
+        if (staff.getOpenInventory().getTopInventory().getHolder() instanceof Holder h0
+                && "cmds".equals(h0.kind) && h0.image != null) {
+            cur = h0.image;
+            cmds = true;
         }
+        final String img = cur;
+        final boolean overCmds = cmds;
+        confirmOver(staff, text, c -> {
+            // advance reale (186) per tutte le immagini: il cursore lo sistema confirmOver
+            c.at(-15, (overCmds ? DIM : "&f") + IMG_MAIN, FONT_UP, 186);
+            if (overCmds && !img.isEmpty()) {
+                c.at(-15, "&f" + img, FONT_UP, 186);
+            }
+        }, onYes, onNo);
+    }
+
+    /**
+     * Conferma sopra la GUI del chiamante. drawDimmedBackground disegna nel GuiTitle ricevuto lo sfondo della
+     * propria GUI (immagini a immagine intera con x=-15 e advance REALE 186, niente numero pagina/testi): lo
+     * scurisce questo metodo (x0.6) e disegna sopra a colori pieni il pannello "CONFERMA O ANNULLA IL COMANDO."
+     * (glifo U+E207, font minecraft:mines) con il titolo CONFERMA nella barra in alto.
+     * Il chiamante riceve onYes/onNo nel tick dopo il click; le slot del pannello sono 28-30 e 32-34.
+     */
+    public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
+                            Runnable onYes, Runnable onNo) {
         Holder h = new Holder();
         h.kind = "confirm";
-        h.image = IMG_CONFIRM;
+        h.image = IMG_EMPTY;
+        GuiTitle content = new GuiTitle(plugin);
+        if (drawDimmedBackground != null) {
+            drawDimmedBackground.accept(content);
+        }
         GuiTitle g = new GuiTitle(plugin);
-        g.at(-15, "&f" + bg, FONT_UP, 186);
-        g.at(-15, "&f" + IMG_CONFIRM, FONT_UP, 179);
+        g.atComponent(0, MinesGui.tint(content.build(), null), content.cursor());
+        g.at(-15, "&f" + '\uE207', MinesGui.F_MINES, 186);
+        g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro (convenzione dei ticket)
         topTitle(plugin, g, "conferma");
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         List<String> yes = new ArrayList<>();
@@ -196,10 +232,10 @@ public final class UserProfilePowers implements Listener {
         List<String> no = List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare");
         Runnable doYes = () -> later(onYes);
         Runnable doNo = () -> later(onNo);
-        for (int s : SLOTS_YES) {
+        for (int s : CONFIRM_YES) {
             put(h, s, pane("&aconferma", yes), doYes);
         }
-        for (int s : SLOTS_NO) {
+        for (int s : CONFIRM_NO) {
             put(h, s, pane("&cannulla", no), doNo);
         }
         open(staff, h);
@@ -524,7 +560,7 @@ public final class UserProfilePowers implements Listener {
     }
 
     private void err(Player p, String text) {
-        p.sendMessage(plugin.color("&c" + text));
+        GuiMsg.send(plugin, p, "&c" + text);
         plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
     }
 

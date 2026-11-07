@@ -74,7 +74,7 @@ public final class UserProfileUpgrades implements Listener {
             return;
         }
         if (!target.isOnline()) {
-            staff.sendMessage(plugin.color("&cIl giocatore deve essere online per gestire i potenziamenti."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire i potenziamenti.");
             return;
         }
         if (!authorize(staff, target.getUniqueId(), "see")) {
@@ -87,7 +87,7 @@ public final class UserProfileUpgrades implements Listener {
         UpgradeManager um = plugin.getUpgrades();
         LauncherItem li = anyLauncher();
         if (um == null || li == null) {
-            staff.sendMessage(plugin.color("&cPotenziamenti non disponibili."));
+            GuiMsg.send(plugin, staff, "&cPotenziamenti non disponibili.");
             return;
         }
         int pages = um.pageCount();
@@ -130,7 +130,7 @@ public final class UserProfileUpgrades implements Listener {
                 if (t == null) {
                     cancel();
                     s.closeInventory();
-                    s.sendMessage(plugin.color("&cIl giocatore e' uscito dal server."));
+                    GuiMsg.send(plugin, s, "&cIl giocatore e' uscito dal server.");
                     return;
                 }
                 LauncherItem li = anyLauncher();
@@ -172,6 +172,21 @@ public final class UserProfileUpgrades implements Listener {
         UpgradeManager.barTitle(plugin, t, "POTENZIAMENTI DI " + targetName, "POTENZ DI " + targetName,
                 "POTENZ " + targetName);
         return t.build();
+    }
+
+    /**
+     * Sfondo della GUI potenziamenti per le conferme (confirmOver lo scurisce): immagine base originale +
+     * pulsante reset blu, a immagine intera (x = -15, avanzamento reale 186).
+     */
+    private void drawBackdrop(GuiTitle c) {
+        var cfg = plugin.getConfig();
+        String raw = cfg.getString(UpgradeManager.GUI + "title.text", "");
+        String glyphs = raw == null ? "" : raw.replaceAll("\\{shift:-?\\d+\\}", "").replaceAll("&.", "");
+        String font = cfg.getString(UpgradeManager.GUI + "title.font", "");
+        if (!glyphs.isEmpty()) {
+            c.at(-15, "&f" + glyphs, font, 186);
+        }
+        c.at(-15, "&f" + IMG_STAFF, "minecraft:mines", 186);
     }
 
     private void put(Inventory inv, Holder h, int slot, ItemStack item, String action) {
@@ -292,7 +307,7 @@ public final class UserProfileUpgrades implements Listener {
         Player target = Bukkit.getPlayer(h.target);
         if (target == null) {
             staff.closeInventory();
-            staff.sendMessage(plugin.color("&cIl giocatore e' uscito dal server."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
             return;
         }
         plugin.guiClick(staff);
@@ -348,7 +363,7 @@ public final class UserProfileUpgrades implements Listener {
         }
         Player target = Bukkit.getPlayer(h.target);
         if (target == null) {
-            staff.sendMessage(plugin.color("&cIl giocatore e' uscito dal server."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
             return;
         }
         open(staff, target, h.page, h.onBack);
@@ -360,10 +375,10 @@ public final class UserProfileUpgrades implements Listener {
             back.run();
             return;
         }
-        ui.confirm(staff, "reset potenziamenti", () -> {
+        ui.confirmOver(staff, "reset potenziamenti", this::drawBackdrop, () -> {
             Player target = Bukkit.getPlayer(h.target);
             if (target == null) {
-                staff.sendMessage(plugin.color("&cIl giocatore e' uscito dal server."));
+                GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
                 return;
             }
             if (!authorize(staff, h.target, "reset")) {
@@ -406,7 +421,7 @@ public final class UserProfileUpgrades implements Listener {
         Runnable back = () -> reopen(staff, h);
         Player target = Bukkit.getPlayer(h.target);
         if (target == null) {
-            staff.sendMessage(plugin.color("&cIl giocatore e' uscito dal server."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
             return;
         }
         if (!authorize(staff, h.target, verbOf(cmd))) {
@@ -439,11 +454,11 @@ public final class UserProfileUpgrades implements Listener {
                         apply(staff, h, id, (int) Math.min(max, v), "set");
                         back.run();
                     }, back);
-            case "full" -> ui.confirm(staff, "maxa " + labelOf(id).toLowerCase(Locale.ROOT), () -> {
+            case "full" -> ui.confirmOver(staff, "maxa " + labelOf(id).toLowerCase(Locale.ROOT), this::drawBackdrop, () -> {
                 apply(staff, h, id, max, "full");
                 back.run();
             }, back);
-            case "reset" -> ui.confirm(staff, "azzera " + labelOf(id).toLowerCase(Locale.ROOT), () -> {
+            case "reset" -> ui.confirmOver(staff, "azzera " + labelOf(id).toLowerCase(Locale.ROOT), this::drawBackdrop, () -> {
                 apply(staff, h, id, 0, "reset");
                 back.run();
             }, back);
@@ -454,7 +469,7 @@ public final class UserProfileUpgrades implements Listener {
     private void apply(Player staff, Holder h, String id, int level, String cmd) {
         Player target = Bukkit.getPlayer(h.target);
         if (target == null) {
-            staff.sendMessage(plugin.color("&cIl giocatore e' uscito dal server."));
+            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
             return;
         }
         if (!authorize(staff, h.target, verbOf(cmd))) {
@@ -485,12 +500,12 @@ public final class UserProfileUpgrades implements Listener {
     }
 
     private void done(Player p, String text) {
-        p.sendMessage(plugin.color(text));
+        GuiMsg.send(plugin, p, text);
         plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
     }
 
     private void fail(Player p, String text) {
-        p.sendMessage(plugin.color(text));
+        GuiMsg.send(plugin, p, text);
         plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
     }
 }
