@@ -97,7 +97,7 @@ public final class Tickets implements Listener {
     /** Larghezza massima (pixel) del testo nella barra dei popup: oltre esce dal riquadro. */
     private static final int BAR_MAX = 58;
     /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5. */
-    private static final int POPUP_CX = 87;
+    private static final int POPUP_CX = 94;
 
     // stella piena (disegnata a pixel come le facce): 1 = dentro, 2 = bordo interno
     private static final String[] STAR_MASK = {
@@ -1272,7 +1272,7 @@ public final class Tickets implements Listener {
         restoreInventory(p);
         List<Ticket> list = listFor(p.getUniqueId(), filter);
         int pages = Math.max(1, (list.size() + 20) / 21);
-        page = Math.max(0, Math.min(page, pages - 1));
+        page = Math.floorMod(page, pages);
         Holder h = new Holder("list");
         h.page = page;
         h.filter = filter;
@@ -1462,6 +1462,8 @@ public final class Tickets implements Listener {
         }
         GuiTitle g = new GuiTitle(plugin);
         g.atComponent(0, pop.build().append(tint(c.build(), null)), c.cursor());
+        // il codice nella barra del titolo sta SOPRA il popup (non coperta): colori pieni, non scuriti
+        tinyText(g, t.code, 94, true, '', '');
         return g;
     }
 
@@ -1474,7 +1476,9 @@ public final class Tickets implements Listener {
         int ci = 3 + catIndex(t.category);
         g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
         g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
-        tinyText(g, t.code, 94, true, '', '');
+        if (clip == null) {
+            tinyText(g, t.code, 94, true, '', '');
+        }
 
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
         // faccia 2D del player nel primo slot della barra
@@ -1946,7 +1950,7 @@ public final class Tickets implements Listener {
         }
         List<String> all = new ArrayList<>(found);
         int pages = Math.max(1, (all.size() + 20) / 21);
-        page = Math.max(0, Math.min(page, pages - 1));
+        page = Math.floorMod(page, pages);
         Holder h = popup(p, "links", t.id, "link", page, pages, "chat", "&cindietro",
                 List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true, staffView ? IMG_CHAT : IMG_PCHAT);
         h.links = all;
@@ -1986,8 +1990,8 @@ public final class Tickets implements Listener {
             cand.add(u);
         }
         int pages = Math.max(1, (cand.size() + 20) / 21);
-        page = Math.max(0, Math.min(page, pages - 1));
-        Holder h = popup(p, "tag", t.id, "tagga staffer", page, pages, "chat", "&cindietro",
+        page = Math.floorMod(page, pages);
+        Holder h = popup(p, "tag", t.id, "tag staff", page, pages, "chat", "&cindietro",
                 List.of("&7Dai accesso al ticket a un altro staffer.", "&7Poi gli scrivi un messaggio."), true, IMG_CHAT);
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
@@ -2057,7 +2061,7 @@ public final class Tickets implements Listener {
         }
         list.sort((a, b) -> Long.compare(b.updated, a.updated));
         int pages = Math.max(1, (list.size() + 20) / 21);
-        page = Math.max(0, Math.min(page, pages - 1));
+        page = Math.floorMod(page, pages);
         String bar = switch (mode) {
             case "mine" -> "tuoi";
             case "closed" -> "chiusi";
@@ -2322,10 +2326,13 @@ public final class Tickets implements Listener {
                 String url = h.links.get(li);
                 int pg = h.page;
                 plugin.getLogger().info("[Tickets] openlink " + li + " -> " + url);
-                p.closeInventory();
-                // finestra 1.21 con il link; "annulla" riporta alla lista dei link
-                Bukkit.getScheduler().runTaskLater(plugin, () -> TicketDialog.open(p,
-                        List.of(new TicketDialog.Link(url.replaceFirst("^https?://", ""), url)), () -> openLinks(p, t, pg), isStaff(p)), 2L);
+                // chiusura GUI e apertura del Dialog nello STESSO tick (i due pacchetti arrivano insieme al client: niente
+                // scatto col mondo visibile in mezzo). "annulla" riporta alla lista dei link
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    p.closeInventory();
+                    TicketDialog.open(p, List.of(new TicketDialog.Link(url.replaceFirst("^https?://", ""), url)),
+                            () -> openLinks(p, t, pg), isStaff(p));
+                });
             }
         } else if (action.equals("write")) {
             if (!t.open) {

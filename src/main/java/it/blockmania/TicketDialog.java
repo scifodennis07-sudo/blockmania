@@ -57,12 +57,21 @@ public final class TicketDialog {
     private static final String[] SP = {"\u3410", "\u3411", "\u3412", "\u3413", "\u3414", "\u3415"};
 
     /**
+     * 7 sopra e 12 sotto (prima 5 e 10): l immagine sporge 61 px sopra la riga del glifo e il body (scroll) la tagliava in alto;
+     * +2 righe sopra e +2 sotto = pannello sempre nella stessa posizione sullo schermo ma intero.
      * Righe vuote sopra/sotto la riga del glifo: l'immagine e' alta 230 px (righe 5..235 del png,
      * ascent 73) e la riga del glifo e' la numero 7; 5 sopra (calibrate in gioco: il body parte dall'alto, 7 era 17 px troppo in basso;
      * -2 righe = -18 px, +1 px compensato dall'ascent 73) + 9 zone cliccabili + 10 sotto.
      */
-    private static final int LINES_ABOVE = 5;
-    private static final int LINES_BELOW = 10;
+    private static final int LINES_ABOVE = 7;
+    private static final int LINES_BELOW = 12;
+    /**
+     * Larghezza del body: 700 px (oltre lo schermo GUI a scala 3, ~640) cosi' i bordi bianchi di focus del widget testo
+     * (le "bande" laterali, prima a +-100 px dal centro) escono dallo schermo. Le righe sono CENTRATE nel body (il link
+     * scritto e' al centro dello schermo anche con body 200), quindi il pannello resta dov'e' senza spazi iniziali.
+     * Se in gioco il pannello risultasse spostato: aggiungere sp((BODY_WIDTH-200)/2) all'inizio di ogni riga.
+     */
+    private static final int BODY_WIDTH = 700;
     /** Link massimi mostrati nella zona grigia (3 righe). */
     private static final int MAX_LINKS = 3;
 
@@ -213,7 +222,7 @@ public final class TicketDialog {
                         .canCloseWithEscape(true)
                         .pause(false)
                         .afterAction(DialogBase.DialogAfterAction.NONE)
-                        .body(List.of(DialogBody.plainMessage(body.build(), 200)))
+                        .body(List.of(DialogBody.plainMessage(body.build(), BODY_WIDTH)))
                         .build())
                 .type(DialogType.notice(exit)));
 

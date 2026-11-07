@@ -25,7 +25,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Cronologia sanzioni (userprofile-8): popup a griglia 7x3 con frecce pagina, X chiudi/torna e titolo nella barra.
+ * Cronologia sanzioni (userprofile-8 con pulsante reset): popup a griglia 7x3 con frecce pagina circolari, X chiudi/torna, titolo nella barra e RESET (con conferma) in alto a destra.
  * Una voce di SanctionManager.Entry per item; tasto Q = elimina la voce (dopo conferma).
  * Live: si ridisegna da sola a ogni sm.onChange.
  *
@@ -34,14 +34,21 @@ import java.util.UUID;
 public final class UserProfileHistory implements Listener {
 
     // ---------- grafica del pack (valori provvisori, configurabili) ----------
-    /** Glifo dell'immagine userprofile-8 (immagine intera del popup). */
-    private static final String DEF_IMAGE = "\ue107";
+    /**
+     * Glifo dell'immagine del popup cronologia = userprofile-8 con il pulsante blu in alto a destra
+     * (hamburger) sostituito dall'icona RESET (userprofile-14.png, glifo U+E10D nel font userprofile: da fare a Sara).
+     */
+    private static final String DEF_IMAGE = "\ue10d";
     /** Font del glifo immagine ("" = default). */
     private static final String DEF_IMAGE_FONT = "minecraft:userprofile";
     /** Base dei glifi del testo piccolo della barra (come Tickets.BAR) e relativo font. */
     private static final char DEF_BAR_BASE = '';
     private static final char DEF_BAR_SHADOW = '';
-    private static final String DEF_BAR_FONT = "minecraft:tiny2";
+    /**
+     * Font "minecraft:tiny3" = copia di tiny2 con tutte le quote alzate di 18 px (ascent: -27 -> -9, -28 -> -10, -101 -> -83, -102 -> -84),
+     * perche' la barra del popup userprofile sta 18 px piu' in alto di quella del popup ticket (da fare a Sara).
+     */
+    private static final String DEF_BAR_FONT = "minecraft:tiny3";
     /** Base dei numeri pagina (come Tickets.NAV2). */
     private static final char DEF_NAV_BASE = '';
     private static final char DEF_NAV_SHADOW = '';
@@ -56,6 +63,9 @@ public final class UserProfileHistory implements Listener {
     private static final int PER_PAGE = 21;
     private static final int SLOT_X = 1;
     private static final int SLOT_X2 = 2;
+    /** Pulsante reset in alto a destra: interno (136,34,21,12) -> container (129,19): copre quasi tutto lo slot 7 e 3 px dello slot 6. */
+    private static final int SLOT_RESET = 7;
+    private static final int SLOT_RESET2 = 6;
     private static final int SLOT_PREV = 38;
     private static final int SLOT_NEXT = 42;
 
@@ -161,8 +171,7 @@ public final class UserProfileHistory implements Listener {
         int adv = plugin.getConfig().getInt("userprofile.history.image-advance", DEF_ADV);
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + cfg("image", DEF_IMAGE), cfg("image-font", DEF_IMAGE_FONT), adv);
-        String name = Bukkit.getOfflinePlayer(s.target).getName();
-        String bar = "cronologia " + kindName(s.kind) + (name != null ? " " + name : "");
+        String bar = "cronologia";
         barText(g, bar, plugin.getConfig().getInt("userprofile.history.bar-x", DEF_BAR_CX), img);
         navText(g, s.page + 1, pages, plugin.getConfig().getInt("userprofile.history.nav-x", DEF_NAV_CX), img);
         return g.build();
@@ -260,6 +269,9 @@ public final class UserProfileHistory implements Listener {
         s.bySlot.clear();
         inv.setItem(SLOT_X, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()));
         inv.setItem(SLOT_X2, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()));
+        List<String> resetLore = List.of("&7azzera tutto: " + kindName(s.kind), "&eclicca per resettare (chiede conferma)");
+        inv.setItem(SLOT_RESET, pane("&breset " + kindName(s.kind), resetLore));
+        inv.setItem(SLOT_RESET2, pane("&breset " + kindName(s.kind), resetLore));
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
         if (all.isEmpty()) {
@@ -390,10 +402,27 @@ public final class UserProfileHistory implements Listener {
             }
             return;
         }
+        if (slot == SLOT_RESET || slot == SLOT_RESET2) {
+            plugin.guiClick(p);
+            final UUID target = s.target;
+            final SanctionManager.Kind kind = s.kind;
+            final int page = s.page;
+            final Runnable back = s.onBack;
+            Bukkit.getScheduler().runTask(plugin, () -> ui.confirm(p, "Resettare tutto: " + kindName(kind) + "?", () -> {
+                switch (kind) {
+                    case BAN -> sm.resetBan(target, p.getUniqueId());
+                    case MUTE -> sm.resetMute(target, p.getUniqueId());
+                    case WARN -> sm.resetWarns(target, p.getUniqueId());
+                }
+                Bukkit.getScheduler().runTask(plugin, () -> open(p, target, kind, 0, back));
+            }, () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, target, kind, page, back))));
+            return;
+        }
         if (slot == SLOT_PREV || slot == SLOT_NEXT) {
             plugin.guiClick(p);
             int pages = pageCount(entries(s).size());
-            int np = Math.max(0, Math.min(pages - 1, s.page + (slot == SLOT_NEXT ? 1 : -1)));
+            // scorrimento circolare: dopo l'ultima pagina si torna alla prima, e prima della prima si va all'ultima
+            int np = (s.page + (slot == SLOT_NEXT ? 1 : -1) + pages) % pages;
             if (np != s.page) {
                 s.page = np;
                 refreshTarget(s.target);

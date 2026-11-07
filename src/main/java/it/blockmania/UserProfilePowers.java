@@ -49,6 +49,8 @@ public final class UserProfilePowers implements Listener {
     private static final String IMG_BAN_B = "\uE109";             // userprofile-10: remove, reduce, reset
     private static final String IMG_MUTE_A = "\uE10A";            // userprofile-11
     private static final String IMG_MUTE_B = "\uE10B";            // userprofile-12
+    private static final String IMG_SET_FULL_USES = "\uE10E";    // userprofile-15: set, full, setuses
+    private static final String IMG_FULL_USES_RESET = "\uE10F";  // userprofile-16: full, setuses, reset
     private static final String IMG_WARN = "\uE10C";              // userprofile-13: add, remove, reset
     private static final String IMG_ANVIL = "㸈";              // incudine personalizzata (pack ticket)
     private static final String DIM = "&#555555";
@@ -68,8 +70,11 @@ public final class UserProfilePowers implements Listener {
     private static final char BAR_SH = '';
     private static final char NAV2 = '';
     private static final char NAV2_SH = '';
-    private static final String FONT_TINY2 = "minecraft:tiny2";
-    private static final int BAR_MAX = 58;
+    private static final String FONT_TINY3 = "minecraft:tiny3";   // = tiny2 alzato di 18 px (barra del popup userprofile)
+    private static final String FONT_TINY4 = "minecraft:tiny4";   // font alto: testo sopra il bordo, per la barra dell'anvil
+    private static final int ANVIL_BAR_CX = 88;                   // centro barra anvil (container 23..153)
+    private static final int ANVIL_BAR_MAX = 122;
+    private static final int BAR_MAX = 62;
     private static final int BAR_CX = 95;     // barra centrale (63,33,64,14) -> centro x 95
     private static final int NAV_CX = 96;     // barra frecce (71,109,48,12) -> centro x 95/96
 
@@ -101,6 +106,7 @@ public final class UserProfilePowers implements Listener {
     private static final class AnvilSession {
         AnvilView view;
         String title;
+        String barText;
         long min;
         long max;
         LongConsumer onOk;
@@ -130,8 +136,14 @@ public final class UserProfilePowers implements Listener {
 
     /** Anvil numerico: accetta solo numeri tra min e max, altrimenti avvisa e riapre. */
     public void askNumber(Player staff, String title, long min, long max, LongConsumer onOk, Runnable onCancel) {
+        askNumber(staff, title, title, min, max, onOk, onCancel);
+    }
+
+    /** Come sopra, ma barText e' il testo scritto nella barra grigia in alto (es. "SETTA STANDARD 1/20"). */
+    public void askNumber(Player staff, String title, String barText, long min, long max, LongConsumer onOk, Runnable onCancel) {
         AnvilSession s = new AnvilSession();
         s.title = title == null ? "numero" : title;
+        s.barText = barText == null ? s.title : barText;
         s.min = min;
         s.max = max;
         s.onOk = onOk;
@@ -139,10 +151,12 @@ public final class UserProfilePowers implements Listener {
         GuiTitle at = new GuiTitle(plugin);
         int dx = plugin.getConfig().getInt("tickets.anvil-shift", -52);
         at.at(-15 + dx, "&f" + IMG_ANVIL, "", 179);
+        anvilBar(at, dx, s.barText);
         AnvilView view = MenuType.ANVIL.builder().title(at.build()).build(staff);
         s.view = view;
         String range = rangeText(min, max);
-        view.setItem(0, pane("&cannulla", List.of("&7Torna indietro senza fare niente.")));
+        // la casella di testo mostra il nome dell'oggetto 0: lo lasciamo vuoto (niente "ANNULLA")
+        view.setItem(0, pane(" ", List.of("&cannulla", "&7Torna indietro senza fare niente.")));
         view.setItem(1, pane("&e" + s.title, List.of("&7Scrivi un numero " + range + ".", "&7Poi clicca sul tasto verde.")));
         UUID id = staff.getUniqueId();
         anvils.put(id, s);
@@ -198,6 +212,7 @@ public final class UserProfilePowers implements Listener {
             case "set" -> new String[]{"&eimposta", "Imposta un valore preciso."};
             case "full" -> new String[]{"&bmassimo", "Porta al valore massimo."};
             case "reset" -> new String[]{"&4azzera", "Riporta tutto a zero."};
+            case "setuses" -> new String[]{"&dcolpi potenziati", "Imposta quanti colpi puo' sparare con un colpo potenziato."};
             default -> new String[]{"&f" + cmd, ""};
         };
     }
@@ -210,6 +225,7 @@ public final class UserProfilePowers implements Listener {
             case "set" -> Material.COMPARATOR;
             case "full" -> Material.GLASS_BOTTLE;
             case "reset" -> Material.TNT;
+            case "setuses" -> Material.BLAZE_ROD;
             default -> Material.PAPER;
         };
     }
@@ -228,13 +244,15 @@ public final class UserProfilePowers implements Listener {
             case "add,remove,reduce" -> sanction(label, IMG_BAN_A, IMG_MUTE_A);
             case "remove,reduce,reset" -> sanction(label, IMG_BAN_B, IMG_MUTE_B);
             case "add,remove,reset" -> IMG_WARN;
+            case "set,full,setuses" -> IMG_SET_FULL_USES;
+            case "full,setuses,reset" -> IMG_FULL_USES_RESET;
             default -> null;
         };
     }
 
     /** Sfondo ban o mute in base all'etichetta del popup (contiene "mute" per i mute, altrimenti ban). */
     private static String sanction(String label, String ban, String mute) {
-        return label != null && label.toLowerCase(java.util.Locale.ROOT).contains("mute") ? mute : ban;
+        return label != null && label.toLowerCase(java.util.Locale.ROOT).startsWith("mute") ? mute : ban;
     }
 
     private void showCommands(Player p, String label, List<String> cmds, int page, Consumer<String> onPick, Runnable onBack,
@@ -316,9 +334,7 @@ public final class UserProfilePowers implements Listener {
         if (text.isEmpty()) {
             return;
         }
-        while (tinyAdvance(text) > BAR_MAX && text.length() > 1) {
-            text = text.substring(0, text.length() - 1).trim();
-        }
+        text = fit(text, BAR_MAX);
         int total = tinyAdvance(text);
         int st = BAR_CX - Math.max(0, total - 1) / 2;
         int off = 0;
@@ -327,10 +343,69 @@ public final class UserProfilePowers implements Listener {
                 continue;
             }
             int wa = tinyAdvance(w);
-            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), FONT_TINY2, wa);
-            g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), FONT_TINY2, wa);
+            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), FONT_TINY3, wa);
+            g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), FONT_TINY3, wa);
             off += wa + 4;
         }
+    }
+
+    /** Accorcia il testo per farlo stare nella barra: toglie "di", poi "ball", poi taglia la parola piu' lunga. */
+    private static String fit(String text, int max) {
+        String t = text;
+        if (tinyAdvance(t) <= max) {
+            return t;
+        }
+        t = t.replaceAll("(?i)\\bdi\\b", " ").replaceAll(" +", " ").trim();
+        if (tinyAdvance(t) > max) {
+            t = t.replaceAll("(?i)(\\w)ball\\b", "$1").replaceAll(" +", " ").trim();
+        }
+        while (tinyAdvance(t) > max) {
+            String[] w = t.split(" ");
+            int li = -1;
+            for (int i = 0; i < w.length; i++) {
+                if (w[i].length() > 1 && !w[i].matches(".*\\d.*") && (li < 0 || w[i].length() >= w[li].length())) {
+                    li = i;
+                }
+            }
+            if (li < 0) {
+                break;
+            }
+            w[li] = w[li].substring(0, w[li].length() - 1);
+            t = String.join(" ", w).trim();
+        }
+        return t;
+    }
+
+    /** Testo nella barra grigia in alto dell'anvil (font alto tiny4, permette di scrivere sopra il bordo). */
+    private void anvilBar(GuiTitle g, int dx, String raw) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+            sb.append(ch < 128 && (Character.isLetterOrDigit(ch) || ch == '/') ? ch : ' ');
+        }
+        String text = fit(sb.toString().replaceAll(" +", " ").trim(), ANVIL_BAR_MAX);
+        if (text.isEmpty()) {
+            return;
+        }
+        int total = tinyAdvance(text);
+        int st = ANVIL_BAR_CX - Math.max(0, total - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            g.at(st + off + 1 + IMG + dx, GuiTitle.shadowCode(plugin) + tinyLettersSlash(w, BAR_SH), FONT_TINY4, wa);
+            g.at(st + off + IMG + dx, "&f" + tinyLettersSlash(w, BAR), FONT_TINY4, wa);
+            off += wa + 4;
+        }
+    }
+
+    private static String tinyLettersSlash(String text, char base) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            sb.append(ch < 128 && (Character.isLetterOrDigit(ch) || ch == '/') ? (char) (base + ch) : ' ');
+        }
+        return sb.toString();
     }
 
     private void navText(GuiTitle g, int page, int pages) {
@@ -344,8 +419,8 @@ public final class UserProfilePowers implements Listener {
         }
         int adv = plain.length() * 6;
         int start = NAV_CX - (adv - 1) / 2;
-        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, FONT_TINY2, adv);
-        g.at(start + IMG, "&f" + n, FONT_TINY2, adv);
+        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, FONT_TINY3, adv);
+        g.at(start + IMG, "&f" + n, FONT_TINY3, adv);
     }
 
     // ------------------------------------------------------------------
@@ -519,7 +594,7 @@ public final class UserProfilePowers implements Listener {
     private void reopenAnvil(Player p, AnvilSession s) {
         s.done = true;
         p.closeInventory();
-        later(() -> askNumber(p, s.title, s.min, s.max, s.onOk, s.onCancel));
+        later(() -> askNumber(p, s.title, s.barText, s.min, s.max, s.onOk, s.onCancel));
     }
 
     @EventHandler

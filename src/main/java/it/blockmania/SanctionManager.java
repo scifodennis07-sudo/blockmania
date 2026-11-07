@@ -173,6 +173,7 @@ public final class SanctionManager implements Listener {
             save();
         }
         notifyMute(p);
+        testNotice(by, p, "MUTE a %t per " + fmt(ms));
         fire(p);
     }
 
@@ -242,6 +243,7 @@ public final class SanctionManager implements Listener {
             save();
         }
         kickIfBanned(p);
+        testNotice(by, p, "BAN a %t per " + fmt(ms));
         fire(p);
     }
 
@@ -305,6 +307,7 @@ public final class SanctionManager implements Listener {
 
     public void addWarn(UUID p, UUID by, String reason) {
         boolean banned = false;
+        boolean extended = false;
         synchronized (this) {
             State s = state(p);
             if (s.warns >= MAX_WARNS) {
@@ -321,6 +324,7 @@ public final class SanctionManager implements Listener {
                 if (s.banEnd > now) {
                     s.banEnd = plus(s.banEnd, ms);
                     s.noteType = 2;
+                    extended = true;
                     record(p, Kind.BAN, "EXTEND", by, ms, "", "era gia' bannato, aggiunti " + fmt(ms)
                             + " per aver raggiunto " + MAX_WARNS + " warn");
                 } else {
@@ -339,6 +343,7 @@ public final class SanctionManager implements Listener {
         if (banned) {
             kickIfBanned(p);
         }
+        testNotice(by, p, "WARN a %t" + (extended ? " (4 warn: ban allungato)" : banned ? " (4 warn: ban automatico)" : ""));
         fire(p);
     }
 
@@ -395,6 +400,9 @@ public final class SanctionManager implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onChat(AsyncChatEvent event) {
+        if (!enforce()) {
+            return;
+        }
         Player pl = event.getPlayer();
         Status st = mute(pl.getUniqueId());
         if (!st.active()) {
@@ -406,6 +414,9 @@ public final class SanctionManager implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onCommand(PlayerCommandPreprocessEvent event) {
+        if (!enforce()) {
+            return;
+        }
         String msg = event.getMessage();
         if (msg.length() < 2) {
             return;
@@ -429,6 +440,9 @@ public final class SanctionManager implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onPreLogin(AsyncPlayerPreLoginEvent event) {
+        if (!enforce()) {
+            return;
+        }
         Status st = ban(event.getUniqueId());
         if (!st.active()) {
             return;
@@ -492,6 +506,9 @@ public final class SanctionManager implements Listener {
     }
 
     private void kickIfBanned(UUID p) {
+        if (!enforce()) {
+            return;
+        }
         runMain(() -> {
             Player pl = Bukkit.getPlayer(p);
             Status st = ban(p);
@@ -502,12 +519,40 @@ public final class SanctionManager implements Listener {
     }
 
     private void notifyMute(UUID p) {
+        if (!enforce()) {
+            return;
+        }
         runMain(() -> {
             Player pl = Bukkit.getPlayer(p);
             Status st = mute(p);
             if (pl != null && st.active()) {
                 pl.sendMessage(plugin.color("&cSei stato mutato. &7Tempo: &f"
                         + fmt(st.endMs() - System.currentTimeMillis())));
+            }
+        });
+    }
+
+    /** sanctions.enforce: false (default) = modalita' TEST, nessun blocco reale (login, chat, kick), solo messaggi in chat. */
+    private boolean enforce() {
+        return plugin.getConfig().getBoolean("sanctions.enforce", false);
+    }
+
+    /** In modalita' test avvisa in chat chi ha fatto l'azione (e il target se online) che non succede nulla di reale. */
+    private void testNotice(UUID by, UUID target, String text) {
+        if (enforce()) {
+            return;
+        }
+        runMain(() -> {
+            String name = Bukkit.getOfflinePlayer(target).getName();
+            Component msg = plugin.color("&e[TEST] &f" + text.replace("%t", name == null ? target.toString() : name)
+                    + " &7(nessuna sanzione reale applicata)");
+            Player a = by == null ? null : Bukkit.getPlayer(by);
+            if (a != null) {
+                a.sendMessage(msg);
+            }
+            Player t = Bukkit.getPlayer(target);
+            if (t != null && t != a) {
+                t.sendMessage(msg);
             }
         });
     }

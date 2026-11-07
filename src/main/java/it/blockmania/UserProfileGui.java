@@ -811,7 +811,8 @@ public final class UserProfileGui implements Listener {
         if (!authorize(p, target, "sanctions", "see", 0)) {
             return;
         }
-        List<String> cmds = kind == SanctionManager.Kind.WARN ? List.of("add", "remove", "reset") : List.of("add", "remove", "reduce", "reset");
+        // mute e ban: solo add/remove/reduce (il reset si fa dalla cronologia); warn: add/remove/reset (reset sempre ultimo)
+        List<String> cmds = kind == SanctionManager.Kind.WARN ? List.of("add", "remove", "reset") : List.of("add", "remove", "reduce");
         String label = kind.name().toLowerCase(java.util.Locale.ROOT) + " di " + nameOf(target);
         plugin.getProfileUi().openCommands(p, label, cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> sanctionPick(p, target, kind, cmd)),
@@ -836,12 +837,12 @@ public final class UserProfileGui implements Listener {
                     ui.confirm(p, "aggiungere un warn", () -> doSanction(p, target, kind, cmd, 0), cancel);
                 } else {
                     long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
-                    ui.askNumber(p, "minuti di " + k, 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
+                    ui.askNumber(p, "minuti di " + k, "AGGIUNGI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
                 }
             }
             case "reduce" -> {
                 long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
-                ui.askNumber(p, "minuti da togliere", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
+                ui.askNumber(p, "minuti da togliere", "RIDUCI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
             }
             case "remove", "reset" -> ui.confirm(p, cmd + " " + k, () -> doSanction(p, target, kind, cmd, 0), cancel);
             default -> back(p, target);
@@ -916,10 +917,36 @@ public final class UserProfileGui implements Listener {
         if (cmds.isEmpty()) {
             return;
         }
-        String label = labelOf(it);
+        if (it == PlayerCounters.Item.POWER_CHARGES && !cmds.contains("setuses")) {
+            // pulsante per settare i colpi sparabili con un colpo potenziato; il reset resta sempre ultimo
+            int ri = cmds.indexOf("reset");
+            cmds.add(ri < 0 ? cmds.size() : ri, "setuses");
+        }
+        if (cmds.remove("reset")) {
+            cmds.add("reset");
+        }
+        String label = popupLabelOf(it);
         plugin.getProfileUi().openCommands(p, label, cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> itemPick(p, target, it, cmd)),
                 () -> back(p, target), false, null);
+    }
+
+    /** Etichetta corta per la barra del popup (deve stare in ~60 px). */
+    private static String popupLabelOf(PlayerCounters.Item it) {
+        return switch (it) {
+            case POWER_CHARGES -> "potenziato";
+            case POWER_USES -> "usi colpo";
+            default -> it.name().toLowerCase(java.util.Locale.ROOT);
+        };
+    }
+
+    private static String actionWord(String cmd) {
+        return switch (cmd) {
+            case "give" -> "AGGIUNGI";
+            case "remove" -> "RIMUOVI";
+            case "set", "setuses" -> "SETTA";
+            default -> cmd.toUpperCase(java.util.Locale.ROOT);
+        };
     }
 
     private static String labelOf(PlayerCounters.Item it) {
@@ -942,6 +969,14 @@ public final class UserProfileGui implements Listener {
         UserProfilePowers ui = plugin.getProfileUi();
         PlayerCounters pc = plugin.getCounters();
         Runnable cancel = () -> back(p, target);
+        if (cmd.equals("setuses")) {
+            // colpi sparabili con un colpo potenziato = POWER_USES
+            PlayerCounters.Item ui2 = PlayerCounters.Item.POWER_USES;
+            String bar = "SETTA COLPI POT " + pc.value(target, ui2);
+            ui.askNumber(p, "set " + labelOf(ui2), bar, 1, Integer.MAX_VALUE,
+                    v -> applyItem(p, target, ui2, "set", (int) Math.min(Integer.MAX_VALUE, v)), cancel);
+            return;
+        }
         switch (cmd) {
             case "give", "remove", "set" -> {
                 int max = pc.max(target, it);
@@ -954,7 +989,10 @@ public final class UserProfileGui implements Listener {
                     }
                 }
                 long lo = cmd.equals("set") ? 0 : 1;
-                ui.askNumber(p, cmd + " " + labelOf(it), lo, Math.max(lo, hi),
+                String shortName = popupLabelOf(it).toUpperCase(java.util.Locale.ROOT);
+                String bar = actionWord(cmd) + " " + shortName + " " + pc.value(target, it)
+                        + (max == Integer.MAX_VALUE ? "" : "/" + max);
+                ui.askNumber(p, cmd + " " + labelOf(it), bar, lo, Math.max(lo, hi),
                         v -> applyItem(p, target, it, cmd, (int) Math.min(Integer.MAX_VALUE, v)), cancel);
             }
             case "full", "reset" -> ui.confirm(p, cmd + " " + labelOf(it), () -> applyItem(p, target, it, cmd, 0), cancel);

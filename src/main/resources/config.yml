@@ -2645,6 +2645,7 @@ adminmania:
 #  Il ban e' controllato dal plugin al login (non e' il ban di Minecraft).
 # ----------------------------------------------------------------------
 sanctions:
+  enforce: false               # false = TEST: nessun ban/mute/kick reale, solo messaggi [TEST] in chat (lo stato si registra lo stesso). true = sanzioni vere
   warn-ban-ms: 604800000       # ban automatico al 4o warn: 7 giorni (in millisecondi). Se e' gia' bannato si aggiunge questo tempo
   max-minutes:                 # massimo scrivibile nella finestra dei minuti (mute / ban) dal profilo
     mute: 43200                # 30 giorni
