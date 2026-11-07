@@ -521,8 +521,8 @@ public final class RulesGui implements Listener {
     }
 
     private void askTime(Player p, Rules.Type currentFilter, String code, String title, String text, Rules.Type t) {
-        String hint = t == Rules.Type.BAN ? "numero di minuti, permanente o blacklist" : "numero di minuti o permanente";
-        ui.askText(p, "tempo (" + hint + ")", "TEMPO", "", in -> {
+        String hint = t == Rules.Type.BAN ? "permanente (e blacklist per i ban)" : "permanente";
+        ui.askText(p, "scrivi il tempo: 10s 10m 10h 10d, anche somme come 10h+23m+16s; " + hint, "TEMPO", "", in -> {
             String v = in == null ? "" : in.trim();
             String err = Rules.parseTimeError(t, v);
             if (err != null) {
@@ -534,8 +534,8 @@ public final class RulesGui implements Listener {
         }, () -> reopen(p, currentFilter));
     }
 
-    private void finishCreate(Player p, String code, String title, String text, Rules.Type t, long minutes) {
-        Rules.Rule r = Rules.Rule.created(code, title, text, t, minutes, p);
+    private void finishCreate(Player p, String code, String title, String text, Rules.Type t, long durationMs) {
+        Rules.Rule r = Rules.Rule.created(code, title, text, t, durationMs, p);
         if (rules.add(r)) {
             AdminCommand a = plugin.getAdminCommand();
             if (a != null) {

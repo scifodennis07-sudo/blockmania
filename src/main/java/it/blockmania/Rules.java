@@ -24,15 +24,15 @@ public final class Rules {
 
     public enum Type { BAN, WARN, MUTE, REGOLAMENTO }
 
-    /** Valori speciali di Rule.minutes. */
+    /** Valori speciali di Rule.durationMs (la durata e' in millisecondi). */
     public static final long PERMANENT = -1, BLACKLIST = -2;
 
-    public record Rule(String code, String title, String text, Type type, long minutes,
+    public record Rule(String code, String title, String text, Type type, long durationMs,
                        UUID createdBy, String createdByName, long createdAt,
                        UUID editedBy, String editedByName, long editedAt) {
         /** Nuova regola: creata adesso da "by"; mai modificata (editedBy null, editedAt 0). */
-        public static Rule created(String code, String title, String text, Type type, long minutes, Player by) {
-            return new Rule(code, title, text, type, minutes,
+        public static Rule created(String code, String title, String text, Type type, long durationMs, Player by) {
+            return new Rule(code, title, text, type, durationMs,
                     by == null ? null : by.getUniqueId(), by == null ? "sconosciuto" : by.getName(),
                     System.currentTimeMillis(), null, null, 0L);
         }
@@ -41,8 +41,8 @@ public final class Rules {
     /** Voce di cronologia. field: "creata","codice","titolo","descrizione","sanzione","tempo". */
     public record Change(long time, UUID by, String byName, String field, String oldValue, String newValue) { }
 
-    /** Sanzione applicata con una regola. minutes: durata (PERMANENT/BLACKLIST/0 per warn). */
-    public record Hit(long time, UUID target, String targetName, UUID by, String byName, Type kind, long minutes) { }
+    /** Sanzione applicata con una regola. durationMs: durata in ms (PERMANENT/BLACKLIST/0 per warn). */
+    public record Hit(long time, UUID target, String targetName, UUID by, String byName, Type kind, long durationMs) { }
 
     private final BlockMania plugin;
     private final File file;
@@ -130,8 +130,8 @@ public final class Rules {
 
     private static final String NOT_FOUND = "La regola non esiste piu'.";
 
-    private static Rule withEdit(Rule r, String code, String title, String text, Type type, long minutes, Player by) {
-        return new Rule(code, title, text, type, minutes, r.createdBy(), r.createdByName(), r.createdAt(),
+    private static Rule withEdit(Rule r, String code, String title, String text, Type type, long durationMs, Player by) {
+        return new Rule(code, title, text, type, durationMs, r.createdBy(), r.createdByName(), r.createdAt(),
                 by == null ? null : by.getUniqueId(), by == null ? "sconosciuto" : by.getName(),
                 System.currentTimeMillis());
     }
@@ -161,7 +161,7 @@ public final class Rules {
             }
             String old = r.code();
             rules.remove(old);
-            rules.put(nc, withEdit(r, nc, r.title(), r.text(), r.type(), r.minutes(), by));
+            rules.put(nc, withEdit(r, nc, r.title(), r.text(), r.type(), r.durationMs(), by));
             List<Change> h = histories.remove(old);
             if (h != null) {
                 histories.put(nc, h);
@@ -190,7 +190,7 @@ public final class Rules {
             if (v.equals(r.title())) {
                 return "Il titolo e' gia' questo.";
             }
-            rules.put(r.code(), withEdit(r, r.code(), v, r.text(), r.type(), r.minutes(), by));
+            rules.put(r.code(), withEdit(r, r.code(), v, r.text(), r.type(), r.durationMs(), by));
             addChange(r.code(), by, "titolo", r.title(), v);
             save();
         }
@@ -211,7 +211,7 @@ public final class Rules {
             if (v.equals(r.text())) {
                 return "La descrizione e' gia' questa.";
             }
-            rules.put(r.code(), withEdit(r, r.code(), r.title(), v, r.type(), r.minutes(), by));
+            rules.put(r.code(), withEdit(r, r.code(), r.title(), v, r.type(), r.durationMs(), by));
             addChange(r.code(), by, "descrizione", r.text(), v);
             save();
         }
@@ -219,8 +219,8 @@ public final class Rules {
         return null;
     }
 
-    /** Cambia sanzione e/o durata (minutes gia' parsato con parseTime; 0 per WARN/REGOLAMENTO). */
-    public String editType(String code, Type t, long minutes, Player by) {
+    /** Cambia sanzione e/o durata (durationMs gia' parsato con parseTime, in ms; 0 per WARN/REGOLAMENTO). */
+    public String editType(String code, Type t, long durationMs, Player by) {
         synchronized (this) {
             Rule r = code == null ? null : rules.get(code.trim());
             if (r == null) {
@@ -229,14 +229,14 @@ public final class Rules {
             if (t == null) {
                 return "Sanzione non valida.";
             }
-            long m = (t == Type.WARN || t == Type.REGOLAMENTO) ? 0 : minutes;
+            long m = (t == Type.WARN || t == Type.REGOLAMENTO) ? 0 : durationMs;
             if ((t == Type.BAN || t == Type.MUTE) && m == 0) {
-                return "Serve una durata valida (minuti o permanente).";
+                return "Serve una durata valida (es: 10h+23m+16s, o permanente).";
             }
             if (t != Type.BAN && m == BLACKLIST) {
                 return "\"blacklist\" vale solo per i ban.";
             }
-            if (t == r.type() && m == r.minutes()) {
+            if (t == r.type() && m == r.durationMs()) {
                 return "La sanzione e' gia' questa.";
             }
             Rule n = withEdit(r, r.code(), r.title(), r.text(), t, m, by);
@@ -244,7 +244,7 @@ public final class Rules {
             if (t != r.type()) {
                 addChange(r.code(), by, "sanzione", typeLabel(r.type()), typeLabel(t));
             }
-            if (m != r.minutes()) {
+            if (m != r.durationMs()) {
                 addChange(r.code(), by, "tempo", timeLabel(r), timeLabel(n));
             }
             save();
@@ -327,9 +327,11 @@ public final class Rules {
             return null;
         }
         String s = in == null ? "" : in.trim().toLowerCase(Locale.ROOT);
+        String fmtHelp = t == Type.BAN
+                ? "Scrivi un tempo come 10s, 10m, 10h, 10d o una somma (es: 10h+23m+16s), \"permanente\" o \"blacklist\"."
+                : "Scrivi un tempo come 10s, 10m, 10h, 10d o una somma (es: 10h+23m+16s), oppure \"permanente\".";
         if (s.isEmpty()) {
-            return t == Type.BAN ? "Scrivi un numero di minuti, \"permanente\" o \"blacklist\"."
-                    : "Scrivi un numero di minuti o \"permanente\".";
+            return fmtHelp;
         }
         if (s.equals("permanente")) {
             return null;
@@ -337,22 +339,61 @@ public final class Rules {
         if (s.equals("blacklist")) {
             return t == Type.BAN ? null : "\"blacklist\" vale solo per i ban.";
         }
-        try {
-            long v = Long.parseLong(s);
-            if (v < 1) {
-                return "Il numero di minuti deve essere almeno 1.";
-            }
-            if (v > 5_000_000_000L) {
-                return "Numero di minuti troppo grande.";
-            }
-            return null;
-        } catch (NumberFormatException e) {
-            return t == Type.BAN ? "Scrivi un numero di minuti, \"permanente\" o \"blacklist\"."
-                    : "Scrivi un numero di minuti o \"permanente\".";
+        long ms = parseDurationMs(s);
+        if (ms == -1) {
+            return fmtHelp + " Un numero senza unita' vale minuti.";
         }
+        if (ms == -2) {
+            return "Tempo troppo grande: il massimo e' 10 anni.";
+        }
+        if (ms < 1000) {
+            return "Il tempo minimo e' 1 secondo (es: 10s).";
+        }
+        return null;
     }
 
-    /** Converte l'input in minuti (>=1), PERMANENT o BLACKLIST; 0 per WARN/REGOLAMENTO o input non valido. */
+    private static final long MAX_MS = 10L * 365 * 86_400_000L;
+
+    /** Somma di termini "numero+unita'" (s/m/h/d), numero nudo = minuti. -1 formato errato, -2 troppo grande. */
+    private static long parseDurationMs(String s) {
+        long total = 0;
+        String[] parts = s.split("\\+", -1);
+        for (String raw : parts) {
+            String p = raw.trim();
+            if (p.isEmpty()) {
+                return -1;
+            }
+            char u = p.charAt(p.length() - 1);
+            long mult = 60_000L;
+            String num = p;
+            if (!Character.isDigit(u)) {
+                switch (u) {
+                    case 's' -> mult = 1000L;
+                    case 'm' -> mult = 60_000L;
+                    case 'h' -> mult = 3_600_000L;
+                    case 'd' -> mult = 86_400_000L;
+                    default -> {
+                        return -1;
+                    }
+                }
+                num = p.substring(0, p.length() - 1).trim();
+            }
+            if (num.isEmpty() || num.length() > 12 || !num.chars().allMatch(Character::isDigit)) {
+                return -1;
+            }
+            long v = Long.parseLong(num);
+            if (v > MAX_MS / mult) {
+                return -2;
+            }
+            total += v * mult;
+            if (total > MAX_MS) {
+                return -2;
+            }
+        }
+        return total;
+    }
+
+    /** Converte l'input in millisecondi (>=1000), PERMANENT o BLACKLIST; 0 per WARN/REGOLAMENTO o input non valido. */
     public static long parseTime(Type t, String in) {
         if (t == Type.WARN || t == Type.REGOLAMENTO || parseTimeError(t, in) != null) {
             return 0;
@@ -364,37 +405,24 @@ public final class Rules {
         if (s.equals("blacklist")) {
             return BLACKLIST;
         }
-        return Long.parseLong(s);
+        return parseDurationMs(s);
     }
 
     public static String timeLabel(Rule r) {
         if (r == null) {
             return "-";
         }
-        long m = r.minutes();
-        if (m == PERMANENT) {
+        long ms = r.durationMs();
+        if (ms == PERMANENT) {
             return "permanente";
         }
-        if (m == BLACKLIST) {
+        if (ms == BLACKLIST) {
             return "blacklist";
         }
-        if (m <= 0) {
+        if (ms <= 0) {
             return "-";
         }
-        long d = m / 1440;
-        long h = (m % 1440) / 60;
-        long mi = m % 60;
-        StringBuilder sb = new StringBuilder();
-        if (d > 0) {
-            sb.append(d).append("g");
-        }
-        if (h > 0) {
-            sb.append(sb.length() > 0 ? " " : "").append(h).append("h");
-        }
-        if (mi > 0 && d == 0) {
-            sb.append(sb.length() > 0 ? " " : "").append(mi).append(" min");
-        }
-        return sb.length() == 0 ? m + " min" : sb.toString().replace("h min", "h");
+        return SanctionManager.fmt(ms).trim();
     }
 
     public static String typeLabel(Type t) {
@@ -443,7 +471,7 @@ public final class Rules {
                 continue;
             }
             rules.put(code, new Rule(code, r.getString("title", "Regola " + code), r.getString("text", ""), type,
-                    r.getLong("minutes", 0), uuid(r.getString("createdBy")), r.getString("createdByName", "sconosciuto"),
+                    r.contains("durationMs") ? r.getLong("durationMs", 0) : legacyToMs(r.getLong("minutes", 0)), uuid(r.getString("createdBy")), r.getString("createdByName", "sconosciuto"),
                     r.getLong("createdAt", 0), uuid(r.getString("editedBy")), r.getString("editedByName"),
                     r.getLong("editedAt", 0)));
         }
@@ -479,10 +507,16 @@ public final class Rules {
                     continue;
                 }
                 hl.add(new Hit(num(m.get("time")), uuid(sv(m.get("target"))), sv(m.get("targetName")),
-                        uuid(sv(m.get("by"))), sv(m.get("byName")), k, num(m.get("minutes"))));
+                        uuid(sv(m.get("by"))), sv(m.get("byName")), k,
+                        m.containsKey("durationMs") ? num(m.get("durationMs")) : legacyToMs(num(m.get("minutes")))));
             }
             hitLog.put(code, hl);
         }
+    }
+
+    /** Migrazione dal vecchio formato in minuti: i valori speciali (<=0) restano invariati. */
+    private static long legacyToMs(long minutes) {
+        return minutes > 0 ? minutes * 60_000L : minutes;
     }
 
     private static String sv(Object o) {
@@ -502,7 +536,7 @@ public final class Rules {
             y.set(p + "title", r.title());
             y.set(p + "text", r.text());
             y.set(p + "type", r.type().name());
-            y.set(p + "minutes", r.minutes());
+            y.set(p + "durationMs", r.durationMs());
             y.set(p + "createdBy", str(r.createdBy()));
             y.set(p + "createdByName", r.createdByName());
             y.set(p + "createdAt", r.createdAt());
@@ -533,7 +567,7 @@ public final class Rules {
                 m.put("by", str(h.by()));
                 m.put("byName", h.byName());
                 m.put("kind", h.kind().name());
-                m.put("minutes", h.minutes());
+                m.put("durationMs", h.durationMs());
                 hl.add(m);
             }
             lg.set(p + ".changes", ch);

@@ -12,6 +12,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -133,7 +134,7 @@ public final class RulePopups implements Listener {
                 }
                 lore.add((created ? "&7creata da: &f" : "&7di: &f") + name(c.byName()));
                 lore.add("&7il: &f" + date(c.time()));
-                list.add(item(Material.PAPER, "&f" + field, lore));
+                list.add(head(c.by(), c.byName(), "&f" + field, lore));
             }
         }
         openList(staff, "cronologia " + r.code(), list, onBack);
@@ -149,8 +150,8 @@ public final class RulePopups implements Listener {
                 lore.add("&7sanzione: &f" + (h.kind() == null ? "-" : Rules.typeLabel(h.kind())));
                 lore.add("&7da: &f" + name(h.byName()));
                 lore.add("&7il: &f" + date(h.time()));
-                lore.add("&7durata: &f" + minutesLabel(h.minutes()));
-                list.add(item(kindMaterial(h.kind()), "&f" + name(h.targetName()), lore));
+                lore.add("&7durata: &f" + durationLabel(h.durationMs()));
+                list.add(head(h.target(), h.targetName(), "&f" + name(h.targetName()), lore));
             }
         }
         openList(staff, "sanzionati " + r.code(), list, onBack);
@@ -168,30 +169,17 @@ public final class RulePopups implements Listener {
         };
     }
 
-    private static String minutesLabel(long m) {
-        if (m == Rules.PERMANENT) {
+    private static String durationLabel(long ms) {
+        if (ms == Rules.PERMANENT) {
             return "permanente";
         }
-        if (m == Rules.BLACKLIST) {
+        if (ms == Rules.BLACKLIST) {
             return "blacklist";
         }
-        if (m <= 0) {
+        if (ms <= 0) {
             return "-";
         }
-        long d = m / 1440;
-        long h = (m % 1440) / 60;
-        long mi = m % 60;
-        StringBuilder sb = new StringBuilder();
-        if (d > 0) {
-            sb.append(d).append("g");
-        }
-        if (h > 0) {
-            sb.append(sb.length() > 0 ? " " : "").append(h).append("h");
-        }
-        if (mi > 0 && d == 0) {
-            sb.append(sb.length() > 0 ? " " : "").append(mi).append("m");
-        }
-        return sb.length() == 0 ? "-" : sb.toString();
+        return SanctionManager.fmt(ms).trim();
     }
 
     private static String name(String n) {
@@ -283,8 +271,8 @@ public final class RulePopups implements Listener {
     }
 
     private void askMinutes(Player staff, String code, Rules.Type t, Runnable onBack, Runnable onDone) {
-        String hint = t == Rules.Type.BAN ? "numero di minuti, permanente o blacklist" : "numero di minuti o permanente";
-        ui.askText(staff, "tempo (" + hint + ")", "TEMPO", "", in -> {
+        String hint = t == Rules.Type.BAN ? "permanente (e blacklist per i ban)" : "permanente";
+        ui.askText(staff, "scrivi il tempo: 10s 10m 10h 10d, anche somme come 10h+23m+16s; " + hint, "TEMPO", "", in -> {
             String err = Rules.parseTimeError(t, in);
             if (err != null) {
                 GuiMsg.send(plugin, staff, "&c" + err);
@@ -295,8 +283,8 @@ public final class RulePopups implements Listener {
         }, () -> Bukkit.getScheduler().runTask(plugin, onBack));
     }
 
-    private void applyType(Player staff, String code, Rules.Type t, long minutes, Runnable onDone) {
-        String err = rules.editType(code, t, minutes, staff);
+    private void applyType(Player staff, String code, Rules.Type t, long durationMs, Runnable onDone) {
+        String err = rules.editType(code, t, durationMs, staff);
         if (err != null) {
             GuiMsg.send(plugin, staff, "&c" + err);
         } else {
@@ -374,6 +362,28 @@ public final class RulePopups implements Listener {
             }
             meta.lore(l);
         }
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /** Testa del player (uuid se noto, altrimenti per nome) con nome e lore. */
+    private ItemStack head(UUID uuid, String playerName, String name, List<String> lore) {
+        ItemStack stack = new ItemStack(Material.PLAYER_HEAD);
+        ItemMeta im = stack.getItemMeta();
+        if (!(im instanceof SkullMeta meta)) {
+            return item(Material.PAPER, name, lore);
+        }
+        org.bukkit.OfflinePlayer off = uuid != null ? Bukkit.getOfflinePlayer(uuid)
+                : (playerName != null && !playerName.isBlank() ? Bukkit.getOfflinePlayer(playerName) : null);
+        if (off != null) {
+            meta.setOwningPlayer(off);
+        }
+        meta.displayName(plugin.text(name));
+        List<net.kyori.adventure.text.Component> l = new ArrayList<>();
+        for (String line : lore) {
+            l.add(plugin.text(line));
+        }
+        meta.lore(l);
         stack.setItemMeta(meta);
         return stack;
     }

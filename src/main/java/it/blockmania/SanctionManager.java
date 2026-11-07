@@ -401,9 +401,9 @@ public final class SanctionManager implements Listener {
             msg = "";
         }
         UUID by = staff instanceof Player sp ? sp.getUniqueId() : null;
-        boolean blacklist = rule.type() == Rules.Type.BAN && rule.minutes() == Rules.BLACKLIST;
-        boolean forever = rule.minutes() == Rules.PERMANENT || rule.minutes() == Rules.BLACKLIST;
-        long ms = forever ? FOREVER_MS : rule.minutes() * 60_000L;
+        boolean blacklist = rule.type() == Rules.Type.BAN && rule.durationMs() == Rules.BLACKLIST;
+        boolean forever = rule.durationMs() == Rules.PERMANENT || rule.durationMs() == Rules.BLACKLIST;
+        long ms = forever ? FOREVER_MS : rule.durationMs();
         String reason = "[" + rule.code() + "] " + rule.text() + (msg.isEmpty() ? "" : " | staff: " + msg);
         String note = "msg:" + playerMessage(rule, msg, blacklist);
         String label = forever ? (blacklist ? "blacklist" : "permanente") : fmt(ms);
@@ -469,7 +469,7 @@ public final class SanctionManager implements Listener {
         String tn = Bukkit.getOfflinePlayer(target).getName();
         plugin.getRules().logHit(rule.code(), new Rules.Hit(System.currentTimeMillis(), target,
                 tn == null ? target.toString() : tn, by, staff == null ? "console" : staff.getName(),
-                rule.type(), rule.minutes()));
+                rule.type(), rule.durationMs()));
     }
 
     /** Testo per il player: "Sei stato bannato per la regola ..." da config sanctions.msg.* (placeholder %code% %text% %staff% %type%). */

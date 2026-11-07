@@ -83,7 +83,10 @@ public final class RuleDetailGui implements Listener {
     private static final int MSG_GAP = 3;
     private static final int BX0 = 58;          // bolle a sinistra
     private static final int BX1 = 155;         // bolle a destra: bordo destro = BX1 - 1
-    private static final int MAX_TEXT = 88;
+    private static final int MAX_TEXT = 82;     // testo max; bolla = testo + 4 (margine) + 6 (bordi) = 92
+    private static final int PAD = 2;           // margine interno extra per lato
+    private static final int CHAT_L = 56;       // interno riquadro chat 56..154 (centro 105)
+    private static final int CHAT_W = 98;
     private static final int[] TEXT_RGB = {0x2A2A2A, 0x0F2D46, 0x5A4600};
 
     // ---------- slot ----------
@@ -270,7 +273,7 @@ public final class RuleDetailGui implements Listener {
     }
 
     // ------------------------------------------------------------------
-    //  Chat: 2 messaggi (titolo a destra, descrizione a sinistra), dall'alto
+    //  Chat: 2 messaggi (titolo e descrizione, entrambi centrati), dall'alto
     // ------------------------------------------------------------------
 
     private static List<Line> layout(Rules.Rule r) {
@@ -402,10 +405,10 @@ public final class RuleDetailGui implements Listener {
             int yb = CHAT_TOP + used;
             used += ROW_H;
             int variant = ln.n() == 1 ? 0 : ln.idx() == 0 ? 1 : ln.idx() == ln.n() - 1 ? 3 : 2;
-            int tw = Math.max(8, maxW.getOrDefault(ln.msg(), 8));
+            int tw = Math.max(8, maxW.getOrDefault(ln.msg(), 8)) + 2 * PAD;
             int own = textWidth(ln.text());
             int bw = tw + 6;
-            int xb = ln.side() == 1 ? BX1 - bw - 1 : BX0;
+            int xb = CHAT_L + (CHAT_W - bw) / 2;
             StringBuilder sb = new StringBuilder();
             sb.append(bubbleChar(ln.side(), variant, 0)).append('');
             int remaining = tw;
@@ -418,7 +421,7 @@ public final class RuleDetailGui implements Listener {
             }
             sb.append(bubbleChar(ln.side(), variant, 1)).append('');
             g.atComponent(xb + ox, glyph(sb.toString(), tk(yb), 0xFFFFFF), bw);
-            g.atComponent(xb + 3 + ox, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
+            g.atComponent(xb + 3 + PAD + ox, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
         }
     }
 

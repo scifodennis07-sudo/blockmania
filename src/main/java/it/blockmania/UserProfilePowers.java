@@ -1,10 +1,13 @@
 package it.blockmania;
 
+import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -83,6 +86,7 @@ public final class UserProfilePowers implements Listener {
     private final BlockMania plugin;
     private final Set<UUID> switching = new HashSet<>();
     private final Map<UUID, AnvilSession> anvils = new HashMap<>();
+    private final Map<UUID, AnvilSession> awaiting = new java.util.concurrent.ConcurrentHashMap<>();   // in attesa del prossimo messaggio in chat
 
     public UserProfilePowers(BlockMania plugin) {
         this.plugin = plugin;
@@ -128,7 +132,7 @@ public final class UserProfilePowers implements Listener {
         if (p == null) {
             return false;
         }
-        if (anvils.containsKey(p.getUniqueId())) {
+        if (anvils.containsKey(p.getUniqueId()) || awaiting.containsKey(p.getUniqueId())) {
             return true;
         }
         if (p.getOpenInventory().getTopInventory().getHolder() instanceof Holder) {
@@ -169,7 +173,8 @@ public final class UserProfilePowers implements Listener {
         String range = rangeText(min, max);
         // la casella di testo mostra il nome dell'oggetto 0: lo lasciamo vuoto (niente "ANNULLA")
         view.setItem(0, pane(" ", List.of("&cannulla", "&7Torna indietro senza fare niente.")));
-        view.setItem(1, pane("&e" + s.title, List.of("&7Scrivi un numero " + range + ".", "&7Poi clicca sul tasto verde.")));
+        view.setItem(1, pane("&e" + s.title, List.of("&7Scrivi un numero " + range + ".", "&7Poi clicca sul tasto verde.",
+                "&7Scambio: scrivi il numero in chat.")));
         UUID id = staff.getUniqueId();
         anvils.put(id, s);
         switching.add(id);
@@ -182,7 +187,7 @@ public final class UserProfilePowers implements Listener {
     }
 
     /**
-     * Anvil di testo libero (max 100 caratteri): stessa grafica di askNumber, nella casella c'e' "initial".
+     * Anvil di testo libero (50 caratteri nella casella, fino a 256 via chat): stessa grafica di askNumber, nella casella c'e' "initial".
      * Il testo vuoto e' accettato (onOk(""))); la X chiama onCancel.
      */
     public void askText(Player staff, String title, String barText, String initial, Consumer<String> onOk, Runnable onCancel) {
@@ -207,7 +212,7 @@ public final class UserProfilePowers implements Listener {
         im.lore(lore(List.of("&cannulla", "&7Torna indietro senza fare niente.")));
         in.setItemMeta(im);
         view.setItem(0, in);
-        view.setItem(1, pane("&e" + s.title, List.of("&7Scrivi il testo (max 100 caratteri).", "&7Poi clicca sul tasto verde.")));
+        view.setItem(1, pane("&e" + s.title, List.of("&7L'incudine accetta max 50 caratteri (limite del client).", "&7Per testi lunghi clicca lo &fscambio&7 e scrivi in chat.", "&7Poi clicca sul tasto verde.")));
         UUID id = staff.getUniqueId();
         anvils.put(id, s);
         switching.add(id);
@@ -216,7 +221,7 @@ public final class UserProfilePowers implements Listener {
         } finally {
             switching.remove(id);
         }
-        GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi il testo nella barra e clicca sul tasto verde.");
+        GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi il testo (max 50 caratteri nell'incudine, per testi lunghi usa lo scambio e scrivi in chat) e clicca sul tasto verde.");
     }
 
     /** Slot dei bottoni del pannello conferma (glifo popup_confirm U+E207: riga 3). */
@@ -391,6 +396,8 @@ public final class UserProfilePowers implements Listener {
             case "title,text,type" -> "";    // userprofile-20: titolo, descrizione, sanzione (modifica regola)
             case "set,full,infinite" -> IMG_SET_FULL_INF;
             case "full,infinite,reset" -> IMG_FULL_INF_RESET;
+            case "ban,warn,mute" -> "\uE114";          // tipo sanzione: ban, warn, mute (Sara crea l'immagine, font userprofile)
+            case "warn,mute,regolamento" -> "\uE115";  // tipo sanzione: warn, mute, regolamento (Sara crea l'immagine)
             default -> null;
         };
     }
@@ -731,6 +738,9 @@ public final class UserProfilePowers implements Listener {
             if (raw == 2) {
                 plugin.guiClick(p);
                 submitAnvil(p, s);
+            } else if (raw == 1) {
+                plugin.guiClick(p);
+                anvilToChat(p, s);
             } else if (raw == 0) {
                 plugin.guiClick(p);
                 s.done = true;
@@ -792,6 +802,58 @@ public final class UserProfilePowers implements Listener {
         later(() -> s.onOk.accept(val));
     }
 
+    /** Chiude l'incudine e aspetta il prossimo messaggio in chat del player. */
+    private void anvilToChat(Player p, AnvilSession s) {
+        s.done = true;
+        p.closeInventory();
+        awaiting.put(p.getUniqueId(), s);
+        String hint = s.text ? "il testo (max 256 caratteri)" : "un numero " + rangeText(s.min, s.max);
+        p.sendMessage(plugin.color("&6[profilo] &fScrivi qui in chat " + hint + ", oppure scrivi &eannulla&f per annullare."));
+        GuiMsg.send(plugin, p, "&7Scrivi in chat " + hint + " oppure scrivi annulla.");
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onChat(AsyncChatEvent event) {
+        Player p = event.getPlayer();
+        UUID id = p.getUniqueId();
+        AnvilSession s = awaiting.remove(id);
+        if (s == null) {
+            return;
+        }
+        event.setCancelled(true);
+        String msg = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
+        later(() -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            if (msg.equalsIgnoreCase("annulla")) {
+                p.sendMessage(plugin.color("&7annullato"));
+                if (s.onCancel != null) {
+                    s.onCancel.run();
+                }
+                return;
+            }
+            if (s.text) {
+                if (msg.length() > 256) {
+                    err(p, "Il testo puo' avere al massimo 256 caratteri.");
+                    awaiting.put(id, s);
+                    p.sendMessage(plugin.color("&6[profilo] &fScrivi di nuovo in chat il testo, oppure scrivi &eannulla&f."));
+                    return;
+                }
+                s.onText.accept(msg);
+                return;
+            }
+            Long v = parse(msg, s.min);
+            if (v == null || v < s.min || v > s.max) {
+                err(p, "Serve un numero " + rangeText(s.min, s.max) + ".");
+                awaiting.put(id, s);
+                p.sendMessage(plugin.color("&6[profilo] &fScrivi di nuovo in chat un numero " + rangeText(s.min, s.max) + ", oppure scrivi &eannulla&f."));
+                return;
+            }
+            s.onOk.accept(v);
+        });
+    }
+
     private void reopenAnvil(Player p, AnvilSession s) {
         s.done = true;
         p.closeInventory();
@@ -836,6 +898,7 @@ public final class UserProfilePowers implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        awaiting.remove(event.getPlayer().getUniqueId());
         AnvilSession s = anvils.remove(event.getPlayer().getUniqueId());
         if (s != null) {
             s.done = true;
