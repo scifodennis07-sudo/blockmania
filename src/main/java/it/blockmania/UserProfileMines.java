@@ -386,7 +386,7 @@ public final class UserProfileMines implements Listener {
         List<Integer> no = slotList(CFG + "confirm.no-slots");
         yes = yes.isEmpty() ? CONFIRM_YES : yes;
         no = no.isEmpty() ? CONFIRM_NO : no;
-        if (confirmBackgrounds().isEmpty()) {
+        if (true) {
             // conferma generica (userprofile-6/7)
             ui.confirm(staff, text, onYes, reopen);
             return;
