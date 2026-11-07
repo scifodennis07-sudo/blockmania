@@ -31,8 +31,8 @@ import java.util.UUID;
 /**
  * GUI delle regole (/adminmania rules): elenco a pagine di tutte le regole (ban, warn, mute, regolamento)
  * con filtro per tipo (click sinistro sul pulsante blu), creazione (click destro sul pulsante blu)
- * e eliminazione con conferma (tasto Q sulla regola).
- * Grafica: regole.png (glifo U+3E0B) e regole-2.png con il popup di conferma (glifo U+3E0C), stesso font default dei ticket.
+ * (l'eliminazione si fa solo dalla GUI di dettaglio).
+ * Grafica: regole.png (glifo U+3E0B), font minecraft:regole.
  * Live: si ridisegna da sola a ogni Rules.onChange.
  */
 public final class RulesGui implements Listener {
@@ -40,7 +40,6 @@ public final class RulesGui implements Listener {
     // ---------- grafica del pack ----------
     private static final String FONT_RULES = "minecraft:regole";
     private static final String IMG_BASE = "\u3e0b";  // regole.png (TODO: allineare a chars di regole.json)
-    private static final String IMG_CONF = "\u3e0c";  // regole-2.png (conferma)
     private static final int IMG = -22;
     private static final int IMG_ADV = 179;   // dichiarato 179 (reale 186): convenzione Tickets/ItemsGui, vale x_img + IMG
     /** Barra frecce: su questa immagine sta in alto (container y 15..28); font e quote configurabili (rules-gui.*). */
@@ -60,10 +59,6 @@ public final class RulesGui implements Listener {
     /** Frecce: sinistra immagine (50..69) -> slot 2; destra (120..139) -> slot 6. */
     private static final int SLOT_PREV = 2;
     private static final int SLOT_NEXT = 6;
-    /** Popup conferma (riga 3): CONFERMA a sinistra, ANNULLA a destra. */
-    private static final int[] CONFIRM_YES = {28, 29, 30};
-    private static final int[] CONFIRM_NO = {32, 33, 34};
-
     private static final int WRAP = 35;
 
     // ---------- targhette delle regole disegnate a font (contratto col pack di Sara) ----------
@@ -92,8 +87,6 @@ public final class RulesGui implements Listener {
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         Session session;
-        boolean confirm;
-        final Map<Integer, Runnable> actions = new HashMap<>();
 
         @Override
         public Inventory getInventory() {
@@ -375,7 +368,6 @@ public final class RulesGui implements Listener {
         lore.add("&7Tempo: &f" + Rules.timeLabel(r));
         lore.add(" ");
         lore.add("&eclicca per aprire");
-        lore.add("&eQ = elimina");
         return pane("&f" + r.code(), lore);
     }
 
@@ -391,7 +383,7 @@ public final class RulesGui implements Listener {
         List<String> blue = new ArrayList<>();
         blue.add("&7scegli cosa vedere:");
         blue.add(" ");
-        Rules.Type[] opts = {null, Rules.Type.BAN, Rules.Type.WARN, Rules.Type.MUTE, Rules.Type.REGOLAMENTO};
+        Rules.Type[] opts = {null, Rules.Type.BAN, Rules.Type.WARN, Rules.Type.MUTE};
         for (Rules.Type o : opts) {
             blue.add(o == s.filter ? "&a» " + filterName(o) : "&8" + filterName(o));
         }
@@ -517,7 +509,12 @@ public final class RulesGui implements Listener {
             } else {
                 finishCreate(p, code, title, text, t, 0L);
             }
-        }, () -> reopen(p, currentFilter), false, null);
+        }, () -> reopen(p, currentFilter), false, null, g -> drawDimmedBackground(g));
+    }
+
+    /** Sfondo della lista (regole.png) a colori pieni, advance reale 186: lo scurimento lo applica chi lo usa (MinesGui.tint). */
+    public void drawDimmedBackground(GuiTitle g) {
+        g.at(-15, "&f" + IMG_BASE, FONT_RULES, 186);
     }
 
     private void askTime(Player p, Rules.Type currentFilter, String code, String title, String text, Rules.Type t) {
@@ -545,52 +542,8 @@ public final class RulesGui implements Listener {
         } else {
             GuiMsg.send(plugin, p, "&cesiste gia' una regola con il codice " + code);
         }
-        // riapre sul filtro del tipo creato
-        reopen(p, t);
-    }
-
-    // ------------------------------------------------------------------
-    //  Conferma eliminazione (regole-2.png)
-    // ------------------------------------------------------------------
-
-    private void openConfirm(Player p, Session s, String code) {
-        Holder h = new Holder();
-        h.session = s;
-        h.confirm = true;
-        GuiTitle g = new GuiTitle(plugin);
-        g.at(-15, "&f" + IMG_CONF, FONT_RULES, IMG_ADV);
-        UserProfilePowers.topTitle(plugin, g, "conferma");
-        h.inventory = Bukkit.createInventory(h, SIZE, g.build());
-        List<String> yes = List.of("&7Elimina la regola " + code + ".", "", "&eclicca per confermare");
-        List<String> no = List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare");
-        final Rules.Type filter = s.filter;
-        final int page = s.page;
-        Runnable doYes = () -> Bukkit.getScheduler().runTask(plugin, () -> {
-            if (!authorize(p, "edit")) {
-                open(p, filter, page);
-                return;
-            }
-            if (rules.remove(code)) {
-                AdminCommand a = plugin.getAdminCommand();
-                if (a != null) {
-                    a.record(p, "rules remove " + code);
-                }
-                GuiMsg.send(plugin, p, "&aregola " + code + " eliminata");
-            } else {
-                GuiMsg.send(plugin, p, "&cregola " + code + " non trovata");
-            }
-            open(p, filter, page);
-        });
-        Runnable doNo = () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, filter, page));
-        for (int slot : CONFIRM_YES) {
-            h.inventory.setItem(slot, pane("&aconferma", yes));
-            h.actions.put(slot, doYes);
-        }
-        for (int slot : CONFIRM_NO) {
-            h.inventory.setItem(slot, pane("&cannulla", no));
-            h.actions.put(slot, doNo);
-        }
-        show(p, h, s);
+        // riapre sul filtro del tipo creato (regolamento non e' un filtro: si vede in "tutte")
+        reopen(p, t == Rules.Type.REGOLAMENTO ? null : t);
     }
 
     // ------------------------------------------------------------------
@@ -610,14 +563,6 @@ public final class RulesGui implements Listener {
             return;
         }
         int slot = event.getRawSlot();
-        if (h.confirm) {
-            Runnable a = h.actions.get(slot);
-            if (a != null) {
-                plugin.guiClick(p);
-                a.run();
-            }
-            return;
-        }
         Session s = h.session;
         for (int x : SLOTS_X) {
             if (slot == x) {
@@ -658,25 +603,17 @@ public final class RulesGui implements Listener {
             return;
         }
         ClickType ct = event.getClick();
-        if (ct != ClickType.DROP && ct != ClickType.CONTROL_DROP) {
-            if (ct == ClickType.LEFT || ct == ClickType.SHIFT_LEFT) {
-                // apre il dettaglio; "indietro" riapre la lista con lo stesso filtro e pagina
-                plugin.guiClick(p);
-                final Rules.Type backFilter = s.filter;
-                final int backPage = s.page;
-                Bukkit.getScheduler().runTask(plugin, () -> plugin.getRuleDetailGui().open(p, code,
-                        () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, backFilter, backPage))));
-            }
-            return;
+        if (ct == ClickType.LEFT || ct == ClickType.SHIFT_LEFT) {
+            // apre il dettaglio; "indietro" riapre la lista con lo stesso filtro e pagina
+            plugin.guiClick(p);
+            final Rules.Type backFilter = s.filter;
+            final int backPage = s.page;
+            Bukkit.getScheduler().runTask(plugin, () -> plugin.getRuleDetailGui().open(p, code,
+                    () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, backFilter, backPage))));
         }
-        plugin.guiClick(p);
-        if (!authorize(p, "edit")) {
-            return;
-        }
-        Bukkit.getScheduler().runTask(plugin, () -> openConfirm(p, s, code));
     }
 
-    /** TUTTE -> BAN -> WARN -> MUTE -> REGOLAMENTO -> TUTTE. */
+    /** TUTTE -> BAN -> WARN -> MUTE -> TUTTE (regolamento non e' un filtro: si vede solo in "tutte"). */
     private static Rules.Type nextFilter(Rules.Type t) {
         if (t == null) {
             return Rules.Type.BAN;
@@ -684,8 +621,7 @@ public final class RulesGui implements Listener {
         return switch (t) {
             case BAN -> Rules.Type.WARN;
             case WARN -> Rules.Type.MUTE;
-            case MUTE -> Rules.Type.REGOLAMENTO;
-            case REGOLAMENTO -> null;
+            case MUTE, REGOLAMENTO -> null;
         };
     }
 

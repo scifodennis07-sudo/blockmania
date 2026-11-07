@@ -83,7 +83,7 @@ public final class RuleDetailGui implements Listener {
     private static final int MSG_GAP = 3;
     private static final int BX0 = 58;          // bolle a sinistra
     private static final int BX1 = 155;         // bolle a destra: bordo destro = BX1 - 1
-    private static final int MAX_TEXT = 82;     // testo max; bolla = testo + 4 (margine) + 6 (bordi) = 92
+    private static final int MAX_TEXT = 84;     // testo max; bolla = testo + 4 (margine) + 6 (bordi) = 94 (interno chat 98)
     private static final int PAD = 2;           // margine interno extra per lato
     private static final int CHAT_L = 56;       // interno riquadro chat 56..154 (centro 105)
     private static final int CHAT_W = 98;
@@ -453,6 +453,10 @@ public final class RuleDetailGui implements Listener {
      * uno spazio stretto (2 px). Se non sta nella striscia si accorcia (senza "regola", poi senza tipo).
      */
     private void strip(GuiTitle g, Rules.Rule r) {
+        strip(g, r, IMG);
+    }
+
+    private void strip(GuiTitle g, Rules.Rule r, int ox) {
         String[] codeParts = r.code().split("\\.");
         String type = Rules.typeLabel(r.type()).toLowerCase(Locale.ROOT);
         List<String[]> variants = new ArrayList<>();
@@ -503,8 +507,8 @@ public final class RuleDetailGui implements Listener {
             off += gaps.get(i);
             String w = tokens.get(i);
             int wa = tinyAdvance(w);
-            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, shadow), font, wa);
-            g.at(st + off + IMG, "&f" + tinyLetters(w, base), font, wa);
+            g.at(st + off + 1 + ox, GuiTitle.shadowCode(plugin) + tinyLetters(w, shadow), font, wa);
+            g.at(st + off + ox, "&f" + tinyLetters(w, base), font, wa);
             off += wa;
         }
     }
@@ -523,6 +527,19 @@ public final class RuleDetailGui implements Listener {
         strip(g, r);
         UserProfilePowers.topTitle(plugin, g, r.title() == null || r.title().isBlank() ? "regola " + r.code() : r.title());
         return g.build();
+    }
+
+    /**
+     * Sfondo per i popup (da scurire con MinesGui.tint, come in UserProfilePowers.confirmOver): immagine,
+     * icona grande, testo della striscia e bolle della chat (scroll 0), tutto con avanzamento reale 186.
+     */
+    public void drawDimmedBackground(GuiTitle g, Rules.Rule r) {
+        drawBackground(g, r, 0);
+    }
+
+    private void drawBackground(GuiTitle g, Rules.Rule r, int scroll) {
+        scene(g, r, scroll, true);
+        strip(g, r, IMG + 7);
     }
 
     /** Chiave del titolo: se cambia serve un inventario nuovo. */
@@ -715,7 +732,7 @@ public final class RuleDetailGui implements Listener {
         if (r == null) {
             return;
         }
-        ui.confirmOver(p, "Elimina la regola " + code, c -> scene(c, r, scroll, true), () -> {
+        ui.confirmOver(p, "Elimina la regola " + code, c -> drawBackground(c, r, scroll), () -> {
             if (!authorize(p, "edit")) {
                 reopen(p, code, onBack, scroll).run();
                 return;

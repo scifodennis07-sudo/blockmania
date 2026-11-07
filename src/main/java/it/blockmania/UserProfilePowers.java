@@ -41,6 +41,19 @@ public final class UserProfilePowers implements Listener {
     // ---------- costanti configurabili (da PACK_USERPROFILE.md) ----------
     private static final int IMG = -22;
     private static final String FONT_UP = "minecraft:userprofile";
+    private static final String FONT_UP2 = "minecraft:userprofile2";
+
+    /** Disegna lo sfondo del consumer (colori pieni) scurito x0.6, come confirmOver. */
+    static void drawDimmed(BlockMania plugin, GuiTitle g, Consumer<GuiTitle> background) {
+        GuiTitle tmp = new GuiTitle(plugin);
+        background.accept(tmp);
+        g.atComponent(0, MinesGui.tint(tmp.build(), null), tmp.cursor());
+    }
+
+    /** Font per l'immagine: la tipologia (E114/E115) sta nel font userprofile2. */
+    private static String fontFor(String img) {
+        return img != null && (img.contains("\uE114") || img.contains("\uE115")) ? FONT_UP2 : FONT_UP;
+    }
     private static final String IMG_MAIN = "";
     private static final String IMG_GIVE_REMOVE_SET = "";    // userprofile-2
     private static final String IMG_REMOVE_SET_FULL = "";    // userprofile-3
@@ -99,6 +112,7 @@ public final class UserProfilePowers implements Listener {
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         String kind;                 // "cmds" oppure "confirm"
+        java.util.function.Consumer<GuiTitle> background;   // sfondo personalizzato (null = profilo)
         String image = IMG_EMPTY;    // immagine mostrata (serve da sfondo per la conferma)
         boolean dead;                // gia' gestita: la chiusura non va interpretata
         final Map<Integer, Runnable> actions = new HashMap<>();
@@ -147,7 +161,13 @@ public final class UserProfilePowers implements Listener {
     /** Popup comandi a 3 icone per pagina, con frecce che scorrono. */
     public void openCommands(Player staff, String label, List<String> cmds, Consumer<String> onPick, Runnable onBack,
                              boolean historyButton, Runnable onHistory) {
-        showCommands(staff, label, cmds == null ? List.of() : List.copyOf(cmds), 0, onPick, onBack, historyButton, onHistory);
+        openCommands(staff, label, cmds, onPick, onBack, historyButton, onHistory, null);
+    }
+
+    /** Come sopra, con sfondo personalizzato (gia' scurito) al posto del profilo scurito. */
+    public void openCommands(Player staff, String label, List<String> cmds, Consumer<String> onPick, Runnable onBack,
+                             boolean historyButton, Runnable onHistory, Consumer<GuiTitle> background) {
+        showCommands(staff, label, cmds == null ? List.of() : List.copyOf(cmds), 0, onPick, onBack, historyButton, onHistory, background);
     }
 
     /** Anvil numerico: accetta solo numeri tra min e max, altrimenti avvisa e riapre. */
@@ -235,19 +255,26 @@ public final class UserProfilePowers implements Listener {
      */
     public void confirm(Player staff, String text, Runnable onYes, Runnable onNo) {
         String cur = "";
+        Consumer<GuiTitle> bg0 = null;
         boolean cmds = false;
         if (staff.getOpenInventory().getTopInventory().getHolder() instanceof Holder h0
                 && "cmds".equals(h0.kind) && h0.image != null) {
             cur = h0.image;
+            bg0 = h0.background;
             cmds = true;
         }
         final String img = cur;
         final boolean overCmds = cmds;
+        final Consumer<GuiTitle> bg = bg0;
         confirmOver(staff, text, c -> {
             // advance reale (186) per tutte le immagini: il cursore lo sistema confirmOver
-            c.at(-15, (overCmds ? DIM : "&f") + IMG_MAIN, FONT_UP, 186);
+            if (overCmds && bg != null) {
+                bg.accept(c);
+            } else {
+                c.at(-15, (overCmds ? DIM : "&f") + IMG_MAIN, FONT_UP, 186);
+            }
             if (overCmds && !img.isEmpty()) {
-                c.at(-15, "&f" + img, FONT_UP, 186);
+                c.at(-15, "&f" + img, fontFor(img), 186);
             }
         }, onYes, onNo);
     }
@@ -408,7 +435,7 @@ public final class UserProfilePowers implements Listener {
     }
 
     private void showCommands(Player p, String label, List<String> cmds, int page, Consumer<String> onPick, Runnable onBack,
-                              boolean historyButton, Runnable onHistory) {
+                              boolean historyButton, Runnable onHistory, Consumer<GuiTitle> background) {
         int pages = Math.max(1, cmds.size() - 2);
         page = Math.max(0, Math.min(pages - 1, page));
         List<String> trio = cmds.subList(page, Math.min(cmds.size(), page + 3));
@@ -420,9 +447,14 @@ public final class UserProfilePowers implements Listener {
         Holder h = new Holder();
         h.kind = "cmds";
         h.image = img;
+        h.background = background;
         GuiTitle g = new GuiTitle(plugin);
-        g.at(-15, DIM + IMG_MAIN, FONT_UP, 186);
-        g.at(-15, "&f" + img, FONT_UP, 179);
+        if (background != null) {
+            drawDimmed(plugin, g, background);
+        } else {
+            g.at(-15, DIM + IMG_MAIN, FONT_UP, 186);
+        }
+        g.at(-15, "&f" + img, fontFor(img), 179);
         tinyBar(g, label == null ? "" : label);
         navText(g, page + 1, pages);
         topTitle(plugin, g, label == null ? "" : label);
@@ -437,12 +469,17 @@ public final class UserProfilePowers implements Listener {
             for (int s : SLOTS_BLUE) {
                 put(h, s, pane("&9cronologia", List.of("&7Mostra lo storico.")), () -> later(onHistory));
             }
+        } else {
+            for (int s : SLOTS_BLUE) {
+                put(h, s, pane("&einformazioni", List.of()), () -> GuiMsg.send(plugin, p,
+                        "&e" + (label == null ? "" : label) + ": scegli con le icone, frecce per cambiare pagina, X per tornare"));
+            }
         }
         if (pages > 1) {
             put(h, SLOT_PREV, pane("&7pagina precedente", List.of()),
-                    () -> showCommands(p, label, cmds, pg - 1, onPick, onBack, historyButton, onHistory));
+                    () -> showCommands(p, label, cmds, pg - 1, onPick, onBack, historyButton, onHistory, background));
             put(h, SLOT_NEXT, pane("&7pagina successiva", List.of()),
-                    () -> showCommands(p, label, cmds, pg + 1, onPick, onBack, historyButton, onHistory));
+                    () -> showCommands(p, label, cmds, pg + 1, onPick, onBack, historyButton, onHistory, background));
         }
         for (int i = 0; i < trio.size() && i < 3; i++) {
             String cmd = trio.get(i);

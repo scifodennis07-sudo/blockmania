@@ -46,6 +46,7 @@ public final class RulePopups implements Listener {
     private static final int PER_PAGE = 21;
     private static final int SLOT_X = 1;
     private static final int SLOT_X2 = 2;
+    private static final int[] INFO_SLOTS = {6, 7};
     private static final int SLOT_PREV = 38;
     private static final int SLOT_NEXT = 42;
 
@@ -70,6 +71,7 @@ public final class RulePopups implements Listener {
         boolean refreshQueued;
         int page;
         Runnable onBack;
+        java.util.function.Consumer<GuiTitle> background;
         Holder holder;
     }
 
@@ -96,16 +98,24 @@ public final class RulePopups implements Listener {
 
     /** Lista a griglia 7x3 con il titolo nella barra; X torna (onBack) o chiude. */
     public void openList(Player staff, String title, List<ItemStack> entries, Runnable onBack) {
-        openList(staff, title, entries, null, onBack, 0);
+        openList(staff, title, entries, null, onBack, 0, null);
     }
 
     /** Come sopra, ma con una faccia 2D (nel titolo) per voce: faces.get(i) puo' essere null (sagoma grigia). */
     public void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack) {
-        openList(staff, title, entries, faces, onBack, 0);
+        openList(staff, title, entries, faces, onBack, 0, null);
     }
 
-    private void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack, int page) {
+    /** Come sopra, con sfondo personalizzato (gia' scurito) al posto del profilo. */
+    public void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack,
+                         java.util.function.Consumer<GuiTitle> background) {
+        openList(staff, title, entries, faces, onBack, 0, background);
+    }
+
+    private void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack, int page,
+                          java.util.function.Consumer<GuiTitle> background) {
         Session s = new Session();
+        s.background = background;
         s.staff = staff;
         s.title = title == null ? "" : title;
         s.entries = entries == null ? new ArrayList<>() : entries;
@@ -164,7 +174,7 @@ public final class RulePopups implements Listener {
                 return;
             }
             // il titolo non si cambia a inventario aperto: si riapre (switching evita di far scattare onClose)
-            openList(p, s.title, s.entries, s.faces, s.onBack, s.page);
+            openList(p, s.title, s.entries, s.faces, s.onBack, s.page, s.background);
         }, 5L);
     }
 
@@ -202,7 +212,8 @@ public final class RulePopups implements Listener {
                 faces.add(resolve(c.by(), c.byName()));
             }
         }
-        openList(staff, "cronologia " + r.code(), list, faces, onBack);
+        openList(staff, "cronologia " + r.code(), list, faces, onBack,
+                g -> plugin.getRuleDetailGui().drawDimmedBackground(g, r));
     }
 
     /** Player sanzionati con questa regola, dal piu' recente. */
@@ -221,7 +232,8 @@ public final class RulePopups implements Listener {
                 faces.add(resolve(h.target(), h.targetName()));
             }
         }
-        openList(staff, "sanzionati " + r.code(), list, faces, onBack);
+        openList(staff, "sanzionati " + r.code(), list, faces, onBack,
+                g -> plugin.getRuleDetailGui().drawDimmedBackground(g, r));
     }
 
     /** UUID noto, altrimenti dal nome solo se in cache (nessun lookup di rete sul main thread); null se sconosciuto. */
@@ -301,7 +313,7 @@ public final class RulePopups implements Listener {
                 case "type" -> askType(staff, cur, onBack, onDone);
                 default -> onBack.run();
             }
-        }, onBack, false, null);
+        }, onBack, false, null, g -> plugin.getRuleDetailGui().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
     }
 
     private interface Edit {
@@ -346,7 +358,7 @@ public final class RulePopups implements Listener {
             } else {
                 applyType(staff, code, t, 0, onDone);
             }
-        }, onBack, false, null);
+        }, onBack, false, null, g -> plugin.getRuleDetailGui().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
     }
 
     private void askMinutes(Player staff, String code, Rules.Type t, Runnable onBack, Runnable onDone) {
@@ -388,6 +400,9 @@ public final class RulePopups implements Listener {
 
     private net.kyori.adventure.text.Component titleOf(Session s, int pages) {
         GuiTitle g = new GuiTitle(plugin);
+        if (s.background != null) {
+            UserProfilePowers.drawDimmed(plugin, g, s.background);
+        }
         g.at(-15, "&f" + DEF_IMAGE, DEF_IMAGE_FONT, DEF_ADV);
         drawFaces(g, s);
         navText(g, s.page + 1, pages);
@@ -434,6 +449,9 @@ public final class RulePopups implements Listener {
         inv.setItem(SLOT_X2, pane(back, List.of()));
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
+        for (int b : INFO_SLOTS) {
+            inv.setItem(b, pane("&einformazioni", List.of()));
+        }
         if (s.entries.isEmpty()) {
             inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
             return;
@@ -528,13 +546,20 @@ public final class RulePopups implements Listener {
             }
             return;
         }
+        if (slot == INFO_SLOTS[0] || slot == INFO_SLOTS[1]) {
+            plugin.guiClick(p);
+            int pg = pageCount(s.entries.size());
+            GuiMsg.send(plugin, p, "&e" + s.title + ": " + s.entries.size() + " voci, pagina " + (s.page + 1) + "/" + pg
+                    + ", frecce per scorrere, X per tornare");
+            return;
+        }
         if (slot == SLOT_PREV || slot == SLOT_NEXT) {
             plugin.guiClick(p);
             int pages = pageCount(s.entries.size());
             int np = Math.max(0, Math.min(s.page + (slot == SLOT_NEXT ? 1 : -1), pages - 1));
             if (np != s.page) {
                 // il numero pagina e' nel titolo: serve un inventario nuovo
-                Bukkit.getScheduler().runTask(plugin, () -> openList(p, s.title, s.entries, s.faces, s.onBack, np));
+                Bukkit.getScheduler().runTask(plugin, () -> openList(p, s.title, s.entries, s.faces, s.onBack, np, s.background));
             }
         }
     }
