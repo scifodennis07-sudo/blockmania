@@ -329,7 +329,10 @@ public final class RulePopups implements Listener {
                 Bukkit.getScheduler().runTask(plugin, () -> askField(staff, r, title, bar, initial, onBack, onDone, edit));
                 return;
             }
-            ui.confirm(staff, "Salvare: " + (v.length() > 40 ? v.substring(0, 40) + "..." : v) + "?", () -> {
+            Rules.Rule bgRule = rules.get(r.code()) != null ? rules.get(r.code()) : r;
+            Runnable backToMenu = () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, bgRule, onBack, onDone));
+            ui.confirmOver(staff, "Salvare: " + (v.length() > 40 ? v.substring(0, 40) + "..." : v) + "?",
+                    g -> plugin.getRuleDetailGui().drawDimmedBackground(g, bgRule), () -> {
                 String err = edit.apply(v);
                 if (err != null) {
                     GuiMsg.send(plugin, staff, "&c" + err);
@@ -339,8 +342,8 @@ public final class RulePopups implements Listener {
                 if (onDone != null) {
                     onDone.run();
                 }
-            }, () -> Bukkit.getScheduler().runTask(plugin, onBack));
-        }, () -> Bukkit.getScheduler().runTask(plugin, onBack));
+            }, backToMenu);
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(r.code()) != null ? rules.get(r.code()) : r, onBack, onDone)));
     }
 
     private void askType(Player staff, Rules.Rule r, Runnable onBack, Runnable onDone) {
@@ -358,7 +361,8 @@ public final class RulePopups implements Listener {
             } else {
                 applyType(staff, code, t, 0, onDone);
             }
-        }, onBack, false, null, g -> plugin.getRuleDetailGui().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(code) != null ? rules.get(code) : r, onBack, onDone)),
+                false, null, g -> plugin.getRuleDetailGui().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
     }
 
     private void askMinutes(Player staff, String code, Rules.Type t, Runnable onBack, Runnable onDone) {
@@ -371,7 +375,14 @@ public final class RulePopups implements Listener {
                 return;
             }
             applyType(staff, code, t, Rules.parseTime(t, in), onDone);
-        }, () -> Bukkit.getScheduler().runTask(plugin, onBack));
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> {
+            Rules.Rule cur = rules.get(code);
+            if (cur == null) {
+                onBack.run();
+            } else {
+                askType(staff, cur, onBack, onDone);
+            }
+        }));
     }
 
     private void applyType(Player staff, String code, Rules.Type t, long durationMs, Runnable onDone) {
@@ -403,7 +414,8 @@ public final class RulePopups implements Listener {
         if (s.background != null) {
             UserProfilePowers.drawDimmed(plugin, g, s.background);
         }
-        g.at(-15, "&f" + DEF_IMAGE, DEF_IMAGE_FONT, DEF_ADV);
+        // base lista solo-pannello userprofile-23 (U+E116, font userprofile2): lo sfondo custom resta visibile
+        g.at(-15, "&f", "minecraft:userprofile2", DEF_ADV);
         drawFaces(g, s);
         navText(g, s.page + 1, pages);
         UserProfilePowers.topTitle(plugin, g, s.title);

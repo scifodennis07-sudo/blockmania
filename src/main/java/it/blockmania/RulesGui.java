@@ -528,7 +528,7 @@ public final class RulesGui implements Listener {
                 return;
             }
             finishCreate(p, code, title, text, t, Rules.parseTime(t, v));
-        }, () -> reopen(p, currentFilter));
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, code, title, text)));
     }
 
     private void finishCreate(Player p, String code, String title, String text, Rules.Type t, long durationMs) {

@@ -52,7 +52,7 @@ public final class UserProfilePowers implements Listener {
 
     /** Font per l'immagine: la tipologia (E114/E115) sta nel font userprofile2. */
     private static String fontFor(String img) {
-        return img != null && (img.contains("\uE114") || img.contains("\uE115")) ? FONT_UP2 : FONT_UP;
+        return img != null && (img.contains("\uE114") || img.contains("\uE115") || img.contains("\uE116")) ? FONT_UP2 : FONT_UP;
     }
     private static final String IMG_MAIN = "";
     private static final String IMG_GIVE_REMOVE_SET = "";    // userprofile-2
