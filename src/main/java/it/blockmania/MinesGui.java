@@ -480,6 +480,8 @@ public final class MinesGui implements Listener {
         }
         ammo.setBlockCoin(player, have - price);
         ammo.setMine(player, mine);
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.MINE,
+                "Ha comprato la miniera " + mine + " (" + price + " blockcoin)");
         plugin.playConfiguredSound(player.getLocation(), "mines-gui.sounds.buy");
         plugin.send(player, "mine-bought", "%mine%", String.valueOf(mine), "%price%", String.valueOf(price));
         ammo.refreshMain(player);

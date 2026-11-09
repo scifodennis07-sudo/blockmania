@@ -62,10 +62,13 @@ public final class BlockMania extends JavaPlugin {
     private RulesGui rulesGui;
     private RulePopups rulePopups;
     private RuleDetailGui ruleDetailGui;
+    private StaffRoles staffRoles;
+    private RoleGui roleGui;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
     private MineTemplates mineTemplates;
+    private MovementLog movements;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
     private final Map<Character, int[]> palette = new HashMap<>();
@@ -96,6 +99,8 @@ public final class BlockMania extends JavaPlugin {
         ammo = new AmmoManager(this);
         blocks = new BlockManager(this);
         blocks.load();
+        movements = new MovementLog(this);
+        movements.load();
         ammo.start();
         upgrades = new UpgradeManager(this);
         shops = new ShopManager(this);
@@ -196,8 +201,14 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(rulesGui, this);
         rulePopups = new RulePopups(this, rules, profileUi);
         getServer().getPluginManager().registerEvents(rulePopups, this);
+        getProfileLists();   // crea ProfileLists (il costruttore registra il Listener)
         ruleDetailGui = new RuleDetailGui(this, rules, profileUi);
         getServer().getPluginManager().registerEvents(ruleDetailGui, this);
+        staffRoles = new StaffRoles(this);
+        staffRoles.load();
+        getServer().getPluginManager().registerEvents(staffRoles, this);
+        roleGui = new RoleGui(this);
+        getServer().getPluginManager().registerEvents(roleGui, this);
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
@@ -463,6 +474,9 @@ public final class BlockMania extends JavaPlugin {
             blocks.finishAllShakes();
             blocks.save();
         }
+        if (movements != null) {
+            movements.save();
+        }
     }
 
     /** Rilegge gli oggetti dal config.yml. */
@@ -607,6 +621,14 @@ public final class BlockMania extends JavaPlugin {
         return ruleDetailGui;
     }
 
+    public StaffRoles getStaffRoles() {
+        return staffRoles;
+    }
+
+    public RoleGui getRoleGui() {
+        return roleGui;
+    }
+
     public UserProfileGui getUserProfile() {
         return userProfile;
     }
@@ -633,6 +655,28 @@ public final class BlockMania extends JavaPlugin {
 
     public BlockManager getBlocks() {
         return blocks;
+    }
+
+    public MovementLog getMovements() {
+        return movements;
+    }
+
+    private PlayerReset playerReset;
+
+    public PlayerReset getPlayerReset() {
+        if (playerReset == null) {
+            playerReset = new PlayerReset(this);
+        }
+        return playerReset;
+    }
+
+    private ProfileLists profileLists;
+
+    public ProfileLists getProfileLists() {
+        if (profileLists == null) {
+            profileLists = new ProfileLists(this);
+        }
+        return profileLists;
     }
 
     /** Se l'oggetto e' un nostro lanciapalle ritorna la sua definizione, altrimenti null. */

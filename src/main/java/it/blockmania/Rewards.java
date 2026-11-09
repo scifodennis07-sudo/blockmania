@@ -449,6 +449,8 @@ public final class Rewards implements Listener {
         a.setCounter(player, "rw_dayclaim", (int) today());
         a.setCounter(player, "rw_days", daysClaimed(player) + 1);
         give(player, new Reward("coin", dailyCoins()));
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.REWARD,
+                "Ha ritirato la ricompensa giornaliera (" + dailyCoins() + " coin)");
         plugin.send(player, "daily-claimed", "%coin%", String.valueOf(dailyCoins()),
                 "%day%", String.valueOf(daysClaimed(player)));
         openDaily(player, holder.mainPage, false);
@@ -468,6 +470,8 @@ public final class Rewards implements Listener {
         saveClaims(player, type, bits);
         List<Reward> rw = rewardsOf(type, level);
         give(player, rw);
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.REWARD,
+                "Ha ritirato il livello " + level + " (" + italianType(type) + "): " + rewardNames(rw));
         plugin.send(player, "reward-claimed", "%level%", String.valueOf(level), "%reward%", rewardNames(rw));
         plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.claim");
         if (!type.equals("pass") && expPerClaim() > 0) {

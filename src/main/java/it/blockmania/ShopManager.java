@@ -391,6 +391,8 @@ public final class ShopManager implements Listener {
             plugin.getRewards().onSpend(player, price);
         }
         ammo.setAmmo(player, type, max);
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.SHOP,
+                "Ha comprato " + (max - current) + " " + type + " (" + price + " " + currency + ")");
         plugin.send(player, "ammo-bought",
                 "%amount%", String.valueOf(max - current),
                 "%price%", String.valueOf(price),

@@ -504,6 +504,7 @@ public final class MineTemplates implements Listener {
         capture(player, sel, mine, spawnOf(player, sel), () -> {
             Info info = info(mine);
             pasteArea(mine, 0, 0, 0);
+            plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.MINE, "Ha creato la miniera " + mine);
             Player p = Bukkit.getPlayer(player.getUniqueId());
             if (p != null) {
                 plugin.send(p, "mine-tpl-saved", "%mine%", String.valueOf(mine),
@@ -533,6 +534,7 @@ public final class MineTemplates implements Listener {
             } else {
                 pasteArea(mine, before.dx(), before.dy(), before.dz());
             }
+            plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.MINE, "Ha modificato la miniera " + mine);
             Player p = Bukkit.getPlayer(player.getUniqueId());
             if (p != null) {
                 plugin.send(p, "mine-tpl-changed", "%mine%", String.valueOf(mine),
@@ -552,6 +554,7 @@ public final class MineTemplates implements Listener {
             return;
         }
         Region region = regionOf(mine, old);
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.MINE, "Ha eliminato la miniera " + mine);
         // chi la stava modificando esce dalla modifica
         for (Map.Entry<UUID, Session> e : new ArrayList<>(sessions.entrySet())) {
             if (e.getValue().mine == mine) {
@@ -613,6 +616,43 @@ public final class MineTemplates implements Listener {
             enqueue(job);
         }
         plugin.send(player, "mine-tpl-deleted", "%mine%", String.valueOf(mine), "%count%", String.valueOf(copies));
+    }
+
+    /**
+     * Reset di un giocatore: le sue copie personali delle miniere spariscono (dal mondo e dai file) e il suo posto
+     * si libera da solo. Tocca solo i file {uuid}_{n}.dat di quel giocatore. Ritorna quante copie ha tolto.
+     */
+    public int resetPlayer(UUID id) {
+        int copies = 0;
+        World w = minesWorld;
+        forget(id);
+        for (Instance inst : new ArrayList<>(instances.values())) {
+            if (!inst.owner.equals(id)) {
+                continue;
+            }
+            copies++;
+            inst.deleted = true;
+            Player owner = Bukkit.getPlayer(id);
+            if (owner != null && occupied(inst)) {
+                kickOut(owner);
+            }
+            if (inst.loaded && !inst.unloadStarted && !inst.unloadQueued && w != null) {
+                queueUnload(inst, w, true);
+            } else if (!inst.loaded && !inst.loading) {
+                instanceFile(id, inst.mine).delete();
+                instances.remove(id + "_" + inst.mine);
+            }
+        }
+        File[] files = instancesDir.listFiles((d, name) -> name.startsWith(id + "_") && name.endsWith(".dat"));
+        if (files != null) {
+            for (File f : files) {
+                String key = f.getName().substring(0, f.getName().length() - 4);
+                if (!instances.containsKey(key) && f.delete()) {
+                    copies++;
+                }
+            }
+        }
+        return copies;
     }
 
     private void kickOut(Player p) {
@@ -1650,6 +1690,7 @@ public final class MineTemplates implements Listener {
             return;
         }
         player.teleport(back);
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.MINE, "E' uscito dalla miniera");
         plugin.send(player, "mine-left");
     }
 

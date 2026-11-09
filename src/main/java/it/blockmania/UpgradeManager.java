@@ -722,6 +722,8 @@ public final class UpgradeManager implements Listener {
             plugin.getRewards().onSpend(player, price);
         }
         setLevel(player, id, level + 1);
+        plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.UPGRADE,
+                "Ha comprato il potenziamento " + id + " al livello " + (level + 1) + " (" + price + ")");
         plugin.send(player, "upgrade-bought",
                 "%upgrade%", label, "%level%", String.valueOf(level + 1),
                 "%cost%", String.valueOf(price), "%currency%", plugin.tiny(currency()));

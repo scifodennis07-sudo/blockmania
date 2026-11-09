@@ -467,6 +467,8 @@ public final class Tickets implements Listener {
         t.rateDeadline = 0;
         stars.remove(p.getUniqueId());
         addMsg(t, p, false, "sys", "Valutazione del ticket: " + t.rating + " su 5 stelle", true);
+        plugin.getMovements().record(p.getUniqueId(), MovementLog.Type.TICKET,
+                "Ha valutato il ticket #" + t.id + " con " + t.rating + " stelle");
         save();
         ok(p, "grazie! hai valutato il ticket con " + t.rating + (t.rating == 1 ? " stella" : " stelle"));
     }
@@ -1694,6 +1696,7 @@ public final class Tickets implements Listener {
         tickets.put(t.id, t);
         addMsg(t, p, false, "sys", "Ticket aperto: " + CAT_LABEL[catIndex(cat)], false);
         addMsg(t, p, false, "msg", msg, false);
+        plugin.getMovements().record(p.getUniqueId(), MovementLog.Type.TICKET, "Ha creato il ticket #" + t.id);
         save();
         ok(p, "ticket #" + t.id + " aperto, lo staff ti rispondera appena possibile");
         Component alert = plugin.color("&6[ticket] &fnuovo ticket &e#" + t.id + " &7(" + CAT_SHORT[catIndex(cat)] + ") di &f" + p.getName() + " &7- clicca per aprirlo")
@@ -1782,6 +1785,8 @@ public final class Tickets implements Listener {
             t.autoClose = 0;
         }
         addMsg(t, p, staff, kind, msg, true);
+        plugin.getMovements().record(id, staff ? MovementLog.Type.STAFF : MovementLog.Type.TICKET,
+                (staff ? "Ha risposto al ticket #" : "Ha scritto nel ticket #") + t.id);
         return true;
     }
 
@@ -1825,6 +1830,10 @@ public final class Tickets implements Listener {
                 : "Ticket chiuso da " + name;
         Msg m = addMsg(t, by, false, "sys", text, false);
         m.name = name;
+        if (by != null) {
+            plugin.getMovements().record(by.getUniqueId(), by.getUniqueId().equals(t.owner) ? MovementLog.Type.TICKET : MovementLog.Type.STAFF,
+                    "Ha chiuso il ticket #" + t.id);
+        }
         save();
         Player owner = Bukkit.getPlayer(t.owner);
         if (owner != null) {

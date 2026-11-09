@@ -237,6 +237,17 @@ public final class PlayerCounters implements Listener {
             }
         }
         snapshot(pl);
+        if (plugin.getMovements() != null) {
+            String what = it.name().toLowerCase(Locale.ROOT);
+            String text = switch (cmd) {
+                case "give" -> "Ha ricevuto " + n + " " + what;
+                case "remove" -> "Gli sono stati tolti " + n + " " + what;
+                case "set" -> "Ha " + what + " impostato a " + n;
+                case "full" -> "Ha ricevuto " + what + " al massimo";
+                default -> "Ha azzerato " + what;
+            };
+            plugin.getMovements().record(p, MovementLog.Type.ITEMS, text);
+        }
         return null;
     }
 
@@ -269,6 +280,16 @@ public final class PlayerCounters implements Listener {
         if (power) {
             NamespacedKey k = key(SHOTS_POWER);
             pdc.set(k, PersistentDataType.LONG, pdc.getOrDefault(k, PersistentDataType.LONG, 0L) + 1);
+        }
+    }
+
+    /** Reset: dimentica lo snapshot del giocatore (si riscrive da solo al prossimo quit). */
+    public void forget(UUID p) {
+        snap.set(p.toString(), null);
+        try {
+            snap.save(file);
+        } catch (IOException e) {
+            plugin.getLogger().warning("counters.yml: " + e.getMessage());
         }
     }
 

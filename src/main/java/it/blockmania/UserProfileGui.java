@@ -53,6 +53,23 @@ public final class UserProfileGui implements Listener {
     private static final String IMG_MAIN = "";
     private static final int SIZE = 54;
 
+    // pagine 2/3 (font userprofile3: E117 = pagina 2, E118 = pagina 3)
+    private static final String FONT3 = "minecraft:userprofile3";
+    private static final String IMG_PAGE2 = "\uE117";
+    private static final String IMG_PAGE3 = "\uE118";
+    private static final int PAGES = 3;
+    private static final int IMG_ADV = 179;    // avanzamento dichiarato nel titolo normale
+    private static final int IMG_REAL = 186;   // avanzamento reale (sfondi di confirmOver / popup): le x vanno spostate di 7
+
+    /** Frecce della testata (riga 0): pagina precedente / successiva. */
+    private static final int[] S_PREV = {2};
+    private static final int[] S_NEXT = {6};
+    /** Bottoni 2x2 delle pagine 2/3: sinistra alto, sinistra basso, destra alto, destra basso. */
+    private static final int[] S_BTN_LT = {36, 37, 38, 39};
+    private static final int[] S_BTN_LB = {45, 46, 47, 48};
+    private static final int[] S_BTN_RT = {41, 42, 43, 44};
+    private static final int[] S_BTN_RB = {50, 51, 52, 53};
+
     /** Pixel 1x1 (+ spazio negativo) e 2x2 dei font tk<y> (come Tickets.drawFace / drawStars). */
     private static final String PX1 = "";
     private static final String PX2 = "";
@@ -133,11 +150,13 @@ public final class UserProfileGui implements Listener {
     public static final class Holder implements InventoryHolder {
         private Inventory inventory;
         private final UUID target;
+        private final int page;
         private String sig = "";
         private final Map<Integer, String> actions = new HashMap<>();
 
-        Holder(UUID target) {
+        Holder(UUID target, int page) {
             this.target = target;
+            this.page = page;
         }
 
         @Override
@@ -148,6 +167,8 @@ public final class UserProfileGui implements Listener {
 
     private final BlockMania plugin;
     private final Map<UUID, int[]> faces = new HashMap<>();
+    /** Ultima pagina aperta da ogni staffer: back() ci riporta li'. */
+    private final Map<UUID, Integer> lastPage = new HashMap<>();
     private final Set<UUID> faceAsked = new HashSet<>();
     private BukkitTask task;
 
@@ -206,11 +227,26 @@ public final class UserProfileGui implements Listener {
 
     /** Apre il profilo di target allo staffer (anche se target e' offline). */
     public void open(Player staff, UUID target) {
+        open(staff, target, 0);
+    }
+
+    /** Apre la pagina indicata (0 = principale, 1 = pagina 2, 2 = pagina 3). */
+    public void open(Player staff, UUID target, int page) {
         if (!authorize(staff, target, "profile", "see", 0)) {
             return;
         }
+        int pg = Math.max(0, Math.min(PAGES - 1, page));
+        lastPage.put(staff.getUniqueId(), pg);
         ensureFace(target);
-        openHolder(staff, build(staff, target));
+        openHolder(staff, build(staff, target, pg));
+    }
+
+    /**
+     * Sfondo del profilo per i popup (da scurire come in UserProfilePowers.confirmOver / RuleDetailGui.drawDimmedBackground):
+     * immagine della pagina, testa e barre sanzioni (e stamina in pagina 0), tutto con avanzamento reale 186. Non scurisce.
+     */
+    public void drawDimmedBackground(GuiTitle g, UUID target, int page) {
+        scene(g, target, snap(target), Math.max(0, Math.min(PAGES - 1, page)), true);
     }
 
     /** Aggiorna le GUI aperte su questo target (sanzione cambiata o scaduta). */
@@ -353,6 +389,10 @@ public final class UserProfileGui implements Listener {
 
     /** Faccia 8x8: scala 1, 2 o 4 (la 4 usa quadrati 2x2 su due righe). y = parte alta in pixel dell'immagine. */
     private static void drawFace(GuiTitle g, int[] face, int x, int y, int scale) {
+        drawFace(g, face, x, y, scale, IMG);
+    }
+
+    private static void drawFace(GuiTitle g, int[] face, int x, int y, int scale, int ox) {
         int sub = Math.max(1, scale / 2);
         for (int j = 0; j < 8; j++) {
             for (int s = 0; s < sub; s++) {
@@ -365,7 +405,7 @@ public final class UserProfileGui implements Listener {
                         n++;
                     }
                     String px = scale == 1 ? PX1.repeat(n) : PX2.repeat(n * scale / 2);
-                    g.atComponent(x + i * scale + IMG, glyph(px, tk(yy), c & 0xFFFFFF), n * scale);
+                    g.atComponent(x + i * scale + ox, glyph(px, tk(yy), c & 0xFFFFFF), n * scale);
                     i += n;
                 }
             }
@@ -373,17 +413,17 @@ public final class UserProfileGui implements Listener {
     }
 
     /** Tacche piene di una barra (le vuote sono gia' nell'immagine): riga alta piu' chiara, bassa piu' scura. */
-    private void drawBar(GuiTitle g, int x0, int step, int w, int y, int count, int rgb) {
+    private void drawBar(GuiTitle g, int x0, int step, int w, int y, int count, int rgb, int ox) {
         for (int row = 0; row < TACCA_H; row++) {
             int c = row == 0 ? shade(rgb, 1.35) : row == TACCA_H - 1 ? shade(rgb, 0.75) : rgb;
             for (int k = 0; k < count; k++) {
-                g.atComponent(x0 + k * step + IMG, glyph(PX1.repeat(w), tk(y + row), c), w);
+                g.atComponent(x0 + k * step + ox, glyph(PX1.repeat(w), tk(y + row), c), w);
             }
         }
     }
 
     /** Barra stamina: contorno scuro, sfondo grigio e riempimento giallo proporzionale (riga alta chiara, bassa scura). */
-    private void drawStamina(GuiTitle g, int percent) {
+    private void drawStamina(GuiTitle g, int percent, int ox) {
         int inX = STA_X + 1;
         int inW = STA_W - 2;
         int inH = STA_H - 2;
@@ -391,30 +431,42 @@ public final class UserProfileGui implements Listener {
         for (int row = 0; row < STA_H; row++) {
             int y = STA_Y + row;
             if (row == 0 || row == STA_H - 1) {
-                g.atComponent(STA_X + IMG, glyph(PX1.repeat(STA_W), tk(y), C_STA_EDGE), STA_W);
+                g.atComponent(STA_X + ox, glyph(PX1.repeat(STA_W), tk(y), C_STA_EDGE), STA_W);
                 continue;
             }
-            g.atComponent(STA_X + IMG, glyph(PX1, tk(y), C_STA_EDGE), 1);
+            g.atComponent(STA_X + ox, glyph(PX1, tk(y), C_STA_EDGE), 1);
             int r = row - 1;
             int fc = r == 0 ? shade(C_STA_FILL, 1.35) : r == inH - 1 ? shade(C_STA_FILL, 0.75) : C_STA_FILL;
             if (filled > 0) {
-                g.atComponent(inX + IMG, glyph(PX1.repeat(filled), tk(y), fc), filled);
+                g.atComponent(inX + ox, glyph(PX1.repeat(filled), tk(y), fc), filled);
             }
             if (inW - filled > 0) {
-                g.atComponent(inX + filled + IMG, glyph(PX1.repeat(inW - filled), tk(y), C_STA_EMPTY), inW - filled);
+                g.atComponent(inX + filled + ox, glyph(PX1.repeat(inW - filled), tk(y), C_STA_EMPTY), inW - filled);
             }
-            g.atComponent(inX + inW + IMG, glyph(PX1, tk(y), C_STA_EDGE), 1);
+            g.atComponent(inX + inW + ox, glyph(PX1, tk(y), C_STA_EDGE), 1);
         }
     }
 
-    private Component title(UUID target, Snap s) {
+    private static String imageOf(int page) {
+        return page == 1 ? IMG_PAGE2 : page == 2 ? IMG_PAGE3 : IMG_MAIN;
+    }
+
+    /** Disegno comune (immagine, testa, barre, stamina in pagina 0). real = avanzamento 186 per gli sfondi dei popup. */
+    private void scene(GuiTitle g, UUID target, Snap s, int page, boolean real) {
+        final int ox = IMG + (real ? IMG_REAL - IMG_ADV : 0);
+        g.at(-15, "&f" + imageOf(page), page == 0 ? FONT : FONT3, real ? IMG_REAL : IMG_ADV);
+        drawFace(g, faceOf(target), FACE_X, FACE_Y, FACE_SCALE, ox);
+        drawBar(g, MUTE_X, MUTE_STEP, MUTE_W, MUTE_Y, notches(s.mute(), MUTE_N), C_RED, ox);
+        drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()), ox);
+        drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED, ox);
+        if (page == 0) {
+            drawStamina(g, staminaPercent(target), ox);
+        }
+    }
+
+    private Component title(UUID target, Snap s, int page) {
         GuiTitle g = new GuiTitle(plugin);
-        g.at(-15, "&f" + IMG_MAIN, FONT, 179);
-        drawFace(g, faceOf(target), FACE_X, FACE_Y, FACE_SCALE);
-        drawBar(g, MUTE_X, MUTE_STEP, MUTE_W, MUTE_Y, notches(s.mute(), MUTE_N), C_RED);
-        drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()));
-        drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED);
-        drawStamina(g, staminaPercent(target));
+        scene(g, target, s, page, false);
         UserProfilePowers.topTitle(plugin, g, "profilo " + UserProfilePowers.nameOf(target));
         return g.build();
     }
@@ -538,11 +590,11 @@ public final class UserProfileGui implements Listener {
     //  Costruzione e aggiornamento
     // ------------------------------------------------------------------
 
-    private Holder build(Player staff, UUID target) {
+    private Holder build(Player staff, UUID target, int page) {
         Snap s = snap(target);
-        Holder h = new Holder(target);
+        Holder h = new Holder(target, page);
         h.sig = sig(target, s);
-        h.inventory = Bukkit.createInventory(h, SIZE, title(target, s));
+        h.inventory = Bukkit.createInventory(h, SIZE, title(target, s, page));
         fill(h, target, s);
         return h;
     }
@@ -556,7 +608,7 @@ public final class UserProfileGui implements Listener {
         Snap s = snap(h.target);
         String sg = sig(h.target, s);
         if (!sg.equals(h.sig)) {
-            openHolder(p, build(p, h.target));
+            openHolder(p, build(p, h.target, h.page));
         } else {
             fill(h, h.target, s);   // solo lore: si aggiorna al volo senza richiudere
         }
@@ -581,6 +633,10 @@ public final class UserProfileGui implements Listener {
     }
 
     private void fill(Holder h, UUID target, Snap s) {
+        if (h.page > 0) {
+            fillPage(h, target, s);
+            return;
+        }
         boolean online = Bukkit.getPlayer(target) != null;
         PlayerCounters pc = plugin.getCounters();
 
@@ -610,6 +666,7 @@ public final class UserProfileGui implements Listener {
 
         // stamina: click = comandi (set, refill, infinite, empty, normal)
         setAll(h, S_STAMINA, staminaItem(target), "stamina");
+        fillArrows(h);
 
         // miniere, potenziamenti, ricompense, exp: aprono le GUI originali sul player (devono essere online)
         String off = online ? "" : "&cIl giocatore deve essere online.";
@@ -627,6 +684,44 @@ public final class UserProfileGui implements Listener {
             expLore.add(off);
         }
         setAll(h, S_RW_B, pane("&5exp", expLore), "exp");
+    }
+
+    /** Frecce della testata: non cicliche (a sinistra della prima e a destra dell'ultima pagina non fanno nulla). */
+    private void fillArrows(Holder h) {
+        boolean hasPrev = h.page > 0;
+        boolean hasNext = h.page < PAGES - 1;
+        setAll(h, S_PREV, pane(hasPrev ? "&epagina precedente" : "&8pagina precedente", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+                hasPrev ? "pg:prev" : null);
+        setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+                hasNext ? "pg:next" : null);
+    }
+
+    /** Pagine 2 e 3: stessa testata (testa, barre, X, info) + 4 bottoni 2x2 al posto di stamina e oggetti. */
+    private void fillPage(Holder h, UUID target, Snap s) {
+        boolean online = Bukkit.getPlayer(target) != null;
+        setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
+        setAll(h, S_INFO, pane("&6informazioni", List.of(
+                "&7Profilo del giocatore: pagina &f" + (h.page + 1) + "&8/&f" + PAGES + "&7.", "",
+                "&fFrecce in alto: &7cambiano pagina.",
+                "&fMUTE / WARN / BAN: &7click sinistro = comandi,",
+                "&7click destro = cronologia.")), null);
+        setAll(h, S_HEAD, headItem(target, online), "head");
+        long now = System.currentTimeMillis();
+        setAll(h, S_MUTE, timedItem("mute", s.mute(), now, false, ""), "sanc:MUTE");
+        setAll(h, S_BAN, timedItem("ban", s.ban(), now, s.banFromWarns(), ""), "sanc:BAN");
+        setAll(h, S_WARN, warnItem(s), "sanc:WARN");
+        fillArrows(h);
+        if (h.page == 1) {
+            setAll(h, S_BTN_LT, pane("&bresetta player", List.of("&7Azzera tutto tranne le sanzioni", "&7(miniere, ricompense, potenziamenti,", "&7contatori, stamina, exp...).", "", "&eclick: resetta (con conferma)")), "reset_player");
+            setAll(h, S_BTN_LB, pane("&eresetta sanzioni", List.of("&7Azzera mute, ban, warn e la", "&7cronologia sanzioni del giocatore.", "", "&eclick: resetta (con conferma)")), "reset_sanc");
+            setAll(h, S_BTN_RT, pane("&9cronologia movimenti", List.of("&7Miniere, negozi, ticket, ricompense,", "&7potenziamenti, sanzioni, staff...", "", "&eclick: apre la cronologia")), "hist_moves");
+            setAll(h, S_BTN_RB, pane("&6cronologia sanzioni", List.of("&7Warn, mute e ban del giocatore.", "", "&eclick: apre la cronologia")), "hist_sanc");
+        } else {
+            setAll(h, S_BTN_LT, pane("&6cronologia acquisti", List.of("&7Acquisti del giocatore.", "", "&eclick: apre la cronologia")), "hist_buys");
+            setAll(h, S_BTN_LB, pane("&bcambia ruolo", List.of("&7Cambia il ruolo del giocatore.", "", "&8non ancora disponibile")), "chg_role");
+            setAll(h, S_BTN_RT, pane("&dpexa staff", List.of("&7Assegna il grado staff al giocatore.", "", "&eclick: apre la selezione del ruolo")), "pexa");
+            setAll(h, S_BTN_RB, pane("&6aggiungi vip", List.of("&7Aggiunge il giocatore ai VIP.", "", "&8non ancora disponibile")), "vip");
+        }
     }
 
     private static List<String> linesOf(String a, String b) {
@@ -885,15 +980,23 @@ public final class UserProfileGui implements Listener {
         final boolean right = event.isRightClick();
         final UUID target = h.target;
         // tutto al tick dopo: aprire o chiudere inventari dentro l'evento click lascia la gui in stato incerto
-        Bukkit.getScheduler().runTask(plugin, () -> handle(p, target, action, right));
+        final int page = h.page;
+        Bukkit.getScheduler().runTask(plugin, () -> handle(p, target, action, right, page));
     }
 
-    private void handle(Player p, UUID target, String action, boolean right) {
+    private void handle(Player p, UUID target, String action, boolean right, int page) {
         if (!p.isOnline()) {
             return;
         }
         if (action.equals("close")) {
             p.closeInventory();
+        } else if (action.equals("pg:prev")) {
+            open(p, target, Math.max(0, page - 1));
+        } else if (action.equals("pg:next")) {
+            open(p, target, Math.min(PAGES - 1, page + 1));
+        } else if (action.startsWith("reset_") || action.startsWith("hist_")
+                || action.equals("chg_role") || action.equals("pexa") || action.equals("vip")) {
+            pageAction(p, target, action, page);
         } else if (action.equals("head")) {
             if (right && isStaff(target)) {
                 GuiMsg.send(plugin, p, "&7staffprofile non ancora disponibile.");
@@ -937,9 +1040,81 @@ public final class UserProfileGui implements Listener {
     private void back(Player p, UUID target) {
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (p.isOnline()) {
-                open(p, target);
+                open(p, target, lastPage.getOrDefault(p.getUniqueId(), 0));
             }
         });
+    }
+
+    // ------------------------------------------------------------------
+    //  Azioni delle pagine 2/3
+    // ------------------------------------------------------------------
+
+    private void pageAction(Player p, UUID target, String action, int page) {
+        Runnable again = () -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (p.isOnline()) {
+                open(p, target, page);
+            }
+        });
+        java.util.function.Consumer<GuiTitle> bg = g -> drawDimmedBackground(g, target, page);
+        switch (action) {
+            case "reset_player" -> {
+                if (!authorize(p, target, "profile", "reset", 0)) {
+                    return;
+                }
+                plugin.getProfileUi().confirmOver(p, "Resettare il player " + nameOf(target) + "?", bg, () -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!p.isOnline()) {
+                        return;
+                    }
+                    if (!authorize(p, target, "profile", "reset", 0)) {
+                        again.run();
+                        return;
+                    }
+                    String summary = plugin.getPlayerReset().resetPlayer(target, p);
+                    plugin.getMovements().record(target, MovementLog.Type.STAFF, "Reset del player da " + p.getName());
+                    audit(p, "profile.reset player " + nameOf(target));
+                    GuiMsg.send(plugin, p, "&aplayer " + nameOf(target) + " resettato" + (summary == null || summary.isBlank() ? "" : ": &7" + summary));
+                    plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+                    again.run();
+                }), again);
+            }
+            case "reset_sanc" -> {
+                if (!authorize(p, target, "sanctions", "undo", 0)) {
+                    return;
+                }
+                plugin.getProfileUi().confirmOver(p, "Resettare le sanzioni di " + nameOf(target) + "?", bg, () -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!p.isOnline()) {
+                        return;
+                    }
+                    if (!authorize(p, target, "sanctions", "undo", 0)) {
+                        again.run();
+                        return;
+                    }
+                    plugin.getSanctions().resetAll(target);
+                    plugin.getMovements().record(target, MovementLog.Type.STAFF, "Reset delle sanzioni da " + p.getName());
+                    audit(p, "sanctions.undo resetall " + nameOf(target));
+                    GuiMsg.send(plugin, p, "&asanzioni di " + nameOf(target) + " resettate");
+                    plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+                    again.run();
+                }), again);
+            }
+            case "hist_moves" -> {
+                if (authorize(p, target, "profile", "see", 0)) {
+                    plugin.getProfileLists().openMovements(p, target, bg, again);
+                }
+            }
+            case "hist_sanc" -> {
+                if (authorize(p, target, "sanctions", "see", 0)) {
+                    plugin.getProfileLists().openSanctions(p, target, bg, again);
+                }
+            }
+            case "hist_buys" -> {
+                if (authorize(p, target, "profile", "see", 0)) {
+                    plugin.getProfileLists().openPurchases(p, target, bg, again);
+                }
+            }
+            case "pexa" -> plugin.getRoleGui().open(p, target, bg, again);
+            default -> GuiMsg.send(plugin, p, "&7non ancora disponibile.");   // chg_role, vip
+        }
     }
 
     // ------------------------------------------------------------------

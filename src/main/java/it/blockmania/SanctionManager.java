@@ -527,6 +527,21 @@ public final class SanctionManager implements Listener {
         return "";
     }
 
+    // ------------------------------------------------------------------ reset totale
+
+    /** Azzera mute, ban, warn e cronologia sanzioni del giocatore (anche online: mute e ban attivi cadono subito). */
+    public void resetAll(UUID target) {
+        if (target == null) {
+            return;
+        }
+        synchronized (this) {
+            states.remove(target);
+            entries.values().removeIf(e -> e.target().equals(target));
+            save();
+        }
+        fire(target);
+    }
+
     // ------------------------------------------------------------------ cronologia
 
     public boolean deleteEntry(long id, UUID by) {
@@ -742,6 +757,20 @@ public final class SanctionManager implements Listener {
         long id = nextId++;
         entries.put(id, new Entry(id, target, kind, action, by, byName, System.currentTimeMillis(), ms,
                 reason == null ? "" : reason, note == null ? "" : note));
+        if (plugin.getMovements() != null) {
+            String what = kind == Kind.WARN ? "warn" : kind == Kind.MUTE ? "mute" : "ban";
+            String text = switch (action) {
+                case "ADD" -> "Ha ricevuto un " + what + (ms > 0 ? " di " + fmt(ms) : "");
+                case "AUTO_BAN" -> "Ha ricevuto un ban automatico di " + fmt(ms);
+                case "EXTEND" -> "Ban allungato di " + fmt(ms);
+                case "REDUCE" -> "Ha ricevuto una riduzione del " + what + " di " + fmt(ms);
+                case "REMOVE" -> "Gli e' stato tolto un " + what;
+                case "RESET" -> "Warn azzerati";
+                default -> "Sanzione " + what + " (" + action + ")";
+            };
+            plugin.getMovements().record(target, MovementLog.Type.SANCTION,
+                    text + (reason == null || reason.isBlank() ? "" : ": " + reason));
+        }
     }
 
     private static long plus(long a, long b) {
