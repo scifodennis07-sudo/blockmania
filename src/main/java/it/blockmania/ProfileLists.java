@@ -57,10 +57,8 @@ public final class ProfileLists implements Listener {
      * (179 era quello di userprofile-8: con E119 spostava i testi di 17 px a sinistra.)
      */
     private static final int ADV = 162;
-    /** Centro (pixel immagine) della barra titolo (64..126) e della barra pagina tra le frecce (71..119). */
-    private static final int BAR_CX = 95;
+    /** Centro (pixel immagine) del numero pagina tra le frecce = Tickets.POPUP_CX + 1. */
     private static final int NAV_CX = 95;
-    private static final int BAR_MAX = 58;
     /** Icone custom (U+E300 + indice), font minecraft:ico_r1..3 (uno per riga della griglia: ascent -23/-41/-59 nel pack). */
     private static final char ICON_BASE = '\ue300';
     private static final String ICON_FONT_PREFIX = "ico_r";
@@ -69,11 +67,9 @@ public final class ProfileLists implements Listener {
     private static final int ICON_X0 = 15;
     private static final int ICON_STEP = 18;
     private static final String[] ICON_NAMES = {"warn", "mute", "ban", "mine", "shop", "ticket", "reward", "upgrade", "items", "staff", "other", "sanction"};
-    private static final char BAR_BASE = '';
-    private static final char BAR_SHADOW = '';
     private static final char NAV_BASE = '';
     private static final char NAV_SHADOW = '';
-    private static final String TINY_FONT = "minecraft:tiny3";
+    private static final String TINY_FONT = "minecraft:tiny2";   // = Tickets.FONT_TINY2 (numero pagina dei popup ticket)
 
     private static final int SIZE = 54;
     private static final int PER_PAGE = 21;
@@ -126,7 +122,7 @@ public final class ProfileLists implements Listener {
                      Consumer<GuiTitle> background, Runnable onBack) {
         List<Filter> all = new ArrayList<>();
         if (filters == null || filters.isEmpty() || !"".equals(filters.get(0).key())) {
-            all.add(new Filter("Tutte", ""));
+            all.add(new Filter("Tutti", ""));
         }
         if (filters != null) {
             all.addAll(filters);
@@ -146,16 +142,16 @@ public final class ProfileLists implements Listener {
         for (MovementLog.Type t : MovementLog.Type.values()) {
             f.add(new Filter(t.label(), t.name()));
         }
-        open(staff, "movimenti " + UserProfilePowers.nameOf(target), f, key -> movementRows(target, key), background, back);
+        open(staff, "cronologia movimenti", f, key -> movementRows(target, key), background, back);
     }
 
     public void openSanctions(Player staff, UUID target, Consumer<GuiTitle> background, Runnable back) {
         List<Filter> f = List.of(new Filter("Warn", "WARN"), new Filter("Mute", "MUTE"), new Filter("Ban", "BAN"));
-        open(staff, "sanzioni " + UserProfilePowers.nameOf(target), f, key -> sanctionRows(target, key), background, back);
+        open(staff, "cronologia sanzioni", f, key -> sanctionRows(target, key), background, back);
     }
 
     public void openPurchases(Player staff, UUID target, Consumer<GuiTitle> background, Runnable back) {
-        open(staff, "acquisti " + UserProfilePowers.nameOf(target), List.of(),
+        open(staff, "cronologia acquisti", List.of(),
                 key -> List.of(new Row(item(Material.BARRIER, "&7Nessun acquisto", List.of("&8Lo store non e' ancora attivo.")))),
                 background, back);
     }
@@ -300,9 +296,9 @@ public final class ProfileLists implements Listener {
         }
         g.at(-15, "&f" + IMAGE, IMAGE_FONT, ADV);
         drawIcons(g, s);
-        barText(g, s.filters.get(s.filterIdx).label());
+        // la barra al centro in alto resta vuota (come nei Ticket)
         navText(g, s.page + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, s.title);
+        UserProfilePowers.topTitle(plugin, g, s.title);   // es. "cronologia sanzioni", come "lista ticket" in Tickets
         return g.build();
     }
 
@@ -363,32 +359,6 @@ public final class ProfileLists implements Listener {
         return sb.toString();
     }
 
-    /** Filtro corrente nella barra titolo (testo piccolo del pack, stessi glifi di UserProfileHistory). */
-    private void barText(GuiTitle g, String raw) {
-        StringBuilder safe = new StringBuilder();
-        for (char ch : (raw == null ? "" : raw).toCharArray()) {
-            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
-        }
-        String text = safe.toString().replaceAll(" +", " ").trim();
-        while (tinyAdvance(text) > BAR_MAX && text.length() > 1) {
-            text = text.substring(0, text.length() - 1).trim();
-        }
-        if (text.isEmpty()) {
-            return;
-        }
-        int st = BAR_CX - Math.max(0, tinyAdvance(text) - 1) / 2;
-        int off = 0;
-        for (String w : text.split(" ")) {
-            if (w.isEmpty()) {
-                continue;
-            }
-            int wa = tinyAdvance(w);
-            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + letters(w, BAR_SHADOW), TINY_FONT, wa);
-            g.at(st + off + IMG, "&f" + letters(w, BAR_BASE), TINY_FONT, wa);
-            off += wa + 4;
-        }
-    }
-
     private void navText(GuiTitle g, int page, int pages) {
         String plain = page + "/" + pages;
         StringBuilder n = new StringBuilder();
@@ -409,8 +379,17 @@ public final class ProfileLists implements Listener {
         String back = s.onBack != null ? "&cindietro" : "&cchiudi";
         inv.setItem(SLOT_X, pane(back, List.of()));
         Filter f = s.filters.get(s.filterIdx);
-        if (s.filters.size() > 1) {
-            inv.setItem(SLOT_FILTER, pane("&eFiltra", List.of("&7filtro attuale: &f" + f.label(), "", "&eclic per cambiare")));
+        {
+            // stesso formato di Tickets.openList: "filtra per" / "scegli cosa vedere:" / opzioni (selezionata "&a» ") / "clicca per cambiare"
+            List<String> fl = new ArrayList<>();
+            fl.add("&7scegli cosa vedere:");
+            fl.add(" ");
+            for (int i = 0; i < s.filters.size(); i++) {
+                fl.add(i == s.filterIdx ? "&a» " + s.filters.get(i).label() : "&8" + s.filters.get(i).label());
+            }
+            fl.add(" ");
+            fl.add("&eclicca per cambiare");
+            inv.setItem(SLOT_FILTER, pane("&bfiltra per", fl));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));

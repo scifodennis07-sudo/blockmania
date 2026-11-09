@@ -35,7 +35,13 @@ public final class RoleGui implements Listener {
     private static final char POPUP = '';
     private static final char ROLE_BASE = '';
     private static final int IMG = -15;
-    private static final int ADV = 186;
+    /**
+     * Avanzamenti DICHIARATI (stesso schema di ProfileLists: immagine a -15, advance = reale - 7).
+     * Reale di E11A (userprofile-27.png): ultima colonna opaca 167 -> 169, dichiarato 162.
+     * Reale delle barre ruolo-1..11: ultima colonna opaca 126 -> 128, dichiarato 121 (tutte uguali).
+     */
+    private static final int ADV = 162;
+    private static final int ADV_ROLE = 121;
     private static final int SIZE = 54;
 
     private static final int[] SLOTS_PREV = {10, 11};
@@ -93,7 +99,7 @@ public final class RoleGui implements Listener {
             UserProfilePowers.drawDimmed(plugin, g, s.background);
         }
         g.at(IMG, "&f" + POPUP, FONT_POPUP, ADV);
-        g.at(IMG, "&f" + (char) (ROLE_BASE + s.index), FONT_ROLES, ADV);
+        g.at(IMG, "&f" + (char) (ROLE_BASE + s.index), FONT_ROLES, ADV_ROLE);
         return g;
     }
 

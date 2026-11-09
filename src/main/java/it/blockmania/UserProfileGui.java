@@ -463,51 +463,24 @@ public final class UserProfileGui implements Listener {
         drawPageNumber(g, page + 1, ox);
     }
 
-    // numero pagina "n/3" nella barra centrale tra le frecce (interno x71..118, y33..42): font a pixel 3x5 (tk<y>), centrato a mano
-    private static final int NUM_CX = 95;       // centro della barra (71 + 48/2)
-    private static final int NUM_Y = 35;        // riga alta del testo (la barra interna e' y33..42; con l'ombra +1 resta dentro)
-    private static final int NUM_GLYPH_W = 3;
-    private static final int NUM_GAP = 1;
-    private static final int C_NUM = 0xFFFFFF;
-    private static final int C_NUM_SH = 0x3A3A3A;
-
-    private static String[] numGlyph(char c) {
-        return switch (c) {
-            case '1' -> new String[]{"010", "110", "010", "010", "111"};
-            case '2' -> new String[]{"111", "001", "111", "100", "111"};
-            case '3' -> new String[]{"111", "001", "111", "001", "111"};
-            default -> new String[]{"001", "001", "010", "100", "100"};   // '/'
-        };
-    }
+    // numero pagina "n/3": stesso metodo di Tickets.navText (glifi numerici del pack E4A0 / ombra E4B0, font default), centro barra x 95
+    private static final char NAV = '\uE4A0';
+    private static final char NAV_SH = '\uE4B0';
+    private static final int NUM_CX = 95;
 
     private void drawPageNumber(GuiTitle g, int page, int ox) {
-        String text = page + "/" + PAGES;
-        int total = text.length() * NUM_GLYPH_W + (text.length() - 1) * NUM_GAP;
-        int x0 = NUM_CX - total / 2;
-        for (int pass = 0; pass < 2; pass++) {
-            int d = pass == 0 ? 1 : 0;
-            int rgb = pass == 0 ? C_NUM_SH : C_NUM;
-            for (int row = 0; row < 5; row++) {
-                int y = NUM_Y + row + d;
-                for (int k = 0; k < text.length(); k++) {
-                    String bits = numGlyph(text.charAt(k))[row];
-                    int gx = x0 + k * (NUM_GLYPH_W + NUM_GAP) + d;
-                    int i = 0;
-                    while (i < NUM_GLYPH_W) {
-                        if (bits.charAt(i) != '1') {
-                            i++;
-                            continue;
-                        }
-                        int n = 1;
-                        while (i + n < NUM_GLYPH_W && bits.charAt(i + n) == '1') {
-                            n++;
-                        }
-                        g.atComponent(gx + i + ox, glyph(PX1.repeat(n), tk(y), rgb), n);
-                        i += n;
-                    }
-                }
-            }
+        String plain = page + "/" + PAGES;
+        StringBuilder n = new StringBuilder();
+        StringBuilder sh = new StringBuilder();
+        for (char ch : plain.toCharArray()) {
+            int o = ch == '/' ? 10 : ch - '0';
+            n.append((char) (NAV + o));
+            sh.append((char) (NAV_SH + o));
         }
+        int adv = plain.length() * 6;
+        int start = NUM_CX - (adv - 1) / 2;
+        g.at(start + 1 + ox, GuiTitle.shadowCode(plugin) + sh, "", adv);
+        g.at(start + ox, "&f" + n, "", adv);
     }
 
     private Component title(UUID target, Snap s, int page) {
