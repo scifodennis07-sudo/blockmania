@@ -106,8 +106,10 @@ public final class RoleGui implements Listener {
         StaffRoles roles = plugin.getStaffRoles();
         String current = roles == null ? null : roles.roleOf(s.target);
         String name = roles == null ? id : roles.label(id);
-        List<String> barLore = List.of("&7Grado scelto: &f" + name,
-                "&7Grado attuale: &f" + (current == null ? "nessuno" : roles.label(current)), "", "&eusa le frecce per cambiare");
+        boolean special = StaffRoles.isSpecial(id);
+        boolean has = special && roles != null && roles.specialsOf(s.target).contains(id);
+        List<String> barLore = List.of("&7Ruolo scelto: &f" + name + (special ? " &8(speciale)" : ""),
+                "&7Grado staff attuale: &f" + (current == null ? "nessuno" : roles.label(current)), "", "&eusa le frecce per cambiare");
         for (int i : SLOTS_PREV) {
             h.inventory.setItem(i, pane("&7grado precedente", List.of("&eclicca per scorrere")));
         }
@@ -119,7 +121,9 @@ public final class RoleGui implements Listener {
         }
         for (int i : SLOTS_YES) {
             h.inventory.setItem(i, pane("&aconferma", List.of("&7Assegna il grado &f" + name + "&7 a &f" + UserProfilePowers.nameOf(s.target) + "&7.",
-                    "&7Riceve anche i gradi sotto di questo.", "", "&eclicca per confermare")));
+                    special ? (has ? "&7Ce l'ha gia': confermando lo toglie. Il grado staff non cambia."
+                            : "&7Ruolo speciale: si aggiunge, il grado staff non cambia.")
+                            : "&7Riceve anche i gradi sotto di questo.", "", "&eclicca per confermare")));
         }
         for (int i : SLOTS_NO) {
             h.inventory.setItem(i, pane("&cannulla", List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare")));
@@ -143,13 +147,18 @@ public final class RoleGui implements Listener {
         return false;
     }
 
-    /** Solo chi ha un grado piu' alto di quello scelto (o e' OP/console) puo' assegnarlo. */
+    /** Grado della scala: solo chi ha un grado piu' alto (o e' OP/console). Ruoli speciali: da admin in su. */
     private boolean canAssign(CommandSender who, int index) {
         if (who.isOp()) {
             return true;
         }
         AdminCommand a = plugin.getAdminCommand();
-        return a != null && a.level(who) > index + 1;
+        if (a == null) {
+            return false;
+        }
+        // i ruoli speciali (fuori scala) li assegna chi e' almeno admin
+        int need = index < StaffRoles.SCALE.size() ? index + 2 : StaffRoles.SCALE.indexOf("admin") + 1;
+        return a.level(who) >= need;
     }
 
     @EventHandler

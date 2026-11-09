@@ -459,8 +459,54 @@ public final class UserProfileGui implements Listener {
         drawBar(g, MUTE_X, MUTE_STEP, MUTE_W, MUTE_Y, notches(s.mute(), MUTE_N), C_RED, ox);
         drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()), ox);
         drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED, ox);
-        if (page == 0) {
-            drawStamina(g, staminaPercent(target), ox);
+        drawStamina(g, staminaPercent(target), ox);
+        drawPageNumber(g, page + 1, ox);
+    }
+
+    // numero pagina "n/3" nella barra centrale tra le frecce (interno x71..118, y33..42): font a pixel 3x5 (tk<y>), centrato a mano
+    private static final int NUM_CX = 95;       // centro della barra (71 + 48/2)
+    private static final int NUM_Y = 35;        // riga alta del testo (la barra interna e' y33..42; con l'ombra +1 resta dentro)
+    private static final int NUM_GLYPH_W = 3;
+    private static final int NUM_GAP = 1;
+    private static final int C_NUM = 0xFFFFFF;
+    private static final int C_NUM_SH = 0x3A3A3A;
+
+    private static String[] numGlyph(char c) {
+        return switch (c) {
+            case '1' -> new String[]{"010", "110", "010", "010", "111"};
+            case '2' -> new String[]{"111", "001", "111", "100", "111"};
+            case '3' -> new String[]{"111", "001", "111", "001", "111"};
+            default -> new String[]{"001", "001", "010", "100", "100"};   // '/'
+        };
+    }
+
+    private void drawPageNumber(GuiTitle g, int page, int ox) {
+        String text = page + "/" + PAGES;
+        int total = text.length() * NUM_GLYPH_W + (text.length() - 1) * NUM_GAP;
+        int x0 = NUM_CX - total / 2;
+        for (int pass = 0; pass < 2; pass++) {
+            int d = pass == 0 ? 1 : 0;
+            int rgb = pass == 0 ? C_NUM_SH : C_NUM;
+            for (int row = 0; row < 5; row++) {
+                int y = NUM_Y + row + d;
+                for (int k = 0; k < text.length(); k++) {
+                    String bits = numGlyph(text.charAt(k))[row];
+                    int gx = x0 + k * (NUM_GLYPH_W + NUM_GAP) + d;
+                    int i = 0;
+                    while (i < NUM_GLYPH_W) {
+                        if (bits.charAt(i) != '1') {
+                            i++;
+                            continue;
+                        }
+                        int n = 1;
+                        while (i + n < NUM_GLYPH_W && bits.charAt(i + n) == '1') {
+                            n++;
+                        }
+                        g.atComponent(gx + i + ox, glyph(PX1.repeat(n), tk(y), rgb), n);
+                        i += n;
+                    }
+                }
+            }
         }
     }
 
@@ -710,6 +756,7 @@ public final class UserProfileGui implements Listener {
         setAll(h, S_MUTE, timedItem("mute", s.mute(), now, false, ""), "sanc:MUTE");
         setAll(h, S_BAN, timedItem("ban", s.ban(), now, s.banFromWarns(), ""), "sanc:BAN");
         setAll(h, S_WARN, warnItem(s), "sanc:WARN");
+        setAll(h, S_STAMINA, staminaItem(target), "stamina");
         fillArrows(h);
         if (h.page == 1) {
             setAll(h, S_BTN_LT, pane("&bresetta player", List.of("&7Azzera tutto tranne le sanzioni", "&7(miniere, ricompense, potenziamenti,", "&7contatori, stamina, exp...).", "", "&eclick: resetta (con conferma)")), "reset_player");

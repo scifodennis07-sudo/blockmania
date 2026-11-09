@@ -35,16 +35,40 @@ import java.util.function.Function;
  */
 public final class ProfileLists implements Listener {
 
-    public record Row(ItemStack item) {}
+    /** Una riga: item (nome/lore, cliccabile ma invisibile se icon >= 0) e indice dell'icona custom nel titolo (-1 = nessuna: si vede l'item). */
+    public record Row(ItemStack item, int icon) {
+        public Row(ItemStack item) {
+            this(item, -1);
+        }
+    }
 
     public record Filter(String label, String key) {}
 
-    private static final String IMAGE = "";
+    // ------------------------------------------------------------------
+    //  GEOMETRIA E FONT: tutte le costanti di posizione/ascent stanno qui (pixel immagine 256x256 di userprofile-26)
+    // ------------------------------------------------------------------
+    private static final String IMAGE = "\ue119";
     private static final String IMAGE_FONT = "minecraft:userprofile3";
+    /** Convenzione del titolo: x_titolo = x_immagine + IMG (come ItemsGui). */
     private static final int IMG = -22;
-    private static final int ADV = 179;
-    private static final int BAR_CX = 94;
+    /**
+     * Avanzamento DICHIARATO dell'immagine. Quello reale di E119 e' 169 (ultima colonna opaca 167, +1, +1);
+     * con la convenzione IMG = -22 (immagine disegnata a -15) l'avanzamento dichiarato deve essere reale - 7 = 162.
+     * (179 era quello di userprofile-8: con E119 spostava i testi di 17 px a sinistra.)
+     */
+    private static final int ADV = 162;
+    /** Centro (pixel immagine) della barra titolo (64..126) e della barra pagina tra le frecce (71..119). */
+    private static final int BAR_CX = 95;
+    private static final int NAV_CX = 95;
     private static final int BAR_MAX = 58;
+    /** Icone custom (U+E300 + indice), font minecraft:ico_r1..3 (uno per riga della griglia: ascent -23/-41/-59 nel pack). */
+    private static final char ICON_BASE = '\ue300';
+    private static final String ICON_FONT_PREFIX = "ico_r";
+    private static final int ICON_ADVANCE = 17;
+    /** Bordo sinistro dello slot (colonna c = slot % 9) a x_img = ICON_X0 + ICON_STEP * c; riga = slot / 9 (1..3). */
+    private static final int ICON_X0 = 15;
+    private static final int ICON_STEP = 18;
+    private static final String[] ICON_NAMES = {"warn", "mute", "ban", "mine", "shop", "ticket", "reward", "upgrade", "items", "staff", "other", "sanction"};
     private static final char BAR_BASE = '';
     private static final char BAR_SHADOW = '';
     private static final char NAV_BASE = '';
@@ -54,8 +78,8 @@ public final class ProfileLists implements Listener {
     private static final int SIZE = 54;
     private static final int PER_PAGE = 21;
     private static final int SLOT_X = 1;
-    private static final int[] BAR_SLOTS = {3, 4, 5};
-    private static final int SLOT_INFO = 7;
+    /** Bottone blu = Filtra. */
+    private static final int SLOT_FILTER = 7;
     private static final int SLOT_PREV = 38;
     private static final int SLOT_NEXT = 42;
 
@@ -166,7 +190,8 @@ public final class ProfileLists implements Listener {
             for (String line : wrap(clean(e.text()), 34)) {
                 lore.add("&f" + line);
             }
-            out.add(new Row(item(m == null ? Material.PAPER : m, "&e" + e.type().label() + " &7- &f" + date(e.ts()), lore)));
+            out.add(new Row(item(m == null ? Material.PAPER : m, "&e" + e.type().label() + " &7- &f" + date(e.ts()), lore),
+                    iconIndex(e.type().name())));
         }
         return out;
     }
@@ -189,7 +214,7 @@ public final class ProfileLists implements Listener {
         }
         all.sort(Comparator.comparingLong(SanctionManager.Entry::time).reversed());
         for (SanctionManager.Entry e : all) {
-            out.add(new Row(sanctionItem(e)));
+            out.add(new Row(sanctionItem(e), iconIndex(e.kind().name())));
         }
         return out;
     }
@@ -274,12 +299,54 @@ public final class ProfileLists implements Listener {
             UserProfilePowers.drawDimmed(plugin, g, s.background);
         }
         g.at(-15, "&f" + IMAGE, IMAGE_FONT, ADV);
+        drawIcons(g, s);
         barText(g, s.filters.get(s.filterIdx).label());
         navText(g, s.page + 1, pages);
         UserProfilePowers.topTitle(plugin, g, s.title);
         return g.build();
     }
 
+    /** Indice dell'icona dal nome (warn, mine, ...), -1 se sconosciuto. */
+    static int iconIndex(String name) {
+        if (name == null) {
+            return -1;
+        }
+        String n = name.toLowerCase(java.util.Locale.ROOT);
+        for (int i = 0; i < ICON_NAMES.length; i++) {
+            if (ICON_NAMES[i].equals(n)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Icone delle righe della pagina corrente, disegnate nel titolo sopra la cella (font per riga). */
+    private void drawIcons(GuiTitle g, Session s) {
+        for (int i = 0; i < PER_PAGE; i++) {
+            int idx = s.page * PER_PAGE + i;
+            if (idx >= s.rows.size()) {
+                break;
+            }
+            Row r = s.rows.get(idx);
+            if (r == null || r.icon() < 0 || r.icon() >= ICON_NAMES.length) {
+                continue;
+            }
+            int slot = gridSlot(i);
+            int row = slot / 9;
+            int col = slot % 9;
+            net.kyori.adventure.text.Component glyph = net.kyori.adventure.text.Component.text(String.valueOf((char) (ICON_BASE + r.icon())))
+                    .font(net.kyori.adventure.key.Key.key("minecraft", ICON_FONT_PREFIX + row))
+                    .color(net.kyori.adventure.text.format.TextColor.color(0xFFFFFF))
+                    .shadowColor(net.kyori.adventure.text.format.ShadowColor.none())
+                    .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false);
+            g.atComponent(ICON_X0 + ICON_STEP * col + IMG, glyph, ICON_ADVANCE);
+        }
+    }
+
+    /**
+     * Larghezza in pixel di un testo del font tiny3 (6 px a glifo, 4 per spazio e i/I/1): i glifi privati del pack
+     * non sono in FontMetrics (che copre solo il font vanilla), quindi la misura e' questa, usata per centrare.
+     */
     private static int tinyAdvance(String text) {
         int total = 0;
         for (char ch : text.toCharArray()) {
@@ -332,7 +399,7 @@ public final class ProfileLists implements Listener {
             sh.append((char) (NAV_SHADOW + o));
         }
         int adv = plain.length() * 6;
-        int start = BAR_CX - (adv - 1) / 2;
+        int start = NAV_CX - (adv - 1) / 2;
         g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, TINY_FONT, adv);
         g.at(start + IMG, "&f" + n, TINY_FONT, adv);
     }
@@ -342,13 +409,11 @@ public final class ProfileLists implements Listener {
         String back = s.onBack != null ? "&cindietro" : "&cchiudi";
         inv.setItem(SLOT_X, pane(back, List.of()));
         Filter f = s.filters.get(s.filterIdx);
-        for (int b : BAR_SLOTS) {
-            inv.setItem(b, pane("&efiltro: &f" + f.label(),
-                    s.filters.size() > 1 ? List.of("&eclicca per cambiare filtro") : List.of()));
+        if (s.filters.size() > 1) {
+            inv.setItem(SLOT_FILTER, pane("&eFiltra", List.of("&7filtro attuale: &f" + f.label(), "", "&eclic per cambiare")));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
-        inv.setItem(SLOT_INFO, pane("&einformazioni", List.of()));
         if (s.rows.isEmpty()) {
             inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
             return;
@@ -360,7 +425,7 @@ public final class ProfileLists implements Listener {
             }
             Row r = s.rows.get(idx);
             if (r != null && r.item() != null) {
-                inv.setItem(gridSlot(i), r.item().clone());
+                inv.setItem(gridSlot(i), r.icon() >= 0 ? invisible(r.item()) : r.item().clone());
             }
         }
     }
@@ -380,6 +445,20 @@ public final class ProfileLists implements Listener {
                 l.add(plugin.text(line));
             }
             meta.lore(l);
+        }
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /** Pane trasparente con nome e lore dell'item (l'icona e' nel titolo). */
+    private ItemStack invisible(ItemStack src) {
+        ItemStack stack = new ItemStack(Material.GLASS_PANE);
+        ItemMeta meta = stack.getItemMeta();
+        ItemMeta sm = src.getItemMeta();
+        meta.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
+        if (sm != null) {
+            meta.displayName(sm.displayName());
+            meta.lore(sm.lore());
         }
         stack.setItemMeta(meta);
         return stack;
@@ -471,20 +550,12 @@ public final class ProfileLists implements Listener {
             }
             return;
         }
-        if (slot == BAR_SLOTS[0] || slot == BAR_SLOTS[1] || slot == BAR_SLOTS[2]) {
+        if (slot == SLOT_FILTER) {
             if (s.filters.size() > 1) {
                 plugin.guiClick(p);
                 int next = (s.filterIdx + 1) % s.filters.size();
                 Bukkit.getScheduler().runTask(plugin, () -> show(s, next, 0));
             }
-            return;
-        }
-        if (slot == SLOT_INFO) {
-            plugin.guiClick(p);
-            int pg = pageCount(s.rows.size());
-            GuiMsg.send(plugin, p, "&e" + s.title + ": " + s.rows.size() + " voci, pagina " + (s.page + 1) + "/" + pg
-                    + ". Frecce sotto per scorrere, clicca la barra del titolo per cambiare filtro (attuale: "
-                    + s.filters.get(s.filterIdx).label() + "), X per tornare.");
             return;
         }
         if (slot == SLOT_PREV || slot == SLOT_NEXT) {
