@@ -40,6 +40,8 @@ public final class StaffRoles implements Listener {
     private final File file;
     private final Map<UUID, String> roles = new HashMap<>();
     private final Map<UUID, java.util.Set<String>> specials = new HashMap<>();
+    /** Chi e' gia' stato staff almeno una volta (serve a distinguere PEX da REPEX). */
+    private final java.util.Set<UUID> wasStaff = new java.util.HashSet<>();
     private final Map<UUID, PermissionAttachment> attachments = new HashMap<>();
 
     public StaffRoles(BlockMania plugin) {
@@ -60,8 +62,16 @@ public final class StaffRoles implements Listener {
     public void load() {
         roles.clear();
         specials.clear();
+        wasStaff.clear();
         if (file.exists()) {
             YamlConfiguration y = YamlConfiguration.loadConfiguration(file);
+            for (String u : y.getStringList("was-staff")) {
+                try {
+                    wasStaff.add(UUID.fromString(u));
+                } catch (IllegalArgumentException ex) {
+                    plugin.getLogger().warning("roles.yml: uuid non valido " + u);
+                }
+            }
             var sec = y.getConfigurationSection("roles");
             if (sec != null) {
                 for (String key : sec.getKeys(false)) {
@@ -69,6 +79,7 @@ public final class StaffRoles implements Listener {
                         String r = sec.getString(key);
                         if (r != null && SCALE.contains(r)) {
                             roles.put(UUID.fromString(key), r);
+                            wasStaff.add(UUID.fromString(key));
                         }
                     } catch (IllegalArgumentException ex) {
                         plugin.getLogger().warning("roles.yml: uuid non valido " + key);
@@ -104,6 +115,11 @@ public final class StaffRoles implements Listener {
         for (Map.Entry<UUID, String> e : roles.entrySet()) {
             y.set("roles." + e.getKey(), e.getValue());
         }
+        List<String> was = new java.util.ArrayList<>();
+        for (UUID u : wasStaff) {
+            was.add(u.toString());
+        }
+        y.set("was-staff", was);
         for (Map.Entry<UUID, java.util.Set<String>> e : specials.entrySet()) {
             y.set("special." + e.getKey(), new java.util.ArrayList<>(e.getValue()));
         }
@@ -144,10 +160,28 @@ public final class StaffRoles implements Listener {
                 specials.remove(id);
             }
             old = "speciale " + roleId;
-        } else if (roleId == null || !SCALE.contains(roleId)) {
-            roles.remove(id);
         } else {
-            roles.put(id, roleId);
+            String to = roleId != null && SCALE.contains(roleId) ? roleId : null;
+            if (to == null) {
+                roles.remove(id);
+            } else {
+                roles.put(id, to);
+            }
+            // carriera staff: PEX (primo grado), REPEX (di nuovo dopo un depex), CAMBIO, DEPEX
+            String kind = null;
+            if (to == null && old != null) {
+                kind = "DEPEX";
+            } else if (to != null && old == null) {
+                kind = wasStaff.contains(id) ? "REPEX" : "PEX";
+            } else if (to != null && !to.equals(old)) {
+                kind = "CAMBIO";
+            }
+            if (to != null) {
+                wasStaff.add(id);
+            }
+            if (kind != null && plugin.getStaffStats() != null) {
+                plugin.getStaffStats().recordCareer(id, by instanceof Player bp ? bp.getUniqueId() : null, kind, old, to);
+            }
         }
         save();
         Player p = Bukkit.getPlayer(id);

@@ -397,7 +397,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (args.length < 2) {
-            GuiMsg.sendTiny(plugin, sender, "&7usa: &f/adminmania userprofile <nome>");
+            GuiMsg.sendTiny(plugin, sender, "&7usa: &f/adminmania " + args[0].toLowerCase(Locale.ROOT) + " <nome>");
             return true;
         }
         UUID id;
@@ -412,7 +412,11 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             }
             id = off.getUniqueId();
         }
-        plugin.getUserProfile().open(p, id);
+        if (args[0].equalsIgnoreCase("staffprofile")) {
+            plugin.getStaffProfile().open(p, id);
+        } else {
+            plugin.getUserProfile().open(p, id);
+        }
         return true;
     }
 
@@ -479,7 +483,8 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 1 && args[0].equalsIgnoreCase("ticket")) {
             return plugin.getTickets().staffCommand(sender, args);
         }
-        if (args.length >= 1 && (args[0].equalsIgnoreCase("userprofile") || args[0].equalsIgnoreCase("up"))) {
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("userprofile") || args[0].equalsIgnoreCase("up")
+                || args[0].equalsIgnoreCase("staffprofile"))) {
             return userProfileCommand(sender, args);
         }
         if (level(sender) <= 0 && !hasDept(sender, List.of("builder", "texturemaker", "developer"))) {
@@ -777,7 +782,8 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 1 && args[0].equalsIgnoreCase("ticket")) {
             return plugin.getTickets().staffComplete(args);
         }
-        if (args.length >= 1 && (args[0].equalsIgnoreCase("userprofile") || args[0].equalsIgnoreCase("up"))) {
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("userprofile") || args[0].equalsIgnoreCase("up")
+                || args[0].equalsIgnoreCase("staffprofile"))) {
             return userProfileComplete(sender, args);
         }
         if (args.length == 1) {
@@ -785,6 +791,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             out.add("ticket");
             if (allowed(sender, "profile", "see")) {
                 out.add("userprofile");
+                out.add("staffprofile");
             }
             if (allowed(sender, "sanctions", "see")) {
                 out.add("rules");

@@ -1012,7 +1012,7 @@ public final class UserProfileGui implements Listener {
             pageAction(p, target, action, page);
         } else if (action.equals("head")) {
             if (right && isStaff(target)) {
-                GuiMsg.send(plugin, p, "&7staffprofile non ancora disponibile.");
+                plugin.getStaffProfile().open(p, target);
             }
         } else if (action.startsWith("sanc:")) {
             SanctionManager.Kind kind = SanctionManager.Kind.valueOf(action.substring(5));

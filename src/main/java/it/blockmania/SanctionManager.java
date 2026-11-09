@@ -156,6 +156,11 @@ public final class SanctionManager implements Listener {
         return out;
     }
 
+    /** Tutte le voci in ordine cronologico (sola lettura, copia). */
+    public synchronized List<Entry> allEntries() {
+        return new ArrayList<>(entries.values());
+    }
+
     // ------------------------------------------------------------------ mute
 
     public void addMute(UUID p, long ms, UUID by, String reason) {

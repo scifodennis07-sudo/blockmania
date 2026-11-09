@@ -59,6 +59,7 @@ public final class BlockMania extends JavaPlugin {
     private UserProfileUpgrades profileUpgrades;
     private UserProfileRewards profileRewards;
     private UserProfileGui userProfile;
+    private StaffProfileGui staffProfile;
     private RulesGui rulesGui;
     private RulePopups rulePopups;
     private RuleDetailGui ruleDetailGui;
@@ -69,6 +70,7 @@ public final class BlockMania extends JavaPlugin {
     private BlockEdit blockEdit;
     private MineTemplates mineTemplates;
     private MovementLog movements;
+    private StaffStats staffStats;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
     private final Map<Character, int[]> palette = new HashMap<>();
@@ -101,6 +103,8 @@ public final class BlockMania extends JavaPlugin {
         blocks.load();
         movements = new MovementLog(this);
         movements.load();
+        staffStats = new StaffStats(this);
+        staffStats.load();
         ammo.start();
         upgrades = new UpgradeManager(this);
         shops = new ShopManager(this);
@@ -196,6 +200,9 @@ public final class BlockMania extends JavaPlugin {
         userProfile = new UserProfileGui(this);
         getServer().getPluginManager().registerEvents(userProfile, this);
         userProfile.start();
+        staffProfile = new StaffProfileGui(this);
+        getServer().getPluginManager().registerEvents(staffProfile, this);
+        staffProfile.start();
         // GUI regole (/adminmania rules): dopo profileUi e rules
         rulesGui = new RulesGui(this, rules, profileUi);
         getServer().getPluginManager().registerEvents(rulesGui, this);
@@ -455,6 +462,9 @@ public final class BlockMania extends JavaPlugin {
         if (userProfile != null) {
             userProfile.stop();
         }
+        if (staffProfile != null) {
+            staffProfile.stop();
+        }
         if (sanctions != null) {
             sanctions.stop();
         }
@@ -476,6 +486,9 @@ public final class BlockMania extends JavaPlugin {
         }
         if (movements != null) {
             movements.save();
+        }
+        if (staffStats != null) {
+            staffStats.save();
         }
     }
 
@@ -633,6 +646,10 @@ public final class BlockMania extends JavaPlugin {
         return userProfile;
     }
 
+    public StaffProfileGui getStaffProfile() {
+        return staffProfile;
+    }
+
     public Power getPower() {
         return power;
     }
@@ -659,6 +676,10 @@ public final class BlockMania extends JavaPlugin {
 
     public MovementLog getMovements() {
         return movements;
+    }
+
+    public StaffStats getStaffStats() {
+        return staffStats;
     }
 
     private PlayerReset playerReset;

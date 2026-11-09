@@ -226,6 +226,25 @@ public final class Tickets implements Listener {
     private final Set<Integer> reminded = new HashSet<>();
     private BukkitTask task;
 
+    /** Vista di sola lettura di un ticket (per StaffStats). */
+    public record StaffView(int id, String ownerName, long created, long closedAt, boolean open, int rating,
+                            boolean ratedAuto, Set<UUID> repliers, UUID closedBy) {}
+
+    /** Ticket ai quali ha risposto lo staffer (sola lettura, da chiamare dal thread principale). */
+    public List<StaffView> ticketsRepliedBy(UUID staff) {
+        List<StaffView> out = new ArrayList<>();
+        if (staff == null) {
+            return out;
+        }
+        for (Ticket t : tickets.values()) {
+            if (t.repliers.containsKey(staff)) {
+                out.add(new StaffView(t.id, t.ownerName, t.created, t.closedAt, t.open, t.rating, t.ratedAuto,
+                        Set.copyOf(t.repliers.keySet()), t.closedByUuid));
+            }
+        }
+        return out;
+    }
+
     public Tickets(BlockMania plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "tickets.yml");
