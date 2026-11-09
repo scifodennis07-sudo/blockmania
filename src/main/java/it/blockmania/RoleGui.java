@@ -43,7 +43,7 @@ public final class RoleGui implements Listener {
     private static final int ADV = 162;
     private static final int ADV_ROLE = 121;
     /** Correzione misurata in gioco: la barra usciva 5 px immagine a destra del centro tra le frecce. */
-    private static final int ROLE_SHIFT = -5;
+    private static final int ROLE_SHIFT = -7;
     private static final int SIZE = 54;
 
     private static final int[] SLOTS_PREV = {10, 11};

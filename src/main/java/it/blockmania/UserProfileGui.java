@@ -469,9 +469,11 @@ public final class UserProfileGui implements Listener {
     private static final char PAGNUM_BASE = '\uE130';
     private static final int PAGNUM_REAL = 104;
     private static final int PAGNUM_DECL = 97;
+    /** Titolo normale: il cursore dichiarato e' 7 px indietro rispetto al reale (immagine a 179 invece di 186), come IMG = -22. */
+    private static final int PAGNUM_SHIFT = -7;
 
     private void drawPageNumber(GuiTitle g, int page, boolean real) {
-        g.at(-15, "&f" + (char) (PAGNUM_BASE + page - 1), FONT_PAGNUM, real ? PAGNUM_REAL : PAGNUM_DECL);
+        g.at(-15 + (real ? 0 : PAGNUM_SHIFT), "&f" + (char) (PAGNUM_BASE + page - 1), FONT_PAGNUM, real ? PAGNUM_REAL : PAGNUM_DECL);
     }
 
     private Component title(UUID target, Snap s, int page) {
