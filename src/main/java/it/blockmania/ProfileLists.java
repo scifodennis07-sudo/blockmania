@@ -58,7 +58,7 @@ public final class ProfileLists implements Listener {
      */
     private static final int ADV = 162;
     /** Centro (pixel immagine) del numero pagina tra le frecce = Tickets.POPUP_CX + 1. */
-    private static final int NAV_CX = 95;
+    private static final int NAV_CX = 96;
     /** Icone custom (U+E300 + indice), font minecraft:ico_r1..3 (uno per riga della griglia: ascent -23/-41/-59 nel pack). */
     private static final char ICON_BASE = '\ue300';
     private static final String ICON_FONT_PREFIX = "ico_r";
@@ -69,7 +69,15 @@ public final class ProfileLists implements Listener {
     private static final String[] ICON_NAMES = {"warn", "mute", "ban", "mine", "shop", "ticket", "reward", "upgrade", "items", "staff", "other", "sanction"};
     private static final char NAV_BASE = '';
     private static final char NAV_SHADOW = '';
-    private static final String TINY_FONT = "minecraft:tiny2";   // = Tickets.FONT_TINY2 (numero pagina dei popup ticket)
+    /** Numero pagina = Tickets.NAV/NAV_SH (font default), centro 96 come Tickets.openList. */
+    private static final char NAV = '\ue4a0';
+    private static final char NAV_SH = '\ue4b0';
+    /** Testo del filtro nella barra in alto: set piccolo F500/F600 nel font tiny3 (quota del layout userprofile, come la vecchia UserProfileHistory). */
+    private static final char BAR_BASE = '\uf500';
+    private static final char BAR_SHADOW = '\uf600';
+    private static final String BAR_FONT = "minecraft:tiny3";
+    private static final int BAR_CX = 95;
+    private static final int BAR_MAX = 70;
 
     private static final int SIZE = 54;
     private static final int PER_PAGE = 21;
@@ -296,7 +304,7 @@ public final class ProfileLists implements Listener {
         }
         g.at(-15, "&f" + IMAGE, IMAGE_FONT, ADV);
         drawIcons(g, s);
-        // la barra al centro in alto resta vuota (come nei Ticket)
+        barText(g, s.filters.get(s.filterIdx).label());
         navText(g, s.page + 1, pages);
         UserProfilePowers.topTitle(plugin, g, s.title);   // es. "cronologia sanzioni", come "lista ticket" in Tickets
         return g.build();
@@ -359,19 +367,46 @@ public final class ProfileLists implements Listener {
         return sb.toString();
     }
 
+    /** Numero pagina: copia di Tickets.navText (lista ticket): glifi NAV/NAV_SH nel font default, centro 96, stessa quota. */
     private void navText(GuiTitle g, int page, int pages) {
         String plain = page + "/" + pages;
         StringBuilder n = new StringBuilder();
         StringBuilder sh = new StringBuilder();
         for (char ch : plain.toCharArray()) {
             int o = ch == '/' ? 10 : ch - '0';
-            n.append((char) (NAV_BASE + o));
-            sh.append((char) (NAV_SHADOW + o));
+            n.append((char) (NAV + o));
+            sh.append((char) (NAV_SH + o));
         }
         int adv = plain.length() * 6;
         int start = NAV_CX - (adv - 1) / 2;
-        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, TINY_FONT, adv);
-        g.at(start + IMG, "&f" + n, TINY_FONT, adv);
+        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, "", adv);
+        g.at(start + IMG, "&f" + n, "", adv);
+    }
+
+    /** Filtro selezionato nella barra grigia in alto (testo piccolo del pack come tinyText di Tickets), centrato su BAR_CX. */
+    private void barText(GuiTitle g, String raw) {
+        StringBuilder safe = new StringBuilder();
+        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        String text = safe.toString().replaceAll(" +", " ").trim();
+        while (tinyAdvance(text) > BAR_MAX && text.length() > 1) {
+            text = text.substring(0, text.length() - 1).trim();
+        }
+        if (text.isEmpty()) {
+            return;
+        }
+        int st = BAR_CX - Math.max(0, tinyAdvance(text) - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + letters(w, BAR_SHADOW), BAR_FONT, wa);
+            g.at(st + off + IMG, "&f" + letters(w, BAR_BASE), BAR_FONT, wa);
+            off += wa + 4;
+        }
     }
 
     private void fill(Session s) {

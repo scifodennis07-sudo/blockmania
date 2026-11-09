@@ -42,6 +42,8 @@ public final class RoleGui implements Listener {
      */
     private static final int ADV = 162;
     private static final int ADV_ROLE = 121;
+    /** Correzione misurata in gioco: la barra usciva 5 px immagine a destra del centro tra le frecce. */
+    private static final int ROLE_SHIFT = -5;
     private static final int SIZE = 54;
 
     private static final int[] SLOTS_PREV = {10, 11};
@@ -99,7 +101,7 @@ public final class RoleGui implements Listener {
             UserProfilePowers.drawDimmed(plugin, g, s.background);
         }
         g.at(IMG, "&f" + POPUP, FONT_POPUP, ADV);
-        g.at(IMG, "&f" + (char) (ROLE_BASE + s.index), FONT_ROLES, ADV_ROLE);
+        g.at(IMG + ROLE_SHIFT, "&f" + (char) (ROLE_BASE + s.index), FONT_ROLES, ADV_ROLE);
         return g;
     }
 

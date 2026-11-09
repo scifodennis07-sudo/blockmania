@@ -460,27 +460,18 @@ public final class UserProfileGui implements Listener {
         drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()), ox);
         drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED, ox);
         drawStamina(g, staminaPercent(target), ox);
-        drawPageNumber(g, page + 1, ox);
+        drawPageNumber(g, page + 1, real);
     }
 
-    // numero pagina "n/3": stesso metodo di Tickets.navText (glifi numerici del pack E4A0 / ombra E4B0, font default), centro barra x 95
-    private static final char NAV = '\uE4A0';
-    private static final char NAV_SH = '\uE4B0';
-    private static final int NUM_CX = 95;
+    // numero pagina "n/3": overlay 256x256 del pack (font minecraft:pagnum, U+E130..E132 = pagnum-1..3.png)
+    // ultima colonna opaca 103 -> advance reale 104, dichiarato 97 (= reale - 7); disegnato a -15 come gli sfondi
+    private static final String FONT_PAGNUM = "minecraft:pagnum";
+    private static final char PAGNUM_BASE = '\uE130';
+    private static final int PAGNUM_REAL = 104;
+    private static final int PAGNUM_DECL = 97;
 
-    private void drawPageNumber(GuiTitle g, int page, int ox) {
-        String plain = page + "/" + PAGES;
-        StringBuilder n = new StringBuilder();
-        StringBuilder sh = new StringBuilder();
-        for (char ch : plain.toCharArray()) {
-            int o = ch == '/' ? 10 : ch - '0';
-            n.append((char) (NAV + o));
-            sh.append((char) (NAV_SH + o));
-        }
-        int adv = plain.length() * 6;
-        int start = NUM_CX - (adv - 1) / 2;
-        g.at(start + 1 + ox, GuiTitle.shadowCode(plugin) + sh, "", adv);
-        g.at(start + ox, "&f" + n, "", adv);
+    private void drawPageNumber(GuiTitle g, int page, boolean real) {
+        g.at(-15, "&f" + (char) (PAGNUM_BASE + page - 1), FONT_PAGNUM, real ? PAGNUM_REAL : PAGNUM_DECL);
     }
 
     private Component title(UUID target, Snap s, int page) {

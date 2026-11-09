@@ -131,6 +131,9 @@ public final class Tickets implements Listener {
 
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ZoneId.systemDefault());
 
+    /** Data e ora complete (fuso Europe/Rome) per le info dello staff nel ticket. */
+    private static final DateTimeFormatter DATE_FULL = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.of("Europe/Rome"));
+
     // ---------- dati ----------
     private static final class Msg {
         UUID author;
@@ -160,6 +163,10 @@ public final class Tickets implements Listener {
         long rateDeadline;       // entro quando va dato il voto
         boolean ratedAuto;
         final Set<UUID> staff = new LinkedHashSet<>();
+        /** Staffer che hanno risposto, in ordine di prima risposta (uuid -> nome). */
+        final Map<UUID, String> repliers = new LinkedHashMap<>();
+        /** Ticket vecchio: non si sa chi ha risposto (messaggi senza mittente). */
+        boolean repliersUnavailable;
         final Map<UUID, Integer> read = new HashMap<>();
         final List<Msg> msgs = new ArrayList<>();
     }
@@ -342,8 +349,26 @@ public final class Tickets implements Listener {
                     m.kind = String.valueOf(raw.get("k") == null ? "msg" : raw.get("k"));
                     t.msgs.add(m);
                 }
+                if (s.contains("repliers")) {
+                    // formato nuovo: "uuid|nome"
+                    for (String r : s.getStringList("repliers")) {
+                        int bar = r.indexOf('|');
+                        if (bar > 0) {
+                            t.repliers.put(UUID.fromString(r.substring(0, bar)), r.substring(bar + 1));
+                        }
+                    }
+                    t.repliersUnavailable = s.getBoolean("repliers-unavailable");
+                } else {
+                    // ticket gia esistente: ricava gli staffer dai messaggi che hanno il mittente
+                    for (Msg m : t.msgs) {
+                        if (m.staff && m.author != null && !m.name.isEmpty() && (m.kind.equals("msg") || m.kind.equals("canned"))) {
+                            t.repliers.putIfAbsent(m.author, m.name);
+                        }
+                    }
+                    t.repliersUnavailable = t.repliers.isEmpty() && (!t.staff.isEmpty() || !t.lastStaffName.isEmpty());
+                }
                 tickets.put(t.id, t);
-                nextId = Math.max(nextId, t.id + 1);
+                nextId =Math.max(nextId, t.id + 1);
             } catch (Exception e) {
                 plugin.getLogger().warning("tickets.yml: ticket " + key + " non letto (" + e.getMessage() + ")");
             }
@@ -386,6 +411,14 @@ public final class Tickets implements Listener {
                 st.add(u.toString());
             }
             y.set(p + "staff", st);
+            List<String> rp = new ArrayList<>();
+            for (Map.Entry<UUID, String> e : t.repliers.entrySet()) {
+                rp.add(e.getKey() + "|" + e.getValue());
+            }
+            y.set(p + "repliers", rp);
+            if (t.repliersUnavailable) {
+                y.set(p + "repliers-unavailable", true);
+            }
             for (Map.Entry<UUID, Integer> e : t.read.entrySet()) {
                 y.set(p + "read." + e.getKey(), e.getValue());
             }
@@ -861,6 +894,40 @@ public final class Tickets implements Listener {
                 out.add(plugin.text(part));
             }
         }
+        return out;
+    }
+
+    /** Stelle nel lore: ★ piene gialle e ☆ vuote grigie. */
+    private static String starsLore(int n) {
+        int f = Math.max(0, Math.min(5, n));
+        return "&e" + "★".repeat(f) + "&7" + "☆".repeat(5 - f);
+    }
+
+    /** Info del ticket per lo staff: staffer che hanno risposto, apertura, chiusura, valutazione. */
+    private List<String> staffInfoLines(Ticket t) {
+        List<String> out = new ArrayList<>();
+        String names;
+        if (t.repliers.isEmpty()) {
+            names = t.repliersUnavailable ? "non disponibile" : "nessuno";
+        } else {
+            names = String.join(", ", t.repliers.values()) + (t.repliersUnavailable ? " &7(altri non disponibili)" : "");
+        }
+        out.add("&7staffer che hanno risposto: &f" + names);
+        out.add("&7aperto il: &f" + DATE_FULL.format(Instant.ofEpochMilli(t.created)));
+        if (!t.open) {
+            out.add("&7chiuso il: &f" + (t.closedAt > 0 ? DATE_FULL.format(Instant.ofEpochMilli(t.closedAt)) : "non disponibile"));
+        }
+        String rate;
+        if (t.open) {
+            rate = "&7non ancora valutato";
+        } else if (t.rating > 0) {
+            rate = starsLore(t.rating) + " &7(" + t.rating + "/5" + (t.ratedAuto ? ", automatica" : "") + ")";
+        } else if (t.rating == 0) {
+            rate = "&7in attesa del voto del player";
+        } else {
+            rate = "&7non richiesta";
+        }
+        out.add("&7valutazione: " + rate);
         return out;
     }
 
@@ -1571,7 +1638,13 @@ public final class Tickets implements Listener {
 
         hideInventory(p);
         put(h, 8, pane("&cindietro", List.of()), "back");
-        put(h, 0, pane("&f" + t.ownerName, List.of("&eclicca per aprire il profilo")), "profile");
+        List<String> headLore = new ArrayList<>();
+        if (staffView) {
+            headLore.addAll(staffInfoLines(t));
+            headLore.add("");
+        }
+        headLore.add("&eclicca per aprire il profilo");
+        put(h, 0, pane("&f" + t.ownerName, headLore), "profile");
         for (int s : SLOTS_UP) {
             put(h, s, pane("&7sali", List.of("&7messaggi piu vecchi")), "scroll:1");
         }
@@ -1781,6 +1854,9 @@ public final class Tickets implements Listener {
             }
             t.lastStaff = id;
             t.lastStaffName = p.getName();
+            if (!kind.equals("note")) {
+                t.repliers.putIfAbsent(id, p.getName());
+            }
         } else {
             t.autoClose = 0;
         }
@@ -2121,6 +2197,7 @@ public final class Tickets implements Listener {
                 }
                 lore.add("&7staff: &f" + sb);
             }
+            lore.addAll(staffInfoLines(t));
             int un = unread(t, me, true);
             if (un > 0) {
                 lore.add("&e" + un + " non letti");
