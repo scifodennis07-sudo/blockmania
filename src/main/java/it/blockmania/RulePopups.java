@@ -40,7 +40,8 @@ public final class RulePopups implements Listener {
     private static final String DEF_NAV_FONT = "minecraft:tiny3";
     private static final int DEF_NAV_CX = 94;
     private static final int DEF_IMG = -22;
-    private static final int DEF_ADV = 179;
+    /** E116 (userprofile-23): ultima colonna opaca 168 -> avanzamento reale 169, dichiarato 169 - 7 = 162 (con 179 i testi finivano 17 px a sinistra). */
+    private static final int DEF_ADV = 162;
 
     private static final int SIZE = 54;
     private static final int PER_PAGE = 21;

@@ -50,6 +50,26 @@ public final class UserProfilePowers implements Listener {
         g.atComponent(0, MinesGui.tint(tmp.build(), null), tmp.cursor());
     }
 
+    /**
+     * Avanzamento REALE dell'immagine (ultima colonna opaca + 1, misurata sui PNG): 169 per i popup solo-pannello
+     * (userprofile-19..23 = E112..E116, opachi fino a x=168), 186 per le immagini a pagina intera.
+     */
+    static int realAdvance(String img) {
+        if (img != null) {
+            for (char ch : img.toCharArray()) {
+                if (ch >= '\ue112' && ch <= '\ue116') {
+                    return 169;
+                }
+            }
+        }
+        return 186;
+    }
+
+    /** Avanzamento DICHIARATO per i testi calibrati con IMG = -22 (convenzione Tickets): reale - 7 (179 per le immagini intere). */
+    static int declaredAdvance(String img) {
+        return realAdvance(img) - 7;
+    }
+
     /** Font per l'immagine: la tipologia (E114/E115) sta nel font userprofile2. */
     private static String fontFor(String img) {
         return img != null && (img.contains("\uE114") || img.contains("\uE115") || img.contains("\uE116")) ? FONT_UP2 : FONT_UP;
@@ -274,7 +294,7 @@ public final class UserProfilePowers implements Listener {
                 c.at(-15, (overCmds ? DIM : "&f") + IMG_MAIN, FONT_UP, 186);
             }
             if (overCmds && !img.isEmpty()) {
-                c.at(-15, "&f" + img, fontFor(img), 186);
+                c.at(-15, "&f" + img, fontFor(img), realAdvance(img));
             }
         }, onYes, onNo);
     }
@@ -454,7 +474,7 @@ public final class UserProfilePowers implements Listener {
         } else {
             g.at(-15, DIM + IMG_MAIN, FONT_UP, 186);
         }
-        g.at(-15, "&f" + img, fontFor(img), 179);
+        g.at(-15, "&f" + img, fontFor(img), declaredAdvance(img));
         tinyBar(g, label == null ? "" : label);
         navText(g, page + 1, pages);
         topTitle(plugin, g, label == null ? "" : label);
