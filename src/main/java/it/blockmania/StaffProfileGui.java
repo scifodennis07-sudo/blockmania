@@ -393,7 +393,7 @@ public final class StaffProfileGui implements Listener {
     // ------------------------------------------------------------------
 
     private static Key tk(int y) {
-        return Key.key("minecraft", "tk" + y);
+        return Key.key("minecraft", (y >= 27 && y <= 215 ? "px" : "tk") + y);
     }
 
     private static Component glyph(String text, Key font, int rgb) {
