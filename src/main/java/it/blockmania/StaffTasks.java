@@ -1006,7 +1006,7 @@ public final class StaffTasks {
 
     private void movement(UUID target, String text) {
         if (target != null && plugin.getMovements() != null) {
-            plugin.getMovements().moved(target, MovementLog.Type.STAFF, text);
+            plugin.getMovements().record(target, MovementLog.Type.STAFF, text);
         }
     }
 
