@@ -69,6 +69,7 @@ public final class BlockMania extends JavaPlugin {
     private RuleDetailGui staffRuleDetailGui;
     private StaffRoles staffRoles;
     private RoleGui roleGui;
+    private TaskGui taskGui;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
@@ -76,6 +77,7 @@ public final class BlockMania extends JavaPlugin {
     private MovementLog movements;
     private StaffStats staffStats;
     private StaffDiscipline staffDiscipline;
+    private StaffTasks staffTasks;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
     private final Map<Character, int[]> palette = new HashMap<>();
@@ -114,6 +116,8 @@ public final class BlockMania extends JavaPlugin {
         staffDiscipline = new StaffDiscipline(this);
         staffDiscipline.load();
         staffDiscipline.start();
+        staffTasks = new StaffTasks(this);
+        staffTasks.load();
         ammo.start();
         upgrades = new UpgradeManager(this);
         shops = new ShopManager(this);
@@ -238,6 +242,9 @@ public final class BlockMania extends JavaPlugin {
         getServer().getPluginManager().registerEvents(staffRoles, this);
         roleGui = new RoleGui(this);
         getServer().getPluginManager().registerEvents(roleGui, this);
+        // GUI task staff (/adminmania task): dopo profileUi, staffRoles e staffTasks
+        taskGui = new TaskGui(this);
+        getServer().getPluginManager().registerEvents(taskGui, this);
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
@@ -515,6 +522,9 @@ public final class BlockMania extends JavaPlugin {
         if (staffDiscipline != null) {
             staffDiscipline.stop();
         }
+        if (staffTasks != null) {
+            staffTasks.stop();
+        }
     }
 
     /** Rilegge gli oggetti dal config.yml. */
@@ -684,6 +694,10 @@ public final class BlockMania extends JavaPlugin {
         return roleGui;
     }
 
+    public TaskGui getTaskGui() {
+        return taskGui;
+    }
+
     public UserProfileGui getUserProfile() {
         return userProfile;
     }
@@ -726,6 +740,10 @@ public final class BlockMania extends JavaPlugin {
 
     public StaffDiscipline getStaffDiscipline() {
         return staffDiscipline;
+    }
+
+    public StaffTasks getStaffTasks() {
+        return staffTasks;
     }
 
     private PlayerReset playerReset;

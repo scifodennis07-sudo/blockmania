@@ -523,6 +523,19 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             plugin.getStaffRulesGui().open(rp);
             return true;
         }
+        // /adminmania task: GUI delle task staff (permessi e sospensione li controlla TaskGui/StaffTasks)
+        if (args.length >= 1 && args[0].equalsIgnoreCase("task")) {
+            if (!(sender instanceof Player tp)) {
+                sender.sendMessage("solo i giocatori possono aprire le task");
+                return true;
+            }
+            if (plugin.getTaskGui() == null) {
+                sender.sendMessage("le task non sono disponibili");
+                return true;
+            }
+            plugin.getTaskGui().open(tp);
+            return true;
+        }
         if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
             help(sender, args.length > 1 ? group(args[1]) : "");
             return true;
@@ -783,6 +796,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.text("&e/adminmania rules &7(regole: apre la GUI delle regole, alias regole)"));
             sender.sendMessage(plugin.text("&e/adminmania staffrules &7(regole staff: apre la GUI delle regole staff, alias regolestaff)"));
         }
+        if (only.isEmpty() && level(sender) > 0) {
+            sender.sendMessage(plugin.text("&e/adminmania task &7(task staff: crea, esegui, rifiuta, cestino e resoconto delle task)"));
+        }
         if (only.isEmpty()) {
             sender.sendMessage(plugin.text("&8scrivi /adminmania help <gruppo> per gli esempi. Italiano: economia, profilo, oggetti, costruzione, negozi, sistema"));
         }
@@ -808,6 +824,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             out.add("help");
             out.add("ticket");
+            if (level(sender) > 0) {
+                out.add("task");
+            }
             if (allowed(sender, "profile", "see")) {
                 out.add("userprofile");
                 out.add("staffprofile");
