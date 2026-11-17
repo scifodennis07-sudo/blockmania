@@ -1623,9 +1623,9 @@ public final class StaffProfileGui implements Listener {
     //  Popup lista della pagina 2 (copia di ProfileLists / RulePopups: pannello 7x3 sopra la pagina scurita)
     // ------------------------------------------------------------------
 
-    /** userprofile-26 (pulsante blu in alto a destra = reset) e userprofile-23 (pulsante arancione = info): solo pannello. */
-    private static final String P_IMG_RESET = "";
-    private static final String P_FONT_RESET = "minecraft:userprofile3";
+    /** userprofile-28 (pulsante arancione col cestino in alto a destra = reset, font sp_popup) e userprofile-23 (pulsante arancione = info): solo pannello. */
+    private static final String P_IMG_RESET = "\ue11b";
+    private static final String P_FONT_RESET = "minecraft:sp_popup";
     private static final String P_IMG_INFO = "";
     private static final String P_FONT_INFO = "minecraft:userprofile2";
     private static final int P_IMG = -22;
