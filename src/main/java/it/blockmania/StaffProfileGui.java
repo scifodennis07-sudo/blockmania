@@ -392,8 +392,27 @@ public final class StaffProfileGui implements Listener {
     //  Titolo (disegno)
     // ------------------------------------------------------------------
 
+    /** Font unico per i pixel (pxall): un carattere per riga y, 1x1 (U+F000+y) e 2x2 (U+F200+y), ognuno seguito dallo spazio -1. */
+    private static final Key PXF = Key.key("minecraft", "pxall");
+
+    private static String px1(int y, int n) {
+        return pxRun((char) (0xF000 + y), n);
+    }
+
+    private static String px2(int y, int n) {
+        return pxRun((char) (0xF200 + y), n);
+    }
+
+    private static String pxRun(char c, int n) {
+        StringBuilder b = new StringBuilder(n * 2);
+        for (int i = 0; i < n; i++) {
+            b.append(c).append('\uE002');
+        }
+        return b.toString();
+    }
+
     private static Key tk(int y) {
-        return Key.key("minecraft", (y >= 27 && y <= 215 ? "px" : "tk") + y);
+        return Key.key("minecraft", "tk" + y);
     }
 
     private static Component glyph(String text, Key font, int rgb) {
@@ -423,7 +442,7 @@ public final class StaffProfileGui implements Listener {
         for (int row = 0; row < BAR_H; row++) {
             int c = row == 0 ? shade(rgb, 1.35) : row == BAR_H - 1 ? shade(rgb, 0.75) : rgb;
             for (int k = 0; k < count; k++) {
-                g.atComponent(x0 + k * BAR_STEP + ox, glyph(PX1.repeat(BAR_W), tk(y + row), c), BAR_W);
+                g.atComponent(x0 + k * BAR_STEP + ox, glyph(px1(y + row, BAR_W), PXF, c), BAR_W);
             }
         }
     }
@@ -472,7 +491,7 @@ public final class StaffProfileGui implements Listener {
                     while (i + run < row.length() && row.charAt(i + run) == '1') {
                         run++;
                     }
-                    g.atComponent(x + i + d + ox, glyph(PX1.repeat(run), tk(y + j + d), rgb), run);
+                    g.atComponent(x + i + d + ox, glyph(px1(y + j + d, run), PXF, rgb), run);
                     i += run;
                 }
             }

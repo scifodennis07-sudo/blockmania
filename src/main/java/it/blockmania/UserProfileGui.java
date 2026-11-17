@@ -361,8 +361,27 @@ public final class UserProfileGui implements Listener {
     //  Titolo (disegno)
     // ------------------------------------------------------------------
 
+    /** Font unico per i pixel (pxall): un carattere per riga y, 1x1 (U+F000+y) e 2x2 (U+F200+y), ognuno seguito dallo spazio -1. */
+    private static final Key PXF = Key.key("minecraft", "pxall");
+
+    private static String px1(int y, int n) {
+        return pxRun((char) (0xF000 + y), n);
+    }
+
+    private static String px2(int y, int n) {
+        return pxRun((char) (0xF200 + y), n);
+    }
+
+    private static String pxRun(char c, int n) {
+        StringBuilder b = new StringBuilder(n * 2);
+        for (int i = 0; i < n; i++) {
+            b.append(c).append('\uE002');
+        }
+        return b.toString();
+    }
+
     private static Key tk(int y) {
-        return Key.key("minecraft", (y >= 27 && y <= 215 ? "px" : "tk") + y);
+        return Key.key("minecraft", "tk" + y);
     }
 
     private static Component glyph(String text, Key font, int rgb) {
@@ -404,8 +423,8 @@ public final class UserProfileGui implements Listener {
                     while (i + n < 8 && face[j * 8 + i + n] == c) {
                         n++;
                     }
-                    String px = scale == 1 ? PX1.repeat(n) : PX2.repeat(n * scale / 2);
-                    g.atComponent(x + i * scale + ox, glyph(px, tk(yy), c & 0xFFFFFF), n * scale);
+                    String px = scale == 1 ? px1(yy, n) : px2(yy, n * scale / 2);
+                    g.atComponent(x + i * scale + ox, glyph(px, PXF, c & 0xFFFFFF), n * scale);
                     i += n;
                 }
             }
@@ -417,7 +436,7 @@ public final class UserProfileGui implements Listener {
         for (int row = 0; row < TACCA_H; row++) {
             int c = row == 0 ? shade(rgb, 1.35) : row == TACCA_H - 1 ? shade(rgb, 0.75) : rgb;
             for (int k = 0; k < count; k++) {
-                g.atComponent(x0 + k * step + ox, glyph(PX1.repeat(w), tk(y + row), c), w);
+                g.atComponent(x0 + k * step + ox, glyph(px1(y + row, w), PXF, c), w);
             }
         }
     }
@@ -431,19 +450,19 @@ public final class UserProfileGui implements Listener {
         for (int row = 0; row < STA_H; row++) {
             int y = STA_Y + row;
             if (row == 0 || row == STA_H - 1) {
-                g.atComponent(STA_X + ox, glyph(PX1.repeat(STA_W), tk(y), C_STA_EDGE), STA_W);
+                g.atComponent(STA_X + ox, glyph(px1(y, STA_W), PXF, C_STA_EDGE), STA_W);
                 continue;
             }
-            g.atComponent(STA_X + ox, glyph(PX1, tk(y), C_STA_EDGE), 1);
+            g.atComponent(STA_X + ox, glyph(px1(y, 1), PXF, C_STA_EDGE), 1);
             int r = row - 1;
             int fc = r == 0 ? shade(C_STA_FILL, 1.35) : r == inH - 1 ? shade(C_STA_FILL, 0.75) : C_STA_FILL;
             if (filled > 0) {
-                g.atComponent(inX + ox, glyph(PX1.repeat(filled), tk(y), fc), filled);
+                g.atComponent(inX + ox, glyph(px1(y, filled), PXF, fc), filled);
             }
             if (inW - filled > 0) {
-                g.atComponent(inX + filled + ox, glyph(PX1.repeat(inW - filled), tk(y), C_STA_EMPTY), inW - filled);
+                g.atComponent(inX + filled + ox, glyph(px1(y, inW - filled), PXF, C_STA_EMPTY), inW - filled);
             }
-            g.atComponent(inX + inW + ox, glyph(PX1, tk(y), C_STA_EDGE), 1);
+            g.atComponent(inX + inW + ox, glyph(px1(y, 1), PXF, C_STA_EDGE), 1);
         }
     }
 
