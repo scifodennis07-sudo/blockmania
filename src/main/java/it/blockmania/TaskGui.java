@@ -9,6 +9,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -25,75 +26,79 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.function.IntConsumer;
 
 /**
- * GUI delle task staff (/adminmania task). Schermata principale = immagine task del pack (U+E180, font minecraft:task)
- * disegnata come lo sfondo di StaffProfileGui, con slot invisibili sopra i bottoni (LISTA, CREA, CESTINO, RESOCONTO TASK,
- * X, info, frecce). Tutti i popup hanno come sfondo la schermata task scurita (UserProfilePowers.drawDimmed / confirmOver):
- * - scelta con frecce (tipo, risorsa, verbo, azione su una task): immagine del popup ruoli (U+E11A) come RoleGui,
- *   con l'opzione scelta scritta tra le frecce (testo piccolo tiny2, come la barra di ProfileLists ma una riga piu' in basso);
- * - liste (aperte, cestino, resoconto): copia di ProfileLists (pannello U+E119, filtro nella barra) con il click sulle voci;
- * - player / quantita' / testo / motivo: UserProfilePowers.askText / askNumber; conferme: confirmOver.
- * I dati e i permessi sono in StaffTasks (Giovanni).
+ * GUI delle task staff v2 (/adminmania task). Una task e' una CARTELLA per un player con dentro piu' azioni (step),
+ * ordinarie o custom, anche sanzioni (banna/warna/muta con codice regola). Dati, permessi e metadati (verbi, cose,
+ * specifiche, testo del valore) sono in StaffTasks (Giovanni): qui niente tabelle proprie.
  * <p>
- * Slot della schermata principale (misurati su task_final.png: item dello slot (c,r) a (15+18c, 33+18r), raw = r*9+c,
- * ogni bottone copre tutti gli slot che tocca; vedi anche TASK_GLYPHS.md di Sara).
+ * Schermata principale = immagine task (U+E180, font minecraft:task) come lo sfondo di StaffProfileGui, con slot invisibili
+ * sopra i bottoni. Tutti i popup hanno come sfondo la schermata task scurita (UserProfilePowers.drawDimmed / confirmOver):
+ * - scelta con frecce: userprofile-30 (U+E11D, font sp_popup) = popup ruoli con la barra tra le frecce, opzione scritta
+ *   dentro la barra (testo piccolo tiny2); slot come RoleGui;
+ * - cartella: userprofile-31 (U+E11E, sp_popup) = pannello come le liste (X, barra titolo, pulsante verde "+", griglia 7x3,
+ *   frecce pagina), stesso codice delle liste;
+ * - liste (aperte, cestino, resoconto): copia di ProfileLists (U+E119) con il click sulle voci;
+ * - player / valore / testo / codice regola / motivo: UserProfilePowers.askText / askNumber; conferme: confirmOver.
  */
 public final class TaskGui implements Listener {
 
-    // ---------- pack ----------
+    // ---------- pack: schermata principale ----------
     private static final String FONT = "minecraft:task";
-    private static final String IMAGE = "\ue180";
+    private static final String IMAGE = "";
     private static final int SIZE = 54;
     private static final int IMG_ADV = 179;    // avanzamento dichiarato nel titolo normale (reale 186 - 7)
     private static final int IMG_REAL = 186;   // avanzamento reale (sfondo dei popup): ultima colonna opaca 184 + 2
 
-    // ---------- slot della schermata principale ----------
-    private static final int[] S_CLOSE = {0, 1};                                   // X 20-42 x 30-43
-    private static final int[] S_PREV = {2};                                       // freccia sinistra 49-70
-    private static final int[] S_BAR = {3, 4, 5};                                  // barra tra le frecce 71-118
-    private static final int[] S_NEXT = {6};                                       // freccia destra 119-140
-    private static final int[] S_INFO = {7, 8};                                    // info 147-169
-    private static final int[] S_LIST = {9, 10, 11, 18, 19, 20, 27, 28, 29, 36};   // LISTA 18-63 x 50-106
-    private static final int[] S_CREATE = {12, 13, 14, 21, 22, 23, 30, 31, 32};    // CREA 72-117 x 50-106
-    private static final int[] S_TRASH = {15, 16, 17, 24, 25, 26, 33, 34, 35, 44}; // CESTINO 126-171 x 50-106
-    private static final int[] S_LOG = {37, 38, 39, 40, 41, 42, 43, 46, 47, 48, 49, 50, 51, 52};   // RESOCONTO 44-147 x 115-137
+    // slot della schermata principale (item dello slot (c,r) a (15+18c, 33+18r), ogni bottone copre gli slot che tocca)
+    private static final int[] S_CLOSE = {0, 1};
+    private static final int[] S_PREV = {2};
+    private static final int[] S_BAR = {3, 4, 5};
+    private static final int[] S_NEXT = {6};
+    private static final int[] S_INFO = {7, 8};
+    private static final int[] S_LIST = {9, 10, 11, 18, 19, 20, 27, 28, 29, 36};
+    private static final int[] S_CREATE = {12, 13, 14, 21, 22, 23, 30, 31, 32};
+    private static final int[] S_TRASH = {15, 16, 17, 24, 25, 26, 33, 34, 35, 44};
+    private static final int[] S_LOG = {37, 38, 39, 40, 41, 42, 43, 46, 47, 48, 49, 50, 51, 52};
 
-    // ---------- popup scelta con frecce (immagine di RoleGui) ----------
-    private static final String CH_IMAGE = "\ue11c";   // userprofile-29: popup frecce con "SELEZIONA E CONFERMA!"
+    // ---------- popup scelta con frecce (userprofile-30, Sara) ----------
+    private static final String CH_IMAGE = "";
     private static final String CH_FONT = "minecraft:sp_popup";
-    private static final int CH_ADV = 162;     // come RoleGui.ADV (reale 169 - 7)
+    private static final int CH_ADV = 162;     // reale 169 - 7 (come RoleGui.ADV)
     private static final int[] CH_PREV = {10, 11};
     private static final int[] CH_BAR = {12, 13, 14};
     private static final int[] CH_NEXT = {15, 16};
     private static final int[] CH_YES = {28, 29, 30};
     private static final int[] CH_NO = {32, 33, 34};
-    /** Testo dell'opzione tra le frecce: set F500/F600 nel font tiny2 (= tiny3 18 px piu' in basso, riga delle frecce). */
+    /** Opzione dentro la barra tra le frecce: set F500/F600 nel font tiny2 (= tiny3 18 px piu' in basso, riga delle frecce). */
     private static final String CH_BAR_FONT = "minecraft:tiny2";
-    private static final int CH_BAR_CX = 95;   // centro tra le frecce (x immagine 62..127)
-    private static final int CH_BAR_MAX = 62;
+    private static final int CH_BAR_CX = 95;   // centro della barra (x immagine)
+    private static final int CH_BAR_MAX = 58;  // larghezza utile dentro la barra
 
-    // ---------- popup lista (copia di ProfileLists) ----------
-    private static final String L_IMAGE = "\ue119";
+    // ---------- popup lista (ProfileLists) e cartella (userprofile-31, stessa struttura) ----------
+    private static final String L_IMAGE = "";
     private static final String L_FONT = "minecraft:userprofile3";
+    private static final String F_IMAGE = "";
+    private static final String F_FONT = "minecraft:sp_popup";
     private static final int L_IMG = -22;
     private static final int L_ADV = 162;
+    private static final int F_ADV = 162;
     private static final int L_NAV_CX = 96;
-    private static final char L_NAV = '\ue4a0';
-    private static final char L_NAV_SH = '\ue4b0';
-    private static final char BAR_BASE = '\uf500';
-    private static final char BAR_SHADOW = '\uf600';
+    private static final char L_NAV = '';
+    private static final char L_NAV_SH = '';
+    private static final char BAR_BASE = '';
+    private static final char BAR_SHADOW = '';
     private static final String L_BAR_FONT = "minecraft:tiny3";
     private static final int L_BAR_CX = 95;
     private static final int L_BAR_MAX = 70;
     private static final int L_PER_PAGE = 21;
     private static final int[] L_X = {1, 2};
-    private static final int[] L_FILTER = {6, 7};
+    private static final int[] L_BTN = {6, 7};
     private static final int L_PREV = 38;
     private static final int L_NEXT = 42;
 
-    private static final long MAX_AMOUNT = 1_000_000_000L;
+    private static final List<String> SANCTIONS = List.of("ban", "warn", "mute");
 
     private static final ZoneId ROME = ZoneId.of("Europe/Rome");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ROME);
@@ -104,6 +109,7 @@ public final class TaskGui implements Listener {
         Inventory inventory;
         boolean dead;   // gia' cliccata: il secondo click nello stesso tick non ripete l'azione
         final Map<Integer, Runnable> actions = new HashMap<>();
+        final Map<Integer, Runnable> rightActions = new HashMap<>();   // click destro (se manca vale actions)
 
         @Override
         public Inventory getInventory() {
@@ -115,25 +121,36 @@ public final class TaskGui implements Listener {
     private record Opt(String key, String label, List<String> lore) {
     }
 
-    /** Voce di una lista: item (nome e lore) e azione al click (null = niente). */
-    private record Row(ItemStack item, Runnable onClick) {
+    /** Voce di una lista o di una cartella: item, click sinistro e click destro (null = niente). */
+    private record Row(ItemStack item, Runnable left, Runnable right) {
     }
 
     private record Filter(String label, String key) {
     }
 
-    /** Task in costruzione (popup di CREA). */
+    /** Cartella in costruzione (CREA): un player e le azioni aggiunte, in memoria finche' non si salva. */
     private static final class Draft {
-        StaffTasks.Type type = StaffTasks.Type.ORDINARIA;
         UUID target;
         String targetName = "";
-        String what;
-        String verb;
-        long amount;
-        String text = "";
+        final List<StaffTasks.Step> steps = new ArrayList<>();
     }
 
+    /** Azione in costruzione ("+" della cartella). */
+    private static final class StepDraft {
+        StaffTasks.Kind kind = StaffTasks.Kind.ORDINARIA;
+        String text;
+        String verb;
+        String what;
+        String spec;
+        long amount;
+        String ruleCode;
+    }
+
+    /** Passi della selezione di un'azione, in ordine; quelli che non servono si saltano (ogni scelta cambia i successivi). */
+    private enum Stage { KIND, TEXT, VERB, WHAT, SPEC, VALUE, RULE, CONFIRM }
+
     private final BlockMania plugin;
+    private final Map<UUID, Draft> drafts = new HashMap<>();
 
     public TaskGui(BlockMania plugin) {
         this.plugin = plugin;
@@ -193,75 +210,109 @@ public final class TaskGui implements Listener {
 
         UUID me = p.getUniqueId();
         List<StaffTasks.Task> open = safe(t.list(StaffTasks.Status.APERTA));
-        int ord = 0;
-        int cus = 0;
         int mine = 0;
         int canDo = 0;
+        int openSteps = 0;
         for (StaffTasks.Task k : open) {
-            if (k.type() == StaffTasks.Type.CUSTOM) {
-                cus++;
-            } else {
-                ord++;
-            }
             if (me.equals(k.createdBy())) {
                 mine++;
             }
-            if (t.canExecute(p, k)) {
-                canDo++;
+            for (StaffTasks.Step s : safe(k.steps())) {
+                if (s.status() == StaffTasks.Status.APERTA) {
+                    openSteps++;
+                    if (t.canExecute(p, s)) {
+                        canDo++;
+                    }
+                }
             }
         }
         int doneToday = 0;
         int rejectedToday = 0;
         LocalDate today = LocalDate.now(ROME);
         for (StaffTasks.Task k : safe(t.list(null))) {
-            if (k.doneAt() > 0 && Instant.ofEpochMilli(k.doneAt()).atZone(ROME).toLocalDate().equals(today)) {
-                if (k.status() == StaffTasks.Status.ESEGUITA) {
-                    doneToday++;
-                } else if (k.status() == StaffTasks.Status.RIFIUTATA) {
-                    rejectedToday++;
+            for (StaffTasks.Step s : safe(k.steps())) {
+                if (s.doneAt() > 0 && Instant.ofEpochMilli(s.doneAt()).atZone(ROME).toLocalDate().equals(today)) {
+                    if (s.status() == StaffTasks.Status.ESEGUITA) {
+                        doneToday++;
+                    } else if (s.status() == StaffTasks.Status.RIFIUTATA) {
+                        rejectedToday++;
+                    }
                 }
             }
         }
         boolean admin = t.isAdmin(p);
         boolean create = t.canCreate(p);
 
-        put(h, S_CLOSE, pane("&cchiudi", List.of()), () -> p.closeInventory());
+        put(h, S_CLOSE, pane("&cchiudi", List.of()), () -> {
+            p.closeInventory();
+        });
         put(h, S_PREV, pane("&8pagina precedente", List.of("&7C'e' una sola pagina.")), null);
         put(h, S_NEXT, pane("&8pagina successiva", List.of("&7C'e' una sola pagina.")), null);
         put(h, S_BAR, pane("&ftask staff", List.of(
-                "&7aperte: &f" + open.size(),
-                "&7che puoi eseguire: &f" + canDo,
-                "&7eseguite oggi: &f" + doneToday,
-                "&7rifiutate oggi: &f" + rejectedToday)), null);
+                "&7task aperte: &f" + open.size(),
+                "&7azioni aperte: &f" + openSteps,
+                "&7azioni che puoi eseguire: &f" + canDo,
+                "&7azioni eseguite oggi: &f" + doneToday,
+                "&7azioni rifiutate oggi: &f" + rejectedToday)), null);
         put(h, S_INFO, pane("&6info", List.of(
-                "&7Le task le creano gli helper (e i gradi sopra):",
-                "&7un'azione su un giocatore (dai, togli, imposta,",
-                "&7azzera coin, miniere, potenziamenti...).",
+                "&7Una task e' una cartella per un giocatore",
+                "&7con dentro una o piu' azioni (dai, togli, setta,",
+                "&7azzera, banna, warna, muta...).",
                 "&fordinarie&7: le eseguono i mod in su.",
-                "&fcustom&7 (con un testo da verificare): gli sr_mod in su.",
-                "&7Chi crea non puo' eseguire la propria task.",
+                "&fcustom&7 (con un messaggio da verificare): gli sr_mod in su.",
+                "&7Le task le creano gli helper in su.",
+                "&7Chi crea non puo' eseguire le proprie azioni.",
                 "&7Chi puo' eseguire puo' anche rifiutare con un motivo.",
                 "&7Gli admin possono eliminare e ripristinare (cestino).",
                 "&7Tutto finisce nel resoconto.",
                 "",
-                "&eclicca per ricevere l'aiuto in chat")), () -> help(p));
+                "&eclicca per ricevere l'aiuto in chat")), () -> {
+            help(p);
+        });
         put(h, S_LIST, pane("&elista task", List.of(
                 "&7task aperte: &f" + open.size(),
-                "&7ordinarie: &f" + ord,
-                "&7custom: &f" + cus,
                 "&7create da te: &f" + mine,
-                "&7che puoi eseguire: &f" + canDo,
+                "&7azioni che puoi eseguire: &f" + canDo,
                 "",
-                "&eclicca per aprire")), () -> openList(p, 0, 0));
-        put(h, S_CREATE, pane(create ? "&acrea task" : "&8crea task", create
-                ? List.of("&7Crea una nuova task: tipo, giocatore,", "&7risorsa, azione e quantita'.", "", "&eclicca per creare")
-                : List.of("&7Le task le creano gli helper in su.", "", "&cnon puoi creare task")), create ? () -> startCreate(p) : null);
+                "&eclicca per aprire")), () -> {
+            openList(p, 0, 0);
+        });
+        Draft d = drafts.get(me);
+        if (!create) {
+            put(h, S_CREATE, pane("&8crea task", List.of("&7Le task le creano gli helper in su.", "", "&cnon puoi creare task")), null);
+        } else if (d != null) {
+            put(h, S_CREATE, pane("&acrea task", List.of(
+                    "&7Bozza aperta: &f" + d.targetName + " &8(" + d.steps.size() + " azioni)",
+                    "",
+                    "&eclick sinistro: riprendi la bozza",
+                    "&eclick destro: nuova task (la bozza si perde)")), () -> {
+                openDraft(p, 0);
+            });
+            putRight(h, S_CREATE, () -> {
+                plugin.getProfileUi().confirmOver(p, "Buttare la bozza per " + d.targetName + " e crearne una nuova?", bg(), () -> {
+                    drafts.remove(me);
+                    startCreate(p);
+                }, () -> {
+                    open(p);
+                });
+            });
+        } else {
+            put(h, S_CREATE, pane("&acrea task", List.of(
+                    "&7Crea una cartella per un giocatore",
+                    "&7e aggiungi le azioni da fare.",
+                    "",
+                    "&eclicca per creare")), () -> {
+                startCreate(p);
+            });
+        }
         if (admin) {
             put(h, S_TRASH, pane("&ccestino", List.of(
                     "&7task eliminate: &f" + safe(t.list(StaffTasks.Status.ELIMINATA)).size(),
                     "&7Clicca una task per ripristinarla.",
                     "",
-                    "&eclicca per aprire")), () -> openTrash(p, 0));
+                    "&eclicca per aprire")), () -> {
+                openTrash(p, 0);
+            });
         } else {
             put(h, S_TRASH, pane("&8cestino", List.of("&csolo admin")), null);
         }
@@ -270,7 +321,9 @@ public final class TaskGui implements Listener {
                 "&7voci nel registro: &f" + log.size(),
                 admin ? "&7Vedi tutto il registro." : "&7Vedi solo le voci delle tue task (create o eseguite da te).",
                 "",
-                "&eclicca per aprire")), () -> openLog(p, 0, 0));
+                "&eclicca per aprire")), () -> {
+            openLog(p, 0, 0);
+        });
         p.openInventory(h.inventory);
     }
 
@@ -287,14 +340,15 @@ public final class TaskGui implements Listener {
 
     private void help(Player p) {
         GuiMsg.send(plugin, p, "&6task staff &8- &7come funzionano");
-        GuiMsg.send(plugin, p, "&7crea: tipo (ordinaria/custom), giocatore, risorsa, azione, quantita' (e il testo per le custom).");
-        GuiMsg.send(plugin, p, "&7lista: clicca una task per eseguirla (con conferma), rifiutarla (con motivo) o eliminarla (admin).");
-        GuiMsg.send(plugin, p, "&7ordinarie = mod in su, custom = sr_mod in su; non puoi eseguire le task create da te.");
+        GuiMsg.send(plugin, p, "&7crea: scegli il giocatore, poi nella cartella usa &a+&7 per aggiungere le azioni e click destro sul + per salvare.");
+        GuiMsg.send(plugin, p, "&7azione: tipo (ordinaria/custom), azione, cosa, specifica, valore (o codice regola per ban/warn/mute).");
+        GuiMsg.send(plugin, p, "&7lista: apri una cartella e clicca un'azione per eseguirla o rifiutarla (con motivo).");
+        GuiMsg.send(plugin, p, "&7ordinarie = mod in su, custom = sr_mod in su; non puoi eseguire le azioni create da te.");
         GuiMsg.send(plugin, p, "&7cestino (admin): ripristina le task eliminate. resoconto: tutto quello che e' successo.");
     }
 
     // ------------------------------------------------------------------
-    //  CREA
+    //  CREA: player -> cartella (bozza)
     // ------------------------------------------------------------------
 
     private void startCreate(Player p) {
@@ -305,135 +359,279 @@ public final class TaskGui implements Listener {
             deny(p, "non puoi creare task (servono helper o un grado piu' alto).");
             return;
         }
-        chooseType(p, new Draft());
+        askTarget(p, "");
     }
 
-    private void chooseType(Player p, Draft d) {
-        List<Opt> opts = List.of(
-                new Opt("ORDINARIA", "ordinaria", List.of("&7Un'azione su un giocatore.", "&7La eseguono i mod in su.")),
-                new Opt("CUSTOM", "custom", List.of("&7Un testo da verificare + un'azione.", "&7La eseguono gli sr_mod in su.")));
-        choose(p, "crea task tipo", opts, d.type == StaffTasks.Type.CUSTOM ? 1 : 0, key -> {
-            d.type = StaffTasks.Type.valueOf(key);
-            askTarget(p, d);
-        }, () -> {
-            open(p);
-        });
-    }
-
-    private void askTarget(Player p, Draft d) {
-        plugin.getProfileUi().askText(p, "nome del giocatore", "NOME GIOCATORE", d.targetName, name -> {
+    private void askTarget(Player p, String initial) {
+        plugin.getProfileUi().askText(p, "nome del giocatore", "NOME GIOCATORE", initial, name -> {
             UUID id = resolve(name);
             if (id == null) {
                 deny(p, "giocatore sconosciuto: " + (name == null ? "" : name));
-                askTarget(p, d);
+                askTarget(p, name == null ? "" : name);
                 return;
             }
             if (id.equals(p.getUniqueId()) && !tasks().isAdmin(p)) {
                 deny(p, "non puoi creare una task su te stesso.");
-                askTarget(p, d);
+                askTarget(p, "");
                 return;
             }
+            Draft d = new Draft();
             d.target = id;
             String n = UserProfilePowers.nameOf(id);
             d.targetName = n.isEmpty() ? name.trim() : n;
-            chooseWhat(p, d);
+            drafts.put(p.getUniqueId(), d);
+            openDraft(p, 0);
         }, () -> {
-            chooseType(p, d);
+            open(p);
         });
     }
 
-    private void chooseWhat(Player p, Draft d) {
-        List<Opt> opts = new ArrayList<>();
-        for (String w : StaffTasks.WHATS) {
-            opts.add(new Opt(w, whatLabel(w), List.of("&7Giocatore: &f" + d.targetName)));
-        }
-        int start = d.what == null ? 0 : Math.max(0, StaffTasks.WHATS.indexOf(d.what));
-        choose(p, "crea task risorsa", opts, start, key -> {
-            if (!key.equals(d.what)) {
-                d.verb = null;
-            }
-            d.what = key;
-            chooseVerb(p, d);
-        }, () -> {
-            askTarget(p, d);
-        });
-    }
-
-    private void chooseVerb(Player p, Draft d) {
-        List<String> verbs = safe(StaffTasks.verbsFor(d.what));
-        if (verbs.isEmpty()) {
-            deny(p, "nessuna azione possibile per " + whatLabel(d.what) + ".");
-            chooseWhat(p, d);
+    /** Cartella della bozza: step (click destro = togli), "+" = aggiungi azione, click destro sul "+" = salva. */
+    private void openDraft(Player p, int page) {
+        if (!guard(p)) {
             return;
         }
-        List<Opt> opts = new ArrayList<>();
-        for (String v : verbs) {
-            opts.add(new Opt(v, verbLabel(v), List.of("&7" + verbLabel(v) + " " + whatLabel(d.what) + " a &f" + d.targetName)));
-        }
-        int start = d.verb == null ? 0 : Math.max(0, verbs.indexOf(d.verb));
-        choose(p, "crea task azione", opts, start, key -> {
-            d.verb = key;
-            askAmount(p, d);
-        }, () -> {
-            chooseWhat(p, d);
-        });
-    }
-
-    private void askAmount(Player p, Draft d) {
-        if ("reset".equals(d.verb)) {
-            d.amount = 0;
-            askCustomText(p, d);
+        Draft d = drafts.get(p.getUniqueId());
+        if (d == null) {
+            open(p);
             return;
         }
-        long min = "edit".equals(d.verb) ? 0 : 1;
-        plugin.getProfileUi().askNumber(p, "quantita' (" + verbLabel(d.verb) + " " + whatLabel(d.what) + ")", "QUANTITA", min, MAX_AMOUNT, n -> {
-            d.amount = n;
-            askCustomText(p, d);
+        List<Row> rows = new ArrayList<>();
+        for (StaffTasks.Step s : d.steps) {
+            List<String> lore = stepLore(s);
+            lore.add("");
+            lore.add("&eclick destro: togli dalla bozza");
+            rows.add(new Row(stepItem(s, lore), null, () -> {
+                d.steps.remove(s);
+                GuiMsg.send(plugin, p, "&7azione tolta dalla bozza: &f" + StaffTasks.describe(s));
+                openDraft(p, page);
+            }));
+        }
+        int n = d.steps.size();
+        List<String> btnLore = new ArrayList<>();
+        btnLore.add("&7Giocatore: &f" + d.targetName);
+        btnLore.add("&7Azioni nella bozza: &f" + n);
+        btnLore.add("");
+        btnLore.add("&eclick sinistro: aggiungi un'azione");
+        btnLore.add(n > 0 ? "&aclick destro: salva la task" : "&8click destro: salva (serve almeno un'azione)");
+        Runnable save = n > 0 ? () -> {
+            confirmSave(p);
+        } : () -> {
+            deny(p, "aggiungi almeno un'azione prima di salvare.");
+        };
+        panel(p, "nuova task", d.targetName, F_IMAGE, F_FONT, F_ADV, rows, page, pg -> {
+            openDraft(p, pg);
         }, () -> {
-            chooseVerb(p, d);
-        });
+            open(p);
+        }, "&cindietro", List.of("&7Torna alla schermata task.", "&7La bozza resta: CREA la riapre."),
+                pane("&a+ aggiungi azione", btnLore), () -> {
+                    stage(p, new StepDraft(), Stage.KIND);
+                }, save);
     }
 
-    private void askCustomText(Player p, Draft d) {
-        if (d.type != StaffTasks.Type.CUSTOM) {
-            confirmCreate(p, d);
+    private void confirmSave(Player p) {
+        Draft d = drafts.get(p.getUniqueId());
+        if (d == null || d.steps.isEmpty()) {
+            openDraft(p, 0);
             return;
         }
-        plugin.getProfileUi().askText(p, "testo della task (es. verifica se ...)", "TESTO TASK", d.text, text -> {
-            if (text == null || text.isBlank()) {
-                deny(p, "scrivi il testo della task custom.");
-                askCustomText(p, d);
-                return;
-            }
-            d.text = text.trim();
-            confirmCreate(p, d);
-        }, () -> {
-            if ("reset".equals(d.verb)) {
-                chooseVerb(p, d);
-            } else {
-                askAmount(p, d);
-            }
-        });
-    }
-
-    private void confirmCreate(Player p, Draft d) {
-        StaffTasks.Action action = new StaffTasks.Action(d.what, d.verb, d.amount);
-        String text = "Creare la task " + typeLabel(d.type) + ": " + actionText(action) + " a " + d.targetName
-                + (d.type == StaffTasks.Type.CUSTOM ? " (" + cut(clean(d.text), 40) + ")" : "") + "?";
-        plugin.getProfileUi().confirmOver(p, text, bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Salvare la task per " + d.targetName + " con " + d.steps.size() + " azioni?", bg(), () -> {
             if (!guard(p)) {
                 return;
             }
-            StaffTasks.Task t = tasks().create(p, d.type, d.target, action, d.type == StaffTasks.Type.CUSTOM ? d.text : null);
+            StaffTasks.Task t = tasks().create(p, d.target, new ArrayList<>(d.steps));
             if (t == null) {
                 deny(p, "non e' stato possibile creare la task.");
-            } else {
-                GuiMsg.send(plugin, p, "&7task &f#" + t.id() + "&7 creata: &f" + actionText(action) + "&7 a &f" + d.targetName + "&7.");
+                openDraft(p, 0);
+                return;
             }
+            drafts.remove(p.getUniqueId());
+            GuiMsg.send(plugin, p, "&7task &f" + t.id() + "&7 creata per &f" + d.targetName + "&7 (" + d.steps.size() + " azioni).");
             open(p);
         }, () -> {
-            open(p);
+            openDraft(p, 0);
         });
+    }
+
+    // ------------------------------------------------------------------
+    //  Selezione di un'azione (passi che si adattano alle scelte)
+    // ------------------------------------------------------------------
+
+    /** Il passo serve con le scelte fatte fin qui? */
+    private boolean needed(StepDraft sd, Stage st) {
+        return switch (st) {
+            case KIND, VERB, CONFIRM -> true;
+            case TEXT -> sd.kind == StaffTasks.Kind.CUSTOM;
+            case WHAT -> !safe(StaffTasks.whatsFor(sd.verb)).isEmpty();
+            case SPEC -> !specs(sd).isEmpty();
+            case VALUE -> StaffTasks.valuePrompt(sd.verb, sd.what, sd.spec) != null;
+            case RULE -> SANCTIONS.contains(sd.verb);
+        };
+    }
+
+    /** Svuota il campo di un passo saltato (le scelte di prima possono averlo reso inutile). */
+    private static void clear(StepDraft sd, Stage st) {
+        switch (st) {
+            case TEXT -> sd.text = null;
+            case WHAT -> sd.what = null;
+            case SPEC -> sd.spec = null;
+            case VALUE -> sd.amount = 0;
+            case RULE -> sd.ruleCode = null;
+            default -> { }
+        }
+    }
+
+    private List<StaffTasks.Spec> specs(StepDraft sd) {
+        try {
+            return safe(tasks().specsFor(sd.verb, sd.what));
+        } catch (RuntimeException ex) {
+            return List.of();
+        }
+    }
+
+    private void next(Player p, StepDraft sd, Stage from) {
+        Stage[] all = Stage.values();
+        for (int i = from.ordinal() + 1; i < all.length; i++) {
+            if (needed(sd, all[i])) {
+                stage(p, sd, all[i]);
+                return;
+            }
+            clear(sd, all[i]);
+        }
+    }
+
+    private void prev(Player p, StepDraft sd, Stage from) {
+        Stage[] all = Stage.values();
+        for (int i = from.ordinal() - 1; i >= 0; i--) {
+            if (needed(sd, all[i])) {
+                stage(p, sd, all[i]);
+                return;
+            }
+        }
+        openDraft(p, 0);
+    }
+
+    private void stage(Player p, StepDraft sd, Stage st) {
+        if (!guard(p)) {
+            return;
+        }
+        Draft d = drafts.get(p.getUniqueId());
+        if (d == null) {
+            open(p);
+            return;
+        }
+        Runnable back = () -> {
+            prev(p, sd, st);
+        };
+        switch (st) {
+            case KIND -> {
+                List<Opt> opts = List.of(
+                        new Opt("ORDINARIA", "ordinaria", List.of("&7Un'azione sul giocatore.", "&7La eseguono i mod in su.")),
+                        new Opt("CUSTOM", "custom", List.of("&7Prima scrivi cosa verificare,", "&7poi scegli l'azione.", "&7La eseguono gli sr_mod in su.")));
+                choose(p, "azione tipo", opts, sd.kind == StaffTasks.Kind.CUSTOM ? 1 : 0, key -> {
+                    sd.kind = StaffTasks.Kind.valueOf(key);
+                    next(p, sd, st);
+                }, () -> {
+                    openDraft(p, 0);
+                });
+            }
+            case TEXT -> plugin.getProfileUi().askText(p, "messaggio (es. verifica se ...)", "MESSAGGIO TASK", sd.text == null ? "" : sd.text, text -> {
+                if (text == null || text.isBlank()) {
+                    deny(p, "scrivi il messaggio della task custom.");
+                    stage(p, sd, st);
+                    return;
+                }
+                sd.text = text.trim();
+                next(p, sd, st);
+            }, back);
+            case VERB -> {
+                List<Opt> opts = new ArrayList<>();
+                List<String> verbs = safe(StaffTasks.verbs());
+                for (String v : verbs) {
+                    opts.add(new Opt(v, StaffTasks.label(v), List.of("&7Giocatore: &f" + d.targetName)));
+                }
+                choose(p, "azione", opts, sd.verb == null ? 0 : Math.max(0, verbs.indexOf(sd.verb)), key -> {
+                    sd.verb = key;
+                    next(p, sd, st);
+                }, back);
+            }
+            case WHAT -> {
+                List<Opt> opts = new ArrayList<>();
+                List<String> whats = safe(StaffTasks.whatsFor(sd.verb));
+                for (String w : whats) {
+                    opts.add(new Opt(w, StaffTasks.labelWhat(w), List.of("&7" + StaffTasks.label(sd.verb) + " " + StaffTasks.labelWhat(w) + " a &f" + d.targetName)));
+                }
+                choose(p, StaffTasks.label(sd.verb) + " cosa", opts, sd.what == null ? 0 : Math.max(0, whats.indexOf(sd.what)), key -> {
+                    if (!key.equals(sd.what)) {
+                        sd.spec = null;
+                    }
+                    sd.what = key;
+                    next(p, sd, st);
+                }, back);
+            }
+            case SPEC -> {
+                List<Opt> opts = new ArrayList<>();
+                List<StaffTasks.Spec> specs = specs(sd);
+                int start = 0;
+                for (int i = 0; i < specs.size(); i++) {
+                    StaffTasks.Spec s = specs.get(i);
+                    opts.add(new Opt(s.id(), s.label(), List.of("&7" + StaffTasks.label(sd.verb) + " " + StaffTasks.labelWhat(sd.what) + ": &f" + s.label())));
+                    if (s.id().equals(sd.spec)) {
+                        start = i;
+                    }
+                }
+                choose(p, StaffTasks.labelWhat(sd.what) + " quale", opts, start, key -> {
+                    sd.spec = key;
+                    next(p, sd, st);
+                }, back);
+            }
+            case VALUE -> {
+                String prompt = StaffTasks.valuePrompt(sd.verb, sd.what, sd.spec);
+                long[] range = StaffTasks.valueRange(sd.verb, sd.what);
+                long min = range == null || range.length < 2 ? 0 : range[0];
+                long max = range == null || range.length < 2 ? Integer.MAX_VALUE : range[1];
+                plugin.getProfileUi().askNumber(p, prompt, prompt.toUpperCase(Locale.ROOT), min, max, n -> {
+                    sd.amount = n;
+                    next(p, sd, st);
+                }, back);
+            }
+            case RULE -> plugin.getProfileUi().askText(p, "codice regola (" + StaffTasks.label(sd.verb) + ")", "CODICE REGOLA",
+                    sd.ruleCode == null ? "" : sd.ruleCode, code -> {
+                        Rules rules = plugin.getRules();
+                        Rules.Rule rule = rules == null ? null : rules.get(code == null ? "" : code.trim());
+                        if (rule == null || rule.type() != ruleType(sd.verb)) {
+                            deny(p, "regola inesistente o di altro tipo (serve una regola " + ruleType(sd.verb).name().toLowerCase(Locale.ROOT) + ").");
+                            stage(p, sd, st);
+                            return;
+                        }
+                        sd.ruleCode = rule.code();
+                        next(p, sd, st);
+                    }, back);
+            case CONFIRM -> {
+                StaffTasks.Step s = StaffTasks.newStep(sd.kind, sd.verb, sd.what, sd.spec, sd.amount, sd.ruleCode,
+                        sd.kind == StaffTasks.Kind.CUSTOM ? sd.text : null);
+                String text = "Aggiungere alla task di " + d.targetName + ": " + StaffTasks.describe(s)
+                        + (sd.kind == StaffTasks.Kind.CUSTOM ? " (custom: " + cut(clean(sd.text), 40) + ")" : "") + "?";
+                plugin.getProfileUi().confirmOver(p, text, bg(), () -> {
+                    Draft cur = drafts.get(p.getUniqueId());
+                    if (cur == null) {
+                        open(p);
+                        return;
+                    }
+                    cur.steps.add(s);
+                    GuiMsg.send(plugin, p, "&7azione aggiunta: &f" + StaffTasks.describe(s));
+                    openDraft(p, (cur.steps.size() - 1) / L_PER_PAGE);
+                }, back);
+            }
+        }
+    }
+
+    private static Rules.Type ruleType(String verb) {
+        return switch (verb == null ? "" : verb) {
+            case "ban" -> Rules.Type.BAN;
+            case "mute" -> Rules.Type.MUTE;
+            default -> Rules.Type.WARN;
+        };
     }
 
     private static UUID resolve(String name) {
@@ -450,12 +648,12 @@ public final class TaskGui implements Listener {
     }
 
     // ------------------------------------------------------------------
-    //  LISTA (task aperte)
+    //  LISTA e cartella di una task salvata
     // ------------------------------------------------------------------
 
     private static final List<Filter> LIST_FILTERS = List.of(
             new Filter("Tutte", ""),
-            new Filter("Ordinarie", "ORDINARIA"),
+            new Filter("Da fare", "CAN"),
             new Filter("Custom", "CUSTOM"),
             new Filter("Mie", "MIE"));
 
@@ -463,119 +661,191 @@ public final class TaskGui implements Listener {
         if (!guard(p)) {
             return;
         }
-        showList(p, "lista task", LIST_FILTERS, filterIdx, page, key -> openRows(p, key, filterIdx),
-                (fi, pg) -> openList(p, fi, pg), () -> open(p));
-    }
-
-    private List<Row> openRows(Player p, String key, int filterIdx) {
-        List<Row> out = new ArrayList<>();
+        int fi = Math.max(0, Math.min(filterIdx, LIST_FILTERS.size() - 1));
         StaffTasks t = tasks();
         UUID me = p.getUniqueId();
+        String key = LIST_FILTERS.get(fi).key();
+        List<Row> rows = new ArrayList<>();
         for (StaffTasks.Task k : safe(t.list(StaffTasks.Status.APERTA))) {
-            if ("ORDINARIA".equals(key) && k.type() != StaffTasks.Type.ORDINARIA) {
+            List<StaffTasks.Step> steps = safe(k.steps());
+            boolean anyCustom = false;
+            int canDo = 0;
+            int openN = 0;
+            for (StaffTasks.Step s : steps) {
+                if (s.kind() == StaffTasks.Kind.CUSTOM) {
+                    anyCustom = true;
+                }
+                if (s.status() == StaffTasks.Status.APERTA) {
+                    openN++;
+                    if (t.canExecute(p, s)) {
+                        canDo++;
+                    }
+                }
+            }
+            if ("CAN".equals(key) && canDo == 0) {
                 continue;
             }
-            if ("CUSTOM".equals(key) && k.type() != StaffTasks.Type.CUSTOM) {
+            if ("CUSTOM".equals(key) && !anyCustom) {
                 continue;
             }
             if ("MIE".equals(key) && !me.equals(k.createdBy())) {
                 continue;
             }
-            boolean exec = t.canExecute(p, k);
-            boolean admin = t.isAdmin(p);
             List<String> lore = taskLore(k);
-            lore.add(Bukkit.getPlayer(k.target()) != null ? "&7giocatore online: &asi" : "&7giocatore online: &cno &8(per eseguirla deve essere online)");
+            lore.add("&7azioni aperte: &f" + openN + "&8/&f" + steps.size() + " &7(che puoi eseguire: &f" + canDo + "&7)");
+            lore.add(Bukkit.getPlayer(k.target()) != null ? "&7giocatore online: &asi" : "&7giocatore online: &cno");
             lore.add("");
-            if (exec || admin) {
-                lore.add("&eclicca per " + (exec && admin ? "eseguire, rifiutare o eliminare" : exec ? "eseguire o rifiutare" : "eliminare"));
-            } else if (me.equals(k.createdBy())) {
-                lore.add("&8l'hai creata tu: non puoi eseguirla");
-            } else {
-                lore.add("&8il tuo grado non puo' eseguirla");
-            }
+            lore.add("&eclicca per aprire la cartella");
             String id = k.id();
-            out.add(new Row(item(k.type() == StaffTasks.Type.CUSTOM ? Material.WRITABLE_BOOK : Material.PAPER, taskName(k), lore),
-                    exec || admin ? () -> taskActions(p, id, filterIdx) : null));
+            rows.add(new Row(item(anyCustom ? Material.WRITABLE_BOOK : Material.BOOK,
+                    "&e" + clean(k.targetName()) + " &7- &f" + steps.size() + " azioni", lore), () -> {
+                viewTask(p, id, 0, () -> {
+                    openList(p, fi, page);
+                });
+            }, null));
         }
-        return out;
+        listPanel(p, "lista task", LIST_FILTERS, fi, page, rows, (f, pg) -> {
+            openList(p, f, pg);
+        }, () -> {
+            open(p);
+        });
     }
 
-    /** Popup con frecce: esegui / rifiuta / elimina, secondo i permessi. */
-    private void taskActions(Player p, String id, int filterIdx) {
+    /** Cartella di una task salvata: click su uno step = esegui / rifiuta (/ elimina task se admin). */
+    private void viewTask(Player p, String taskId, int page, Runnable back) {
         if (!guard(p)) {
             return;
         }
         StaffTasks t = tasks();
-        StaffTasks.Task k = t.get(id);
-        if (k == null || k.status() != StaffTasks.Status.APERTA) {
-            deny(p, "la task non e' piu' aperta.");
-            openList(p, filterIdx, 0);
+        StaffTasks.Task k = t.get(taskId);
+        if (k == null) {
+            deny(p, "task non trovata.");
+            back.run();
             return;
         }
-        List<Opt> opts = new ArrayList<>();
-        String what = actionText(k.action()) + " a " + k.targetName();
-        if (t.canExecute(p, k)) {
-            opts.add(new Opt("esegui", "esegui", List.of("&7Esegue davvero: &f" + what, "&7Chiede conferma.")));
-            opts.add(new Opt("rifiuta", "rifiuta", List.of("&7Rifiuta la task con un motivo.")));
+        boolean admin = t.isAdmin(p);
+        boolean deletable = admin && k.status() != StaffTasks.Status.ELIMINATA;
+        List<Row> rows = new ArrayList<>();
+        for (StaffTasks.Step s : safe(k.steps())) {
+            List<String> lore = stepLore(s);
+            boolean exec = s.status() == StaffTasks.Status.APERTA && k.status() != StaffTasks.Status.ELIMINATA && t.canExecute(p, s);
+            lore.add("");
+            if (exec || deletable) {
+                lore.add("&eclicca per " + (exec ? "eseguire o rifiutare" : "eliminare la task"));
+            } else if (s.status() == StaffTasks.Status.APERTA) {
+                lore.add(p.getUniqueId().equals(k.createdBy()) ? "&8l'hai creata tu: non puoi eseguirla" : "&8il tuo grado non puo' eseguirla");
+            }
+            String sid = s.id();
+            rows.add(new Row(stepItem(s, lore), exec || deletable ? () -> {
+                stepActions(p, taskId, sid, page, back);
+            } : null, null));
         }
-        if (t.isAdmin(p)) {
-            opts.add(new Opt("elimina", "elimina", List.of("&7Sposta la task nel cestino (solo admin).", "&7Chiede conferma.")));
+        List<String> btnLore = taskLore(k);
+        btnLore.add("&7stato: &f" + statusLabel(k.status()));
+        if (deletable) {
+            btnLore.add("");
+            btnLore.add("&cclick destro: elimina la task (va nel cestino)");
+        }
+        Runnable del = deletable ? () -> {
+            confirmDelete(p, taskId, back, () -> {
+                viewTask(p, taskId, page, back);
+            });
+        } : null;
+        panel(p, "task " + clean(k.targetName()), k.targetName(), F_IMAGE, F_FONT, F_ADV, rows, page, pg -> {
+            viewTask(p, taskId, pg, back);
+        }, back, "&cindietro", List.of(), pane("&fcartella task", btnLore), null, del);
+    }
+
+    private void confirmDelete(Player p, String taskId, Runnable afterDelete, Runnable onNo) {
+        plugin.getProfileUi().confirmOver(p, "Eliminare la task " + taskId + " (va nel cestino)?", bg(), () -> {
+            if (!guard(p)) {
+                return;
+            }
+            if (tasks().delete(p, taskId)) {
+                GuiMsg.send(plugin, p, "&7task &f" + taskId + "&7 spostata nel cestino.");
+                afterDelete.run();
+            } else {
+                deny(p, "non e' stato possibile eliminare la task.");
+                onNo.run();
+            }
+        }, onNo);
+    }
+
+    /** Popup con frecce sullo step: esegui / rifiuta secondo i permessi, elimina task per gli admin. */
+    private void stepActions(Player p, String taskId, String stepId, int page, Runnable listBack) {
+        StaffTasks t = tasks();
+        StaffTasks.Task k = t.get(taskId);
+        StaffTasks.Step s = k == null ? null : findStep(k, stepId);
+        Runnable back = () -> {
+            viewTask(p, taskId, page, listBack);
+        };
+        if (s == null) {
+            deny(p, "azione non trovata.");
+            back.run();
+            return;
+        }
+        String what = StaffTasks.describe(s) + " a " + clean(k.targetName());
+        List<Opt> opts = new ArrayList<>();
+        if (s.status() == StaffTasks.Status.APERTA && k.status() != StaffTasks.Status.ELIMINATA && t.canExecute(p, s)) {
+            opts.add(new Opt("esegui", "esegui", List.of("&7Esegue davvero: &f" + what, "&7Chiede conferma.")));
+            opts.add(new Opt("rifiuta", "rifiuta", List.of("&7Rifiuta questa azione con un motivo.")));
+        }
+        if (t.isAdmin(p) && k.status() != StaffTasks.Status.ELIMINATA) {
+            opts.add(new Opt("elimina", "elimina task", List.of("&7Sposta tutta la task nel cestino.", "&7Chiede conferma.")));
         }
         if (opts.isEmpty()) {
-            deny(p, "non puoi fare niente su questa task.");
-            openList(p, filterIdx, 0);
+            deny(p, "non puoi fare niente su questa azione.");
+            back.run();
             return;
         }
-        Runnable back = () -> openList(p, filterIdx, 0);
-        choose(p, "task " + id, opts, 0, key -> {
+        choose(p, "azione " + clean(k.targetName()), opts, 0, key -> {
             switch (key) {
-                case "esegui" -> plugin.getProfileUi().confirmOver(p, "Eseguire la task #" + id + ": " + what + "?", bg(), () -> {
+                case "esegui" -> plugin.getProfileUi().confirmOver(p, "Eseguire: " + what + "?", bg(), () -> {
                     if (!guard(p)) {
                         return;
                     }
-                    String err = tasks().execute(p, id);
+                    String err = tasks().executeStep(p, taskId, stepId);
                     if (err == null) {
-                        GuiMsg.send(plugin, p, "&atask #" + id + " eseguita: &f" + what + "&a.");
+                        GuiMsg.send(plugin, p, "&aazione eseguita: &f" + what + "&a.");
                     } else {
                         deny(p, err);
                     }
                     back.run();
                 }, back);
-                case "rifiuta" -> askReason(p, id, back);
-                case "elimina" -> plugin.getProfileUi().confirmOver(p, "Eliminare la task #" + id + " (va nel cestino)?", bg(), () -> {
-                    if (!guard(p)) {
-                        return;
-                    }
-                    if (tasks().delete(p, id)) {
-                        GuiMsg.send(plugin, p, "&7task &f#" + id + "&7 spostata nel cestino.");
-                    } else {
-                        deny(p, "non e' stato possibile eliminare la task.");
-                    }
-                    back.run();
-                }, back);
+                case "rifiuta" -> askReason(p, taskId, stepId, back);
+                case "elimina" -> confirmDelete(p, taskId, listBack, back);
                 default -> back.run();
             }
         }, back);
     }
 
-    private void askReason(Player p, String id, Runnable back) {
+    private void askReason(Player p, String taskId, String stepId, Runnable back) {
         plugin.getProfileUi().askText(p, "motivo del rifiuto", "MOTIVO RIFIUTO", "", reason -> {
             if (reason == null || reason.isBlank()) {
                 deny(p, "scrivi il motivo del rifiuto.");
-                askReason(p, id, back);
+                askReason(p, taskId, stepId, back);
                 return;
             }
             if (!guard(p)) {
                 return;
             }
-            String err = tasks().reject(p, id, reason.trim());
+            String err = tasks().rejectStep(p, taskId, stepId, reason.trim());
             if (err == null) {
-                GuiMsg.send(plugin, p, "&7task &f#" + id + "&7 rifiutata.");
+                GuiMsg.send(plugin, p, "&7azione rifiutata.");
             } else {
                 deny(p, err);
             }
             back.run();
         }, back);
+    }
+
+    private static StaffTasks.Step findStep(StaffTasks.Task k, String stepId) {
+        for (StaffTasks.Step s : safe(k.steps())) {
+            if (s.id().equals(stepId)) {
+                return s;
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------
@@ -590,34 +860,41 @@ public final class TaskGui implements Listener {
             deny(p, "il cestino e' solo per gli admin.");
             return;
         }
-        showList(p, "cestino task", List.of(new Filter("Eliminate", "")), 0, page, key -> trashRows(p),
-                (fi, pg) -> openTrash(p, pg), () -> open(p));
-    }
-
-    private List<Row> trashRows(Player p) {
-        List<Row> out = new ArrayList<>();
+        List<Row> rows = new ArrayList<>();
         for (StaffTasks.Task k : safe(tasks().list(StaffTasks.Status.ELIMINATA))) {
             List<String> lore = taskLore(k);
+            for (StaffTasks.Step s : safe(k.steps())) {
+                lore.add(stepColor(s) + "- " + StaffTasks.describe(s));
+            }
             lore.add("");
-            lore.add("&eclicca per ripristinare");
+            lore.add("&eclick sinistro: ripristina");
+            lore.add("&eclick destro: apri la cartella");
             String id = k.id();
-            out.add(new Row(item(Material.BARRIER, taskName(k), lore), () -> {
-                plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bg(), () -> {
+            rows.add(new Row(item(Material.BARRIER, "&c" + clean(k.targetName()) + " &7- &f" + safe(k.steps()).size() + " azioni", lore), () -> {
+                plugin.getProfileUi().confirmOver(p, "Ripristinare la task " + id + " di " + clean(k.targetName()) + "?", bg(), () -> {
                     if (!guard(p)) {
                         return;
                     }
                     if (tasks().restore(p, id)) {
-                        GuiMsg.send(plugin, p, "&7task &f#" + id + "&7 ripristinata.");
+                        GuiMsg.send(plugin, p, "&7task &f" + id + "&7 ripristinata.");
                     } else {
                         deny(p, "non e' stato possibile ripristinare la task.");
                     }
-                    openTrash(p, 0);
+                    openTrash(p, page);
                 }, () -> {
-                    openTrash(p, 0);
+                    openTrash(p, page);
+                });
+            }, () -> {
+                viewTask(p, id, 0, () -> {
+                    openTrash(p, page);
                 });
             }));
         }
-        return out;
+        listPanel(p, "cestino task", List.of(new Filter("Eliminate", "")), 0, page, rows, (f, pg) -> {
+            openTrash(p, pg);
+        }, () -> {
+            open(p);
+        });
     }
 
     // ------------------------------------------------------------------
@@ -636,13 +913,10 @@ public final class TaskGui implements Listener {
         if (!guard(p)) {
             return;
         }
-        showList(p, "resoconto task", LOG_FILTERS, filterIdx, page, key -> logRows(p, key),
-                (fi, pg) -> openLog(p, fi, pg), () -> open(p));
-    }
-
-    private List<Row> logRows(Player p, String key) {
-        List<Row> out = new ArrayList<>();
+        int fi = Math.max(0, Math.min(filterIdx, LOG_FILTERS.size() - 1));
+        String key = LOG_FILTERS.get(fi).key();
         StaffTasks t = tasks();
+        List<Row> rows = new ArrayList<>();
         for (StaffTasks.LogEntry e : safe(t.log(t.isAdmin(p) ? null : p.getUniqueId()))) {
             String ev = e.event() == null ? "" : e.event().toUpperCase(Locale.ROOT);
             if (!key.isEmpty() && !key.equals(ev)) {
@@ -658,12 +932,15 @@ public final class TaskGui implements Listener {
                 case "RIPRISTINATA" -> { mat = Material.LIGHT_BLUE_DYE; color = "&b"; }
                 default -> { mat = Material.PAPER; color = "&7"; }
             }
-            List<String> lore = new ArrayList<>();
-            lore.add("&7task: &f#" + e.taskId());
             StaffTasks.Task k = t.get(e.taskId());
-            if (k != null) {
-                lore.add("&7tipo: &f" + typeLabel(k.type()));
-                lore.add("&7azione: &f" + actionText(k.action()) + " a " + clean(k.targetName()));
+            StaffTasks.Step s = k == null || e.stepId() == null ? null : findStep(k, e.stepId());
+            List<String> lore = new ArrayList<>();
+            lore.add("&7task: &f" + e.taskId() + (k == null ? "" : " &8(" + clean(k.targetName()) + ")"));
+            if (s != null) {
+                lore.add("&7azione: &f" + StaffTasks.describe(s));
+                lore.add("&7tipo: &f" + kindLabel(s.kind()));
+            } else if (k != null) {
+                lore.add("&7azioni: &f" + safe(k.steps()).size());
             }
             lore.add("&7da: &f" + (e.byName() == null || e.byName().isBlank() ? "sistema" : clean(e.byName())));
             lore.add("&7quando: &f" + date(e.ts()));
@@ -672,90 +949,131 @@ public final class TaskGui implements Listener {
                     lore.add("&f" + line);
                 }
             }
-            out.add(new Row(item(mat, color + ev.toLowerCase(Locale.ROOT) + " &7- &f#" + e.taskId() + " &7- &f" + date(e.ts()), lore), null));
+            String what = s != null ? StaffTasks.describe(s) : k != null ? clean(k.targetName()) : e.taskId();
+            rows.add(new Row(item(mat, color + ev.toLowerCase(Locale.ROOT) + " &7- &f" + what, lore), null, null));
         }
-        return out;
+        listPanel(p, "resoconto task", LOG_FILTERS, fi, page, rows, (f, pg) -> {
+            openLog(p, f, pg);
+        }, () -> {
+            open(p);
+        });
     }
 
     // ------------------------------------------------------------------
-    //  Testi delle task
+    //  Testi e item
     // ------------------------------------------------------------------
-
-    private String taskName(StaffTasks.Task k) {
-        String c = k.type() == StaffTasks.Type.CUSTOM ? "&d" : "&e";
-        return c + typeLabel(k.type()) + " &7- &f" + actionText(k.action()) + " a " + clean(k.targetName());
-    }
 
     private List<String> taskLore(StaffTasks.Task k) {
         List<String> lore = new ArrayList<>();
-        lore.add("&7id: &f#" + k.id());
-        lore.add("&7tipo: &f" + typeLabel(k.type()));
+        lore.add("&7id: &f" + k.id());
         lore.add("&7giocatore: &f" + clean(k.targetName()));
-        lore.add("&7azione: &f" + actionText(k.action()));
-        if (k.text() != null && !k.text().isBlank()) {
-            lore.add("&7testo:");
-            for (String line : wrap(clean(k.text()), 34)) {
+        lore.add("&7creata da: &f" + clean(k.createdByName()));
+        lore.add("&7quando: &f" + date(k.createdAt()));
+        return lore;
+    }
+
+    private List<String> stepLore(StaffTasks.Step s) {
+        List<String> lore = new ArrayList<>();
+        lore.add("&7tipo: &f" + kindLabel(s.kind()));
+        lore.add("&7azione: &f" + StaffTasks.label(s.verb()));
+        if (s.what() != null && !s.what().isBlank()) {
+            lore.add("&7cosa: &f" + StaffTasks.labelWhat(s.what()));
+        }
+        if (s.spec() != null && !s.spec().isBlank()) {
+            lore.add("&7specifica: &f" + clean(s.spec()));
+        }
+        if (StaffTasks.valuePrompt(s.verb(), s.what(), s.spec()) != null) {
+            lore.add("&7valore: &f" + s.amount());
+        }
+        if (s.ruleCode() != null && !s.ruleCode().isBlank()) {
+            lore.add("&7regola: &f" + clean(s.ruleCode()));
+        }
+        if (s.text() != null && !s.text().isBlank()) {
+            lore.add("&7messaggio:");
+            for (String line : wrap(clean(s.text()), 34)) {
                 lore.add("&f" + line);
             }
         }
-        lore.add("&7creata da: &f" + clean(k.createdByName()));
-        lore.add("&7quando: &f" + date(k.createdAt()));
-        lore.add("&7stato: &f" + k.status().name().toLowerCase(Locale.ROOT));
-        // doneBy/doneAt restano anche nel cestino: con il motivo = rifiutata, senza = eseguita (come StaffTasks.restore)
-        if (k.doneAt() > 0 && k.doneByName() != null && !k.doneByName().isBlank()) {
-            boolean rejected = k.reason() != null && !k.reason().isBlank();
-            lore.add("&7" + (rejected ? "rifiutata" : "eseguita") + " da: &f" + clean(k.doneByName()) + " &8(" + date(k.doneAt()) + ")");
+        if (s.status() != null) {
+            lore.add("&7stato: " + stepColor(s) + statusLabel(s.status()));
         }
-        if (k.reason() != null && !k.reason().isBlank()) {
+        if (s.doneAt() > 0 && s.doneByName() != null && !s.doneByName().isBlank()) {
+            lore.add("&7" + (s.status() == StaffTasks.Status.RIFIUTATA ? "rifiutata" : "eseguita") + " da: &f" + clean(s.doneByName())
+                    + " &8(" + date(s.doneAt()) + ")");
+        }
+        if (s.reason() != null && !s.reason().isBlank()) {
             lore.add("&7motivo:");
-            for (String line : wrap(clean(k.reason()), 34)) {
-                lore.add("&f" + line);
+            for (String line : wrap(clean(s.reason()), 34)) {
+                lore.add("&c" + line);
             }
         }
         return lore;
     }
 
-    private static String typeLabel(StaffTasks.Type t) {
-        return t == StaffTasks.Type.CUSTOM ? "custom" : "ordinaria";
+    /** Item dello step: materiale dalla cosa/azione, nome = describe colorato per stato (verde eseguito, rosso rifiutato). */
+    private ItemStack stepItem(StaffTasks.Step s, List<String> lore) {
+        String base = s.status() == StaffTasks.Status.APERTA || s.status() == null
+                ? (s.kind() == StaffTasks.Kind.CUSTOM ? "&d" : "&e") : stepColor(s);
+        return item(stepMaterial(s), base + StaffTasks.describe(s), lore);
     }
 
-    private static String verbLabel(String verb) {
-        if (verb == null) {
-            return "";
+    private static String stepColor(StaffTasks.Step s) {
+        if (s.status() == StaffTasks.Status.ESEGUITA) {
+            return "&a";
         }
-        return switch (verb) {
-            case "get" -> "dai";
-            case "remove" -> "togli";
-            case "edit" -> "imposta";
-            case "reset" -> "azzera";
-            default -> verb;
+        if (s.status() == StaffTasks.Status.RIFIUTATA) {
+            return "&c";
+        }
+        return "&7";
+    }
+
+    private static Material stepMaterial(StaffTasks.Step s) {
+        String v = s.verb() == null ? "" : s.verb();
+        switch (v) {
+            case "ban" -> {
+                return Material.BARRIER;
+            }
+            case "warn" -> {
+                return Material.BELL;
+            }
+            case "mute" -> {
+                return Material.STRING;
+            }
+            default -> { }
+        }
+        String w = s.what() == null ? "" : s.what();
+        return switch (w) {
+            case "ball" -> Material.SNOWBALL;
+            case "ricompense" -> Material.CHEST;
+            case "coin" -> Material.GOLD_NUGGET;
+            case "blockcoin" -> Material.GOLD_INGOT;
+            case "blockshell" -> Material.PRISMARINE_SHARD;
+            case "mine" -> Material.IRON_PICKAXE;
+            case "upgrade" -> Material.ANVIL;
+            case "power" -> Material.BLAZE_POWDER;
+            case "stamina" -> Material.SUGAR;
+            default -> Material.PAPER;
         };
     }
 
-    private static String whatLabel(String what) {
-        if (what == null) {
-            return "";
-        }
-        return switch (what) {
-            case "mine" -> "miniere";
-            case "upgrade" -> "potenziamenti";
-            default -> what;
-        };
+    private static String kindLabel(StaffTasks.Kind k) {
+        return k == StaffTasks.Kind.CUSTOM ? "custom" : "ordinaria";
     }
 
-    /** "dai 100 coin", "azzera stamina", "imposta 50 power". */
-    private static String actionText(StaffTasks.Action a) {
-        if (a == null) {
+    private static String statusLabel(StaffTasks.Status s) {
+        if (s == null) {
             return "";
         }
-        if ("reset".equals(a.verb())) {
-            return verbLabel(a.verb()) + " " + whatLabel(a.what());
-        }
-        return verbLabel(a.verb()) + " " + a.amount() + " " + whatLabel(a.what());
+        return switch (s) {
+            case APERTA -> "aperta";
+            case ESEGUITA -> "eseguita";
+            case RIFIUTATA -> "rifiutata";
+            case ELIMINATA -> "eliminata";
+        };
     }
 
     // ------------------------------------------------------------------
-    //  Popup scelta con frecce (come RoleGui)
+    //  Popup scelta con frecce (come RoleGui, immagine con la barra)
     // ------------------------------------------------------------------
 
     private void choose(Player p, String title, List<Opt> opts, int index, Consumer<String> onPick, Runnable onBack) {
@@ -774,56 +1092,38 @@ public final class TaskGui implements Listener {
         UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
-        List<String> barLore = new ArrayList<>();
-        barLore.addAll(cur.lore());
+        List<String> barLore = new ArrayList<>(cur.lore());
         barLore.add("");
         for (int i = 0; i < n; i++) {
             barLore.add(i == idx ? "&a» " + opts.get(i).label() : "&8" + opts.get(i).label());
         }
         barLore.add("");
         barLore.add("&eusa le frecce per cambiare");
-        put(h, CH_PREV, pane("&7precedente", List.of("&eclicca per scorrere")), () -> choose(p, title, opts, idx - 1, onPick, onBack));
-        put(h, CH_NEXT, pane("&7successivo", List.of("&eclicca per scorrere")), () -> choose(p, title, opts, idx + 1, onPick, onBack));
+        put(h, CH_PREV, pane("&7precedente", List.of("&eclicca per scorrere")), () -> {
+            choose(p, title, opts, idx - 1, onPick, onBack);
+        });
+        put(h, CH_NEXT, pane("&7successivo", List.of("&eclicca per scorrere")), () -> {
+            choose(p, title, opts, idx + 1, onPick, onBack);
+        });
         put(h, CH_BAR, pane("&f" + cur.label(), barLore), null);
         String key = cur.key();
-        put(h, CH_YES, pane("&aconferma", List.of("&7Scelta: &f" + cur.label(), "", "&eclicca per confermare")), () -> onPick.accept(key));
+        put(h, CH_YES, pane("&aconferma", List.of("&7Scelta: &f" + cur.label(), "", "&eclicca per confermare")), () -> {
+            onPick.accept(key);
+        });
         put(h, CH_NO, pane("&cannulla", List.of("&7Torna indietro.", "", "&eclicca per annullare")), onBack);
         p.openInventory(h.inventory);
     }
 
     // ------------------------------------------------------------------
-    //  Popup lista (copia di ProfileLists, con il click sulle voci)
+    //  Pannelli lista / cartella (copia di ProfileLists, con il click sulle voci)
     // ------------------------------------------------------------------
 
     private interface Reopen {
         void open(int filterIdx, int page);
     }
 
-    private void showList(Player p, String title, List<Filter> filters, int filterIdx, int page,
-                          Function<String, List<Row>> rowsFor, Reopen reopen, Runnable onBack) {
-        int fi = Math.max(0, Math.min(filterIdx, filters.size() - 1));
-        List<Row> rows = null;
-        try {
-            rows = rowsFor.apply(filters.get(fi).key());
-        } catch (RuntimeException ex) {
-            plugin.getLogger().warning("TaskGui: errore nel caricare le righe: " + ex);
-        }
-        if (rows == null) {
-            rows = new ArrayList<>();
-        }
-        int pages = Math.max(1, (rows.size() + L_PER_PAGE - 1) / L_PER_PAGE);
-        int pg = Math.max(0, Math.min(page, pages - 1));
-
-        Holder h = new Holder();
-        GuiTitle g = new GuiTitle(plugin);
-        UserProfilePowers.drawDimmed(plugin, g, bg());
-        g.at(-15, "&f" + L_IMAGE, L_FONT, L_ADV);
-        smallText(g, filters.get(fi).label(), L_BAR_FONT, L_BAR_CX, L_BAR_MAX);
-        navText(g, pg + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, title);
-        h.inventory = Bukkit.createInventory(h, SIZE, g.build());
-
-        put(h, L_X, pane("&cindietro", List.of()), onBack);
+    /** Lista con filtro (pulsante blu = filtro successivo), immagine di ProfileLists. */
+    private void listPanel(Player p, String title, List<Filter> filters, int fi, int page, List<Row> rows, Reopen reopen, Runnable onBack) {
         List<String> fl = new ArrayList<>();
         fl.add("&7scegli cosa vedere:");
         fl.add(" ");
@@ -832,9 +1132,43 @@ public final class TaskGui implements Listener {
         }
         fl.add(" ");
         fl.add("&eclicca per cambiare");
-        put(h, L_FILTER, pane("&bfiltra per", fl), filters.size() > 1 ? () -> reopen.open((fi + 1) % filters.size(), 0) : null);
-        put(h, new int[]{L_PREV}, pane("&7pagina precedente", List.of()), pg > 0 ? () -> reopen.open(fi, pg - 1) : null);
-        put(h, new int[]{L_NEXT}, pane("&7pagina successiva", List.of()), pg < pages - 1 ? () -> reopen.open(fi, pg + 1) : null);
+        Runnable cycle = filters.size() > 1 ? () -> {
+            reopen.open((fi + 1) % filters.size(), 0);
+        } : null;
+        panel(p, title, filters.get(fi).label(), L_IMAGE, L_FONT, L_ADV, rows, page, pg -> {
+            reopen.open(fi, pg);
+        }, onBack, "&cindietro", List.of(), pane("&bfiltra per", fl), cycle, cycle);
+    }
+
+    /**
+     * Pannello 7x3 (lista o cartella): X = onBack, barra = barText, pulsante in alto a destra (btnLeft / btnRight),
+     * frecce pagina in basso con il numero pagina.
+     */
+    private void panel(Player p, String title, String barText, String image, String font, int adv, List<Row> rows, int page,
+                       IntConsumer reopenPage, Runnable onBack, String backName, List<String> backLore,
+                       ItemStack button, Runnable btnLeft, Runnable btnRight) {
+        int pages = Math.max(1, (rows.size() + L_PER_PAGE - 1) / L_PER_PAGE);
+        int pg = Math.max(0, Math.min(page, pages - 1));
+        Holder h = new Holder();
+        GuiTitle g = new GuiTitle(plugin);
+        UserProfilePowers.drawDimmed(plugin, g, bg());
+        g.at(-15, "&f" + image, font, adv);
+        smallText(g, barText, L_BAR_FONT, L_BAR_CX, L_BAR_MAX);
+        navText(g, pg + 1, pages);
+        UserProfilePowers.topTitle(plugin, g, title);
+        h.inventory = Bukkit.createInventory(h, SIZE, g.build());
+
+        put(h, L_X, pane(backName, backLore), onBack);
+        put(h, L_BTN, button, btnLeft);
+        if (btnRight != null) {
+            putRight(h, L_BTN, btnRight);
+        }
+        put(h, new int[]{L_PREV}, pane("&7pagina precedente", List.of("&7Pagina &f" + (pg + 1) + "&8/&f" + pages)), pg > 0 ? () -> {
+            reopenPage.accept(pg - 1);
+        } : null);
+        put(h, new int[]{L_NEXT}, pane("&7pagina successiva", List.of("&7Pagina &f" + (pg + 1) + "&8/&f" + pages)), pg < pages - 1 ? () -> {
+            reopenPage.accept(pg + 1);
+        } : null);
         if (rows.isEmpty()) {
             h.inventory.setItem(gridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
         } else {
@@ -844,7 +1178,11 @@ public final class TaskGui implements Listener {
                     break;
                 }
                 Row r = rows.get(idx);
-                put(h, new int[]{gridSlot(i)}, r.item(), r.onClick());
+                int[] slot = {gridSlot(i)};
+                put(h, slot, r.item(), r.left());
+                if (r.right() != null) {
+                    putRight(h, slot, r.right());
+                }
             }
         }
         p.openInventory(h.inventory);
@@ -914,7 +1252,7 @@ public final class TaskGui implements Listener {
     }
 
     // ------------------------------------------------------------------
-    //  Item e utilita'
+    //  Utilita'
     // ------------------------------------------------------------------
 
     private void put(Holder h, int[] slots, ItemStack stack, Runnable action) {
@@ -923,6 +1261,12 @@ public final class TaskGui implements Listener {
             if (action != null) {
                 h.actions.put(s, action);
             }
+        }
+    }
+
+    private void putRight(Holder h, int[] slots, Runnable action) {
+        for (int s : slots) {
+            h.rightActions.put(s, action);
         }
     }
 
@@ -1006,7 +1350,8 @@ public final class TaskGui implements Listener {
         if (!(event.getWhoClicked() instanceof Player p) || event.getClickedInventory() != event.getView().getTopInventory()) {
             return;
         }
-        Runnable action = h.actions.get(event.getRawSlot());
+        int slot = event.getRawSlot();
+        Runnable action = event.isRightClick() && h.rightActions.containsKey(slot) ? h.rightActions.get(slot) : h.actions.get(slot);
         if (action == null || h.dead) {
             return;
         }
@@ -1017,7 +1362,7 @@ public final class TaskGui implements Listener {
             if (p.isOnline()) {
                 action.run();
             }
-            // se l'azione non ha aperto un'altra schermata (es. click su una voce senza permessi) la GUI resta valida
+            // se l'azione non ha aperto un'altra schermata la GUI resta valida
             if (p.getOpenInventory().getTopInventory().getHolder() == h) {
                 h.dead = false;
             }
@@ -1029,5 +1374,10 @@ public final class TaskGui implements Listener {
         if (event.getView().getTopInventory().getHolder() instanceof Holder) {
             event.setCancelled(true);
         }
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        drafts.remove(event.getPlayer().getUniqueId());
     }
 }
