@@ -70,7 +70,7 @@ public final class RulePopups implements Listener {
         Player staff;
         String title;
         List<ItemStack> entries;
-        /** UUID (anche null) per voce: se la lista non e' null le teste sono 2D nel titolo. */
+        /** UUID (anche null) per voce: se la lista non e' null ogni voce e' una testa 2D (item Heads.head2d). */
         List<UUID> faces;
         boolean refreshQueued;
         int page;
@@ -125,7 +125,7 @@ public final class RulePopups implements Listener {
         openList(staff, title, entries, null, onBack, 0, null);
     }
 
-    /** Come sopra, ma con una faccia 2D (nel titolo) per voce: faces.get(i) puo' essere null (sagoma grigia). */
+    /** Come sopra, ma ogni voce e' una testa 2D (item) del player faces.get(i); null = testa generica senza skin. */
     public void openList(Player staff, String title, List<ItemStack> entries, List<UUID> faces, Runnable onBack) {
         openList(staff, title, entries, faces, onBack, 0, null);
     }
@@ -168,10 +168,9 @@ public final class RulePopups implements Listener {
         return s.faces == null || idx < 0 || idx >= s.faces.size() ? null : s.faces.get(idx);
     }
 
-    /** Avvia il caricamento delle facce della pagina; a ogni faccia pronta ridisegna il titolo (coalescendo). */
+    /** Skin delle teste della pagina non ancora note: a ogni profilo pronto aggiorna gli item (coalescendo). */
     private void requestFaces(Session s) {
-        UserProfileGui up = plugin.getUserProfile();
-        if (s.faces == null || up == null) {
+        if (s.faces == null) {
             return;
         }
         for (int i = 0; i < PER_PAGE; i++) {
@@ -180,8 +179,10 @@ public final class RulePopups implements Listener {
                 break;
             }
             UUID f = faceId(s, idx);
-            if (f != null && up.loadedFace(f) == null) {
-                up.ensureFaceFor(f, () -> queueRefresh(s));
+            if (f != null) {
+                Heads.whenReady(f, () -> {
+                    queueRefresh(s);
+                });
             }
         }
     }
@@ -198,23 +199,9 @@ public final class RulePopups implements Listener {
                     || p.getOpenInventory().getTopInventory().getHolder() != s.holder) {
                 return;
             }
-            // il titolo non si cambia a inventario aperto: si riapre (switching evita di far scattare onClose)
-            openList(p, s.title, s.entries, s.faces, s.onBack, s.page, s.background);
+            // le teste sono item: si aggiornano al volo, senza riaprire l'inventario
+            fill(s);
         }, 5L);
-    }
-
-    /** Elemento senza testa 3D: pane trasparente con nome e lore dell'originale. */
-    private ItemStack flat(ItemStack src) {
-        ItemStack stack = new ItemStack(Material.GLASS_PANE);
-        ItemMeta meta = stack.getItemMeta();
-        ItemMeta sm = src.getItemMeta();
-        meta.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
-        if (sm != null) {
-            meta.displayName(sm.displayName());
-            meta.lore(sm.lore());
-        }
-        stack.setItemMeta(meta);
-        return stack;
     }
 
     /** Cronologia modifiche della regola, dalla piu' recente. */
@@ -441,27 +428,9 @@ public final class RulePopups implements Listener {
         }
         // base lista solo-pannello userprofile-23 (U+E116, font userprofile2): lo sfondo custom resta visibile
         g.at(-15, "&f", "minecraft:userprofile2", DEF_ADV);
-        drawFaces(g, s);
         navText(g, s.page + 1, pages);
         UserProfilePowers.topTitle(plugin, g, s.title);
         return g.build();
-    }
-
-    /** Facce 2D 16x16 (scala 2) dentro le celle 18x18 della griglia 7x3: cella i = (32+18*(i%7), 50+18*(i/7)) + 1 pixel di margine. */
-    private void drawFaces(GuiTitle g, Session s) {
-        if (s.faces == null) {
-            return;
-        }
-        UserProfileGui up = plugin.getUserProfile();
-        for (int i = 0; i < PER_PAGE; i++) {
-            int idx = s.page * PER_PAGE + i;
-            if (idx >= s.entries.size()) {
-                break;
-            }
-            UUID f = faceId(s, idx);
-            int[] px = up == null || f == null ? null : up.loadedFace(f);
-            UserProfileGui.drawFaceAt(g, px, 33 + 18 * (i % 7), 51 + 18 * (i / 7), 2);
-        }
     }
 
     private void navText(GuiTitle g, int page, int pages) {
@@ -499,7 +468,7 @@ public final class RulePopups implements Listener {
                 break;
             }
             ItemStack e = s.entries.get(idx);
-            inv.setItem(gridSlot(i), s.faces == null ? e : flat(e));
+            inv.setItem(gridSlot(i), s.faces == null ? e : Heads.head2dLike(faceId(s, idx), false, e));
         }
     }
 

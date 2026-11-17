@@ -62,10 +62,7 @@ public final class StaffProfileGui implements Listener {
     /** Pixel 1x1 (+ spazio negativo) e 2x2 dei font tk<y> (come UserProfileGui / Tickets.drawFace). */
     private static final String PX1 = "";
 
-    // testa: interno 34x34 a (15,51) -> faccia 8x8 a scala 4 = 32x32 centrata (come UserProfileGui)
-    private static final int FACE_X = 16;
-    private static final int FACE_Y = 52;
-    private static final int FACE_SCALE = 4;
+    // testa: interno 34x34 a (15,51) = slot 9,10,18,19 -> item Heads.head2d big nello slot 9 (vedi setHead)
 
     // barre stelle: tacca interna (x0 della prima, passo, larghezza, y, numero), altezza 4
     private static final int BAR_STEP = 4;
@@ -224,10 +221,7 @@ public final class StaffProfileGui implements Listener {
             GuiMsg.send(plugin, staff, "&c" + nameOf(target) + " non e' uno staffer.");
             return;
         }
-        UserProfileGui up = plugin.getUserProfile();
-        if (up != null) {
-            up.ensureFaceFor(target, () -> refresh(target));
-        }
+        Heads.whenReady(target, () -> refresh(target));
         Holder h = build(target, Math.max(0, Math.min(PAGES - 1, page)));
         staff.openInventory(h.inventory);
     }
@@ -349,10 +343,8 @@ public final class StaffProfileGui implements Listener {
     }
 
     private String sig(UUID target, Data d, int page) {
-        UserProfileGui up = plugin.getUserProfile();
         StaffStats.Ratings r = d.ratings();
-        String base = (up != null && up.loadedFace(target) != null ? "F" : "f")
-                + fill(r.avg30(), BAR30_N) + "/" + fill(r.avg7(), BAR7_N) + "/" + fill(r.avgAll(), BARALL_N)
+        String base = fill(r.avg30(), BAR30_N) + "/" + fill(r.avg7(), BAR7_N) + "/" + fill(r.avgAll(), BARALL_N)
                 + "/" + valText(r.avg30()) + "/" + valText(r.avg7()) + "/" + valText(r.avgAll());
         if (page == 1) {
             // pagina 2: nel titolo ci sono anche la barra del grado e i pezzetti dei ruoli aggiuntivi
@@ -508,8 +500,7 @@ public final class StaffProfileGui implements Listener {
         } else {
             g.at(-15, "&f" + IMAGE, FONT, real ? IMG_REAL : IMG_ADV);
         }
-        UserProfileGui up = plugin.getUserProfile();
-        UserProfileGui.drawFaceAt(g, up == null ? null : up.loadedFace(target), FACE_X + shift, FACE_Y, FACE_SCALE);
+        // la testa non e' piu' nel titolo: e' l'item Heads.head2d nello slot 9 (setHead)
         StaffStats.Ratings r = d.ratings();
         drawBar(g, BAR30_X, BAR30_Y, fill(r.avg30(), BAR30_N), C_STAR, ox);
         drawBar(g, BAR7_X, BAR7_Y, fill(r.avg7(), BAR7_N), C_STAR, ox);
@@ -525,8 +516,7 @@ public final class StaffProfileGui implements Listener {
     }
 
     /**
-     * Overlay 256x256 del pack (come UserProfileGui.drawPageNumber): titolo normale a -22 con avanzamento dichiarato
-     * (reale - 7), sfondo dei popup a -15 con avanzamento reale.
+     * Overlay 256x256 del pack: titolo normale a -22, sfondo dei popup a -15, sempre con avanzamento reale.
      */
     private static void overlay(GuiTitle g, String ch, String font, int real, boolean realPath) {
         if (ch == null || ch.isEmpty()) {
@@ -535,7 +525,9 @@ public final class StaffProfileGui implements Listener {
         if (realPath) {
             g.at(-15, "&f" + ch, font, real);
         } else {
-            g.at(-15 - 7, "&f" + ch, font, real - 7);
+            // a -22 (recupera i 7 px dello sfondo dichiarato 179) ma con avanzamento REALE: con quello dichiarato ogni
+            // overlay spostava di 7 px a destra tutto quello che veniva dopo (pezzetti, numero pagina, nome).
+            g.at(-15 - 7, "&f" + ch, font, real);
         }
     }
 
@@ -621,7 +613,12 @@ public final class StaffProfileGui implements Listener {
                 hasPrev ? "pg:prev" : null);
         setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
                 hasNext ? "pg:next" : null);
-        setAll(h, S_HEAD, headItem(target, d), null);
+        // riquadro testa: slot 9 = testa 2D grande (sborda su 10/18/19), gli altri pane invisibili con lo stesso nome/lore
+        ItemStack headPane = headItem(target, d);
+        set(h, S_HEAD[0], Heads.head2dLike(target, true, headPane), null);
+        for (int i = 1; i < S_HEAD.length; i++) {
+            set(h, S_HEAD[i], headPane, null);
+        }
         StaffStats.Ratings r0 = d.ratings();
         setAll(h, S_STAR30, starItem("ultimi 30 giorni", r0.avg30(), r0.n30()), null);
         setAll(h, S_STAR7, starItem("ultimi 7 giorni", r0.avg7(), r0.n7()), null);
@@ -1124,7 +1121,8 @@ public final class StaffProfileGui implements Listener {
         UUID tutor = disc == null ? null : disc.tutorOf(target);
         List<UUID> pupils = disc == null ? List.of() : disc.pupilsOf(target);
         List<String> tl = new ArrayList<>();
-        tl.add("&7tutor: &f" + (tutor == null ? "nessuno" : nameOf(tutor)));
+        tl.add("&7tutor assegnato: " + (tutor == null ? "&8nessuno" : "&f" + nameOf(tutor)));
+        tl.add("&8(un solo tutor per staffer)");
         tl.add("&7allievi: &f" + pupils.size());
         for (int i = 0; i < Math.min(5, pupils.size()); i++) {
             tl.add("&8- &f" + nameOf(pupils.get(i)));
@@ -1133,7 +1131,7 @@ public final class StaffProfileGui implements Listener {
             tl.add("&8... e altri " + (pupils.size() - 5));
         }
         tl.add("");
-        tl.add("&esinistro: scegli il tutor (o toglilo)");
+        tl.add(tutor == null ? "&eclicca per assegnare un tutor" : "&eclicca per cambiare o togliere il tutor");
         setAll(h, S_TUTOR, pane("&dassegna tutor", tl), "tutor");
 
         setAll(h, S_PROMOTE, pane("&apromuovi/degrada staff", List.of(
@@ -1668,7 +1666,7 @@ public final class StaffProfileGui implements Listener {
     private static final int P_PREV = 38;
     private static final int P_NEXT = 42;
 
-    /** Riga: item (nome/lore), icona custom nel titolo (-1 = nessuna), faccia 2D nel titolo (null = nessuna), chiave. */
+    /** Riga: item (nome/lore), icona custom nel titolo (-1 = nessuna), testa 2D item del player (null = nessuna), chiave. */
     private record PRow(ItemStack item, int icon, UUID face, String key) {
     }
 
@@ -1737,11 +1735,19 @@ public final class StaffProfileGui implements Listener {
                     break;
                 }
                 PRow r = s.rows.get(idx);
-                inv.setItem(pGridSlot(i), r.icon() >= 0 || r.face() != null ? invisible(r.item()) : r.item().clone());
+                inv.setItem(pGridSlot(i), popupRowItem(r));
             }
         }
         s.staff.openInventory(inv);
         requestFaces(s);
+    }
+
+    /** Item della voce: faccia = testa 2D piccola (item), icona = pane invisibile (icona nel titolo), altrimenti l'item. */
+    private ItemStack popupRowItem(PRow r) {
+        if (r.face() != null) {
+            return Heads.head2dLike(r.face(), false, r.item());
+        }
+        return r.icon() >= 0 ? invisible(r.item()) : r.item().clone();
     }
 
     private Component popupTitle(Popup s, int pages) {
@@ -1750,17 +1756,14 @@ public final class StaffProfileGui implements Listener {
             UserProfilePowers.drawDimmed(plugin, g, s.background);
         }
         g.at(-15, "&f" + (s.reset ? P_IMG_RESET : P_IMG_INFO), s.reset ? P_FONT_RESET : P_FONT_INFO, P_ADV);
-        UserProfileGui up = plugin.getUserProfile();
         for (int i = 0; i < P_PER_PAGE; i++) {
             int idx = s.page * P_PER_PAGE + i;
             if (idx >= s.rows.size()) {
                 break;
             }
             PRow r = s.rows.get(idx);
-            if (r.face() != null) {
-                // facce 2D 16x16 nelle celle della griglia, come RulePopups.drawFaces
-                UserProfileGui.drawFaceAt(g, up == null ? null : up.loadedFace(r.face()), 33 + 18 * (i % 7), 51 + 18 * (i / 7), 2);
-            } else if (r.icon() >= 0) {
+            // le facce sono item (Heads.head2d, popupRowItem): nel titolo solo le icone custom
+            if (r.face() == null && r.icon() >= 0) {
                 // icone custom come ProfileLists.drawIcons (font per riga della griglia)
                 int slot = pGridSlot(i);
                 Component glyph = Component.text(String.valueOf((char) (P_ICON_BASE + r.icon())))
@@ -1836,7 +1839,7 @@ public final class StaffProfileGui implements Listener {
         g.at(start + P_IMG, "&f" + n, "", adv);
     }
 
-    /** Pane trasparente con nome e lore dell'item (icona o faccia sono nel titolo). */
+    /** Pane trasparente con nome e lore dell'item (l'icona e' nel titolo). */
     private ItemStack invisible(ItemStack src) {
         ItemStack stack = new ItemStack(Material.GLASS_PANE);
         ItemMeta meta = stack.getItemMeta();
@@ -1850,20 +1853,16 @@ public final class StaffProfileGui implements Listener {
         return stack;
     }
 
-    /** Carica le facce della pagina; a ogni faccia pronta ridisegna (coalescendo), come RulePopups.requestFaces. */
+    /** Skin delle teste della pagina non ancora note: a ogni profilo pronto aggiorna gli item (coalescendo), come RulePopups.requestFaces. */
     private void requestFaces(Popup s) {
-        UserProfileGui up = plugin.getUserProfile();
-        if (up == null) {
-            return;
-        }
         for (int i = 0; i < P_PER_PAGE; i++) {
             int idx = s.page * P_PER_PAGE + i;
             if (idx >= s.rows.size()) {
                 break;
             }
             UUID f = s.rows.get(idx).face();
-            if (f != null && up.loadedFace(f) == null) {
-                up.ensureFaceFor(f, () -> {
+            if (f != null) {
+                Heads.whenReady(f, () -> {
                     queuePopupRefresh(s);
                 });
             }
@@ -1881,8 +1880,18 @@ public final class StaffProfileGui implements Listener {
             if (p == null || !p.isOnline() || p.getOpenInventory().getTopInventory().getHolder() != s.holder) {
                 return;
             }
-            // il titolo non si cambia a inventario aperto: si riapre
-            showPopup(s, s.page);
+            // le teste sono item: si aggiornano al volo, senza riaprire l'inventario
+            Inventory inv = s.holder.inventory;
+            for (int i = 0; i < P_PER_PAGE; i++) {
+                int idx = s.page * P_PER_PAGE + i;
+                if (idx >= s.rows.size()) {
+                    break;
+                }
+                PRow r = s.rows.get(idx);
+                if (r.face() != null) {
+                    inv.setItem(pGridSlot(i), popupRowItem(r));
+                }
+            }
         }, 5L);
     }
 

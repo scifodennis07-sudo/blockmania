@@ -19,27 +19,21 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.profile.PlayerProfile;
 import org.bukkit.scheduler.BukkitTask;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.net.URL;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
  * GUI principale del profilo di un player (/adminmania userprofile <nome>, oppure dal ticket).
- * Disegno nel titolo (immagine userprofile del pack + testa 2D + barre a tacche MUTE / WARN / BAN),
- * sotto gli slot invisibili (pane) con nome e lore per i click. Si aggiorna da sola a GUI aperta:
+ * Disegno nel titolo (immagine userprofile del pack + barre a tacche MUTE / WARN / BAN), testa = item Heads.head2d big
+ * nello slot 9 (sborda sul riquadro 2x2), sotto gli slot invisibili (pane) con nome e lore per i click. Si aggiorna da sola a GUI aperta:
  * task ogni 20 tick + SanctionManager.onChange. Le tacche (titolo) si ridisegnano riaprendo l'inventario
  * (come Tickets.open), le lore si aggiornano al volo senza richiuderlo.
  * <p>
@@ -73,11 +67,6 @@ public final class UserProfileGui implements Listener {
     /** Pixel 1x1 (+ spazio negativo) e 2x2 dei font tk<y> (come Tickets.drawFace / drawStars). */
     private static final String PX1 = "";
     private static final String PX2 = "";
-
-    // testa: interno 34x34 a (15,51) -> faccia 8x8 a scala 4 = 32x32 centrata
-    private static final int FACE_X = 16;
-    private static final int FACE_Y = 52;
-    private static final int FACE_SCALE = 4;
 
     // barre: tacca interna (x0 della prima, passo, larghezza, y, numero)
     private static final int MUTE_N = 9;
@@ -166,28 +155,9 @@ public final class UserProfileGui implements Listener {
     }
 
     private final BlockMania plugin;
-    private final Map<UUID, int[]> faces = new HashMap<>();
     /** Ultima pagina aperta da ogni staffer: back() ci riporta li'. */
     private final Map<UUID, Integer> lastPage = new HashMap<>();
-    private final Set<UUID> faceAsked = new HashSet<>();
     private BukkitTask task;
-
-    private static final int[] DEFAULT_FACE = new int[64];
-
-    static {
-        for (int y = 0; y < 8; y++) {
-            for (int x = 0; x < 8; x++) {
-                DEFAULT_FACE[y * 8 + x] = y < 2 ? 0x4A3222 : 0xC8946A;
-            }
-        }
-        for (int x : new int[]{1, 2, 5, 6}) {
-            DEFAULT_FACE[4 * 8 + x] = 0xFFFFFF;
-        }
-        DEFAULT_FACE[4 * 8 + 2] = 0x3755AA;
-        DEFAULT_FACE[4 * 8 + 5] = 0x3755AA;
-        DEFAULT_FACE[6 * 8 + 3] = 0x96594A;
-        DEFAULT_FACE[6 * 8 + 4] = 0x96594A;
-    }
 
     public UserProfileGui(BlockMania plugin) {
         this.plugin = plugin;
@@ -237,7 +207,7 @@ public final class UserProfileGui implements Listener {
         }
         int pg = Math.max(0, Math.min(PAGES - 1, page));
         lastPage.put(staff.getUniqueId(), pg);
-        ensureFace(target);
+        Heads.whenReady(target, () -> refresh(target));
         openHolder(staff, build(staff, target, pg));
     }
 
@@ -342,7 +312,7 @@ public final class UserProfileGui implements Listener {
     }
 
     private String sig(UUID target, Snap s) {
-        return (faces.containsKey(target) ? "F" : "f") + (Bukkit.getPlayer(target) != null ? "O" : "o")
+        return (Bukkit.getPlayer(target) != null ? "O" : "o")
                 + notches(s.mute(), MUTE_N) + "/" + notches(s.ban(), BAN_N) + "/" + s.warns() + (s.banFromWarns() ? "P" : "n")
                 + "/S" + staminaPercent(target);   // la barra stamina si ridisegna quando cambia la percentuale
     }
@@ -366,10 +336,6 @@ public final class UserProfileGui implements Listener {
 
     private static String px1(int y, int n) {
         return pxRun((char) (0xF000 + y), n);
-    }
-
-    private static String px2(int y, int n) {
-        return pxRun((char) (0xF200 + y), n);
     }
 
     private static String pxRun(char c, int n) {
@@ -404,31 +370,6 @@ public final class UserProfileGui implements Listener {
             b = (int) (b * f);
         }
         return (r << 16) | (g << 8) | b;
-    }
-
-    /** Faccia 8x8: scala 1, 2 o 4 (la 4 usa quadrati 2x2 su due righe). y = parte alta in pixel dell'immagine. */
-    private static void drawFace(GuiTitle g, int[] face, int x, int y, int scale) {
-        drawFace(g, face, x, y, scale, IMG);
-    }
-
-    private static void drawFace(GuiTitle g, int[] face, int x, int y, int scale, int ox) {
-        int sub = Math.max(1, scale / 2);
-        for (int j = 0; j < 8; j++) {
-            for (int s = 0; s < sub; s++) {
-                int yy = y + j * scale + (scale == 1 ? 0 : s * 2);
-                int i = 0;
-                while (i < 8) {
-                    int c = face[j * 8 + i];
-                    int n = 1;
-                    while (i + n < 8 && face[j * 8 + i + n] == c) {
-                        n++;
-                    }
-                    String px = scale == 1 ? px1(yy, n) : px2(yy, n * scale / 2);
-                    g.atComponent(x + i * scale + ox, glyph(px, PXF, c & 0xFFFFFF), n * scale);
-                    i += n;
-                }
-            }
-        }
     }
 
     /** Tacche piene di una barra (le vuote sono gia' nell'immagine): riga alta piu' chiara, bassa piu' scura. */
@@ -470,11 +411,10 @@ public final class UserProfileGui implements Listener {
         return page == 1 ? IMG_PAGE2 : page == 2 ? IMG_PAGE3 : IMG_MAIN;
     }
 
-    /** Disegno comune (immagine, testa, barre, stamina in pagina 0). real = avanzamento 186 per gli sfondi dei popup. */
+    /** Disegno comune (immagine, barre, stamina; la testa e' l'item nello slot 9). real = avanzamento 186 per gli sfondi dei popup. */
     private void scene(GuiTitle g, UUID target, Snap s, int page, boolean real) {
         final int ox = IMG + (real ? IMG_REAL - IMG_ADV : 0);
         g.at(-15, "&f" + imageOf(page), page == 0 ? FONT : FONT3, real ? IMG_REAL : IMG_ADV);
-        drawFace(g, faceOf(target), FACE_X, FACE_Y, FACE_SCALE, ox);
         drawBar(g, MUTE_X, MUTE_STEP, MUTE_W, MUTE_Y, notches(s.mute(), MUTE_N), C_RED, ox);
         drawBar(g, WARN_X, WARN_STEP, WARN_W, WARN_Y, s.warns(), warnColor(s.warns(), s.banFromWarns()), ox);
         drawBar(g, BAN_X, BAN_STEP, BAN_W, BAN_Y, notches(s.ban(), BAN_N), C_RED, ox);
@@ -500,121 +440,6 @@ public final class UserProfileGui implements Listener {
         scene(g, target, s, page, false);
         UserProfilePowers.topTitle(plugin, g, "profilo " + UserProfilePowers.nameOf(target));
         return g.build();
-    }
-
-    // ------------------------------------------------------------------
-    //  Facce (testa 2D dalla skin)
-    // ------------------------------------------------------------------
-
-    private int[] faceOf(UUID id) {
-        int[] f = faces.get(id);
-        return f == null ? DEFAULT_FACE : f;
-    }
-
-    private static final int[] GREY_FACE = new int[64];
-
-    static {
-        java.util.Arrays.fill(GREY_FACE, 0x5A5A5A);
-    }
-
-    /** Callback in attesa del caricamento della faccia (usati da altre GUI, es. RulePopups). */
-    private final Map<UUID, List<Runnable>> faceWaiters = new HashMap<>();
-
-    /** Faccia 8x8 gia' caricata (pixel RGB) oppure null se non ancora disponibile. Solo main thread. */
-    public int[] loadedFace(UUID id) {
-        return id == null ? null : faces.get(id);
-    }
-
-    /** Avvia (una sola volta per UUID) il caricamento async della faccia; a caricamento finito esegue onLoaded sul main thread. */
-    public void ensureFaceFor(UUID id, Runnable onLoaded) {
-        if (id == null || faces.containsKey(id)) {
-            return;
-        }
-        if (onLoaded != null) {
-            faceWaiters.computeIfAbsent(id, k -> new ArrayList<>()).add(onLoaded);
-        }
-        ensureFace(id);
-    }
-
-    /** Disegna la faccia (run-length per riga) nel titolo; face null = sagoma grigia. x,y in pixel dell'immagine. */
-    public static void drawFaceAt(GuiTitle g, int[] face, int x, int y, int scale) {
-        drawFace(g, face == null ? GREY_FACE : face, x, y, scale);
-    }
-
-    private static URL skinOf(PlayerProfile profile) {
-        try {
-            return profile == null ? null : profile.getTextures().getSkin();
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private void ensureFace(UUID id) {
-        if (faces.containsKey(id) || !faceAsked.add(id)) {
-            return;
-        }
-        Player online = Bukkit.getPlayer(id);
-        URL skin = null;
-        if (online != null) {
-            skin = skinOf(online.getPlayerProfile());
-            if (skin == null) {
-                return;
-            }
-            loadFace(id, skin);
-            return;
-        }
-        try {
-            PlayerProfile prof = Bukkit.getOfflinePlayer(id).getPlayerProfile();
-            skin = skinOf(prof);
-            if (skin != null) {
-                loadFace(id, skin);
-                return;
-            }
-            prof.update().thenAccept(updated -> {
-                URL u = skinOf(updated);
-                if (u != null) {
-                    loadFace(id, u);
-                }
-            });
-        } catch (Throwable ignored) {
-            // nessuna skin disponibile: resta la faccia di default
-        }
-    }
-
-    private void loadFace(UUID id, URL url) {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                BufferedImage img = ImageIO.read(url);
-                if (img == null || img.getWidth() < 64 || img.getHeight() < 16) {
-                    return;
-                }
-                int[] face = new int[64];
-                for (int y = 0; y < 8; y++) {
-                    for (int x = 0; x < 8; x++) {
-                        int base = img.getRGB(8 + x, 8 + y);
-                        int hat = img.getHeight() >= 64 ? img.getRGB(40 + x, 8 + y) : 0;
-                        int c = ((hat >>> 24) > 127) ? hat : base;
-                        face[y * 8 + x] = c & 0xFFFFFF;
-                    }
-                }
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    faces.put(id, face);
-                    refresh(id);
-                    List<Runnable> waiting = faceWaiters.remove(id);
-                    if (waiting != null) {
-                        for (Runnable r : waiting) {
-                            try {
-                                r.run();
-                            } catch (Throwable ignored) {
-                                // un callback difettoso non blocca gli altri
-                            }
-                        }
-                    }
-                });
-            } catch (Exception e) {
-                // la skin non si scarica: resta la faccia di default
-            }
-        });
     }
 
     // ------------------------------------------------------------------
@@ -681,7 +506,7 @@ public final class UserProfileGui implements Listener {
                 "&fTesta: &7click destro su uno staffer = staffprofile.")), null);
 
         // testa
-        setAll(h, S_HEAD, headItem(target, online), "head");
+        setHead(h, target, online);
 
         // sanzioni
         long now = System.currentTimeMillis();
@@ -736,7 +561,7 @@ public final class UserProfileGui implements Listener {
                 "&fFrecce in alto: &7cambiano pagina.",
                 "&fMUTE / WARN / BAN: &7click sinistro = comandi,",
                 "&7click destro = cronologia.")), null);
-        setAll(h, S_HEAD, headItem(target, online), "head");
+        setHead(h, target, online);
         long now = System.currentTimeMillis();
         setAll(h, S_MUTE, timedItem("mute", s.mute(), now, false, ""), "sanc:MUTE");
         setAll(h, S_BAN, timedItem("ban", s.ban(), now, s.banFromWarns(), ""), "sanc:BAN");
@@ -779,18 +604,22 @@ public final class UserProfileGui implements Listener {
         meta.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
         meta.displayName(name);
         if (lore != null && !lore.isEmpty()) {
-            List<Component> out = new ArrayList<>();
-            for (String raw : lore) {
-                if (raw == null || raw.isBlank()) {
-                    out.add(plugin.color(" "));
-                } else {
-                    out.add(plugin.text(raw));
-                }
-            }
-            meta.lore(out);
+            meta.lore(loreOf(lore));
         }
         stack.setItemMeta(meta);
         return stack;
+    }
+
+    private List<Component> loreOf(List<String> lore) {
+        List<Component> out = new ArrayList<>();
+        for (String raw : lore) {
+            if (raw == null || raw.isBlank()) {
+                out.add(plugin.color(" "));
+            } else {
+                out.add(plugin.text(raw));
+            }
+        }
+        return out;
     }
 
     private static String nameOf(UUID id) {
@@ -811,7 +640,18 @@ public final class UserProfileGui implements Listener {
         }
     }
 
-    private ItemStack headItem(UUID target, boolean online) {
+    /** Riquadro testa: slot 9 = testa 2D grande (sborda sugli altri 3), 10/18/19 = pane invisibili, stesso nome e lore. */
+    private void setHead(Holder h, UUID target, boolean online) {
+        List<String> lore = headLore(target, online);
+        Component name = plugin.color("&f" + nameOf(target));
+        set(h, S_HEAD[0], Heads.head2d(target, true, name, loreOf(lore)), "head");
+        ItemStack p = pane(name, lore);
+        for (int i = 1; i < S_HEAD.length; i++) {
+            set(h, S_HEAD[i], p, "head");
+        }
+    }
+
+    private List<String> headLore(UUID target, boolean online) {
         OfflinePlayer op = Bukkit.getOfflinePlayer(target);
         List<String> lore = new ArrayList<>();
         if (online) {
@@ -829,7 +669,7 @@ public final class UserProfileGui implements Listener {
             lore.add("&6e' uno staffer");
             lore.add("&eclick destro: staffprofile");
         }
-        return pane(plugin.color("&f" + nameOf(target)), lore);
+        return lore;
     }
 
     private ItemStack timedItem(String label, SanctionManager.Status st, long now, boolean fromWarns, String extra) {
