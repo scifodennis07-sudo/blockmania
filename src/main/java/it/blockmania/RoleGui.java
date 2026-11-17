@@ -66,6 +66,9 @@ public final class RoleGui implements Listener {
         Player staff;
         UUID target;
         int index;
+        /** Indici di StaffRoles.ORDER scorribili: [from, to). */
+        int from;
+        int to;
         Consumer<GuiTitle> background;
         Runnable onBack;
         boolean done;
@@ -86,10 +89,23 @@ public final class RoleGui implements Listener {
 
     /** Apre il popup per cambiare il grado di target. Parte dal primo grado (jr_helper). */
     public void open(Player staff, UUID target, Consumer<GuiTitle> background, Runnable onBack) {
+        open(staff, target, background, onBack, 0, StaffRoles.ORDER.size(), 0);
+    }
+
+    /**
+     * Come sopra, ma le frecce scorrono solo gli indici [from, toExclusive) di StaffRoles.ORDER e si parte da start
+     * (es. solo la scala: 0..SCALE.size(); solo i ruoli speciali: SCALE.size()..ORDER.size()).
+     */
+    public void open(Player staff, UUID target, Consumer<GuiTitle> background, Runnable onBack, int from, int toExclusive, int start) {
+        int n = StaffRoles.ORDER.size();
+        int f = Math.max(0, Math.min(from, n - 1));
+        int t = Math.max(f + 1, Math.min(toExclusive, n));
         Session s = new Session();
         s.staff = staff;
         s.target = target;
-        s.index = 0;
+        s.from = f;
+        s.to = t;
+        s.index = start < f || start >= t ? f : start;
         s.background = background;
         s.onBack = onBack;
         show(s);
@@ -116,8 +132,13 @@ public final class RoleGui implements Listener {
         String name = roles == null ? id : roles.label(id);
         boolean special = StaffRoles.isSpecial(id);
         boolean has = special && roles != null && roles.specialsOf(s.target).contains(id);
-        List<String> barLore = List.of("&7Ruolo scelto: &f" + name + (special ? " &8(speciale)" : ""),
-                "&7Grado staff attuale: &f" + (current == null ? "nessuno" : roles.label(current)), "", "&eusa le frecce per cambiare");
+        List<String> barLore = new ArrayList<>(List.of("&7Ruolo scelto: &f" + name + (special ? " &8(speciale)" : ""),
+                "&7Grado staff attuale: &f" + (current == null ? "nessuno" : roles.label(current))));
+        if (special) {
+            barLore.add(has ? "&7Ce l'ha gia': confermando lo toglie." : "&7Non ce l'ha: confermando si aggiunge.");
+        }
+        barLore.add("");
+        barLore.add("&eusa le frecce per cambiare");
         for (int i : SLOTS_PREV) {
             h.inventory.setItem(i, pane("&7grado precedente", List.of("&eclicca per scorrere")));
         }
@@ -180,12 +201,12 @@ public final class RoleGui implements Listener {
         }
         Session s = h.session;
         int slot = event.getRawSlot();
-        int n = StaffRoles.ORDER.size();
+        int n = s.to - s.from;
         if (in(SLOTS_PREV, slot)) {
-            s.index = (s.index + n - 1) % n;
+            s.index = s.from + (s.index - s.from + n - 1) % n;
             Bukkit.getScheduler().runTask(plugin, () -> show(s));
         } else if (in(SLOTS_NEXT, slot)) {
-            s.index = (s.index + 1) % n;
+            s.index = s.from + (s.index - s.from + 1) % n;
             Bukkit.getScheduler().runTask(plugin, () -> show(s));
         } else if (in(SLOTS_YES, slot)) {
             if (!canAssign(p, s.index)) {
@@ -196,9 +217,10 @@ public final class RoleGui implements Listener {
             String id = StaffRoles.ORDER.get(s.index);
             s.done = true;
             Bukkit.getScheduler().runTask(plugin, () -> {
+                boolean had = StaffRoles.isSpecial(id) && plugin.getStaffRoles().specialsOf(s.target).contains(id);
                 plugin.getStaffRoles().set(s.target, id, p);
-                GuiMsg.send(plugin, p, "&7grado &f" + plugin.getStaffRoles().label(id) + "&7 assegnato a &f"
-                        + UserProfilePowers.nameOf(s.target) + "&7.");
+                GuiMsg.send(plugin, p, "&7" + (StaffRoles.isSpecial(id) ? "ruolo" : "grado") + " &f" + plugin.getStaffRoles().label(id)
+                        + "&7 " + (had ? "tolto a" : "assegnato a") + " &f" + UserProfilePowers.nameOf(s.target) + "&7.");
                 back(s);
             });
         } else if (in(SLOTS_NO, slot)) {

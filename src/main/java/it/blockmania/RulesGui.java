@@ -34,6 +34,7 @@ import java.util.UUID;
  * (l'eliminazione si fa solo dalla GUI di dettaglio).
  * Grafica: regole.png (glifo U+3E0B), font minecraft:regole.
  * Live: si ridisegna da sola a ogni Rules.onChange.
+ * Istanziabile per piu' Rules (regole player e regole staff): ogni istanza riconosce solo i propri Holder.
  */
 public final class RulesGui implements Listener {
 
@@ -87,6 +88,8 @@ public final class RulesGui implements Listener {
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         Session session;
+        /** GUI che ha creato l'inventario: le altre istanze lo ignorano. */
+        RulesGui owner;
 
         @Override
         public Inventory getInventory() {
@@ -111,12 +114,41 @@ public final class RulesGui implements Listener {
     /** Filtro ricordato per ogni staffer (null = tutte). */
     private final Map<UUID, Rules.Type> filters = new HashMap<>();
     private final Set<UUID> switching = new HashSet<>();
+    /** Dettaglio usato da questa lista (null = plugin.getRuleDetailGui()). */
+    private RuleDetailGui detail;
 
     public RulesGui(BlockMania plugin, Rules rules, UserProfilePowers ui) {
         this.plugin = plugin;
         this.rules = rules;
         this.ui = ui;
         rules.onChange(() -> Bukkit.getScheduler().runTask(plugin, () -> refreshAll()));
+    }
+
+    /** Collega il dettaglio di questa istanza (serve per la seconda istanza, quella delle regole staff). */
+    public void setDetail(RuleDetailGui detail) {
+        this.detail = detail;
+    }
+
+    private RuleDetailGui detail() {
+        return detail != null ? detail : plugin.getRuleDetailGui();
+    }
+
+    /** Le regole mostrate da questa GUI. */
+    public Rules rules() {
+        return rules;
+    }
+
+    /** Parola del titolo e dei log: "regole" o "regole staff". */
+    private String titleWord() {
+        return rules.isStaff() ? "regole staff" : "regole";
+    }
+
+    private String logPrefix() {
+        return rules.isStaff() ? "staffrules" : "rules";
+    }
+
+    private boolean mine(InventoryHolder holder) {
+        return holder instanceof Holder h && h.owner == this;
     }
 
     // ------------------------------------------------------------------
@@ -133,7 +165,7 @@ public final class RulesGui implements Listener {
 
     /** True se il giocatore ha aperta una GUI delle regole. */
     public boolean owns(Player p) {
-        return p != null && p.getOpenInventory().getTopInventory().getHolder() instanceof Holder;
+        return p != null && mine(p.getOpenInventory().getTopInventory().getHolder());
     }
 
     private void open(Player staff, Rules.Type filter, int page) {
@@ -142,6 +174,7 @@ public final class RulesGui implements Listener {
         s.filter = filter;
         filters.put(staff.getUniqueId(), filter);
         Holder h = new Holder();
+        h.owner = this;
         h.session = s;
         s.holder = h;
         List<Rules.Rule> all = list(s);
@@ -205,8 +238,8 @@ public final class RulesGui implements Listener {
         return k.toString();
     }
 
-    private static String filterName(Rules.Type t) {
-        return t == null ? "tutte" : Rules.typeLabel(t).toLowerCase(Locale.ROOT);
+    private String filterName(Rules.Type t) {
+        return t == null ? "tutte" : rules.label(t).toLowerCase(Locale.ROOT);
     }
 
     private String cfg(String key, String def) {
@@ -224,7 +257,7 @@ public final class RulesGui implements Listener {
         g.at(-15, "&f" + IMG_BASE, FONT_RULES, IMG_ADV);
         navText(g, s.page + 1, pages);
         drawRuleTags(g, s, all);
-        UserProfilePowers.topTitle(plugin, g, "regole " + filterName(s.filter));
+        UserProfilePowers.topTitle(plugin, g, titleWord() + " " + filterName(s.filter));
         return g.build();
     }
 
@@ -364,7 +397,7 @@ public final class RulesGui implements Listener {
             lore.add("&7" + line);
         }
         lore.add(" ");
-        lore.add("&7Tipo: " + colorOf(r.type()) + Rules.typeLabel(r.type()));
+        lore.add("&7Tipo: " + colorOf(r.type()) + rules.label(r.type()));
         lore.add("&7Tempo: &f" + Rules.timeLabel(r));
         lore.add(" ");
         lore.add("&eclicca per aprire");
@@ -496,18 +529,17 @@ public final class RulesGui implements Listener {
     }
 
     private void askType(Player p, Rules.Type currentFilter, String code, String title, String text) {
-        ui.openCommands(p, "tipo regola", List.of("ban", "warn", "mute", "regolamento"), cmd -> {
-            Rules.Type t;
-            try {
-                t = Rules.Type.valueOf(cmd.toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException ex) {
+        // stessi tasti (e immagini) per player e staff: per lo staff ban = depex, mute = sospensione
+        ui.openCommands(p, rules.isStaff() ? "tipo regola staff" : "tipo regola", List.of("ban", "warn", "mute", "regolamento"), cmd -> {
+            Rules.Type t = rules.typeOf(cmd);
+            if (t == null) {
                 reopen(p, currentFilter);
                 return;
             }
-            if (t == Rules.Type.BAN || t == Rules.Type.MUTE) {
+            if (rules.needsTime(t)) {
                 Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, title, text, t));
             } else {
-                finishCreate(p, code, title, text, t, 0L);
+                finishCreate(p, code, title, text, t, rules.time(t, ""));
             }
         }, () -> reopen(p, currentFilter), false, null, g -> drawDimmedBackground(g));
     }
@@ -518,16 +550,16 @@ public final class RulesGui implements Listener {
     }
 
     private void askTime(Player p, Rules.Type currentFilter, String code, String title, String text, Rules.Type t) {
-        String hint = t == Rules.Type.BAN ? "permanente (e blacklist per i ban)" : "permanente";
+        String hint = rules.timeHint(t);
         ui.askText(p, "scrivi il tempo: 10s 10m 10h 10d, anche somme come 10h+23m+16s; " + hint, "TEMPO", "", in -> {
             String v = in == null ? "" : in.trim();
-            String err = Rules.parseTimeError(t, v);
+            String err = rules.timeError(t, v);
             if (err != null) {
                 GuiMsg.send(plugin, p, "&c" + err);
                 Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, title, text, t));
                 return;
             }
-            finishCreate(p, code, title, text, t, Rules.parseTime(t, v));
+            finishCreate(p, code, title, text, t, rules.time(t, v));
         }, () -> Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, code, title, text)));
     }
 
@@ -536,9 +568,9 @@ public final class RulesGui implements Listener {
         if (rules.add(r)) {
             AdminCommand a = plugin.getAdminCommand();
             if (a != null) {
-                a.record(p, "rules add " + code + " " + Rules.typeLabel(t) + " " + Rules.timeLabel(r));
+                a.record(p, logPrefix() + " add " + code + " " + rules.label(t) + " " + Rules.timeLabel(r));
             }
-            GuiMsg.send(plugin, p, "&aregola " + code + " creata (" + Rules.typeLabel(t) + ")");
+            GuiMsg.send(plugin, p, "&aregola " + (rules.isStaff() ? "staff " : "") + code + " creata (" + rules.label(t) + ")");
         } else {
             GuiMsg.send(plugin, p, "&cesiste gia' una regola con il codice " + code);
         }
@@ -555,7 +587,7 @@ public final class RulesGui implements Listener {
         if (!(event.getWhoClicked() instanceof Player p)) {
             return;
         }
-        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h)) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h) || h.owner != this) {
             return;
         }
         event.setCancelled(true);
@@ -608,7 +640,7 @@ public final class RulesGui implements Listener {
             plugin.guiClick(p);
             final Rules.Type backFilter = s.filter;
             final int backPage = s.page;
-            Bukkit.getScheduler().runTask(plugin, () -> plugin.getRuleDetailGui().open(p, code,
+            Bukkit.getScheduler().runTask(plugin, () -> detail().open(p, code,
                     () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, backFilter, backPage))));
         }
     }
@@ -627,7 +659,7 @@ public final class RulesGui implements Listener {
 
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Holder) {
+        if (mine(event.getView().getTopInventory().getHolder())) {
             event.setCancelled(true);
         }
     }
@@ -641,7 +673,7 @@ public final class RulesGui implements Listener {
         if (switching.contains(id)) {
             return;
         }
-        if (event.getInventory().getHolder() instanceof Holder h && sessions.get(id) == h.session) {
+        if (event.getInventory().getHolder() instanceof Holder h && h.owner == this && sessions.get(id) == h.session) {
             sessions.remove(id);
         }
     }

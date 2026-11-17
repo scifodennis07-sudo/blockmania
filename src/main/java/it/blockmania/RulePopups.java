@@ -29,6 +29,7 @@ import java.util.UUID;
  * Popup del dettaglio regola: lista generica a griglia 7x3 (cronologia modifiche, player sanzionati) e menu "cosa modifichi".
  * La lista usa la stessa grafica di UserProfileHistory (userprofile-8) ma senza pulsante reset e con frecce NON circolari.
  * Non e' live: i dati sono quelli del momento dell'apertura.
+ * Istanziabile per piu' Rules (regole player e regole staff): ogni istanza riconosce solo i propri Holder.
  */
 public final class RulePopups implements Listener {
 
@@ -56,6 +57,8 @@ public final class RulePopups implements Listener {
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         Session session;
+        /** Istanza che ha creato l'inventario: le altre lo ignorano. */
+        RulePopups owner;
 
         @Override
         public Inventory getInventory() {
@@ -81,6 +84,8 @@ public final class RulePopups implements Listener {
     private final UserProfilePowers ui;
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Set<UUID> switching = new HashSet<>();
+    /** Dettaglio che disegna lo sfondo dei popup (null = plugin.getRuleDetailGui()). */
+    private RuleDetailGui detail;
 
     public RulePopups(BlockMania plugin, Rules rules, UserProfilePowers ui) {
         this.plugin = plugin;
@@ -88,9 +93,27 @@ public final class RulePopups implements Listener {
         this.ui = ui;
     }
 
-    /** True se il giocatore ha aperto una lista di questa classe. */
+    /** Collega il dettaglio di questa istanza (serve per la seconda istanza, quella delle regole staff). */
+    public void setDetail(RuleDetailGui detail) {
+        this.detail = detail;
+    }
+
+    private RuleDetailGui detail() {
+        return detail != null ? detail : plugin.getRuleDetailGui();
+    }
+
+    /** Le regole di questa istanza. */
+    public Rules rules() {
+        return rules;
+    }
+
+    private boolean mine(InventoryHolder holder) {
+        return holder instanceof Holder h && h.owner == this;
+    }
+
+    /** True se il giocatore ha aperto una lista di questa istanza. */
     public boolean owns(Player p) {
-        return p != null && p.getOpenInventory().getTopInventory().getHolder() instanceof Holder;
+        return p != null && mine(p.getOpenInventory().getTopInventory().getHolder());
     }
 
     // ------------------------------------------------------------------
@@ -125,6 +148,7 @@ public final class RulePopups implements Listener {
         int pages = pageCount(s.entries.size());
         s.page = Math.max(0, Math.min(page, pages - 1));
         Holder h = new Holder();
+        h.owner = this;
         h.session = s;
         s.holder = h;
         h.inventory = Bukkit.createInventory(h, SIZE, titleOf(s, pages));
@@ -214,7 +238,7 @@ public final class RulePopups implements Listener {
             }
         }
         openList(staff, "cronologia " + r.code(), list, faces, onBack,
-                g -> plugin.getRuleDetailGui().drawDimmedBackground(g, r));
+                g -> detail().drawDimmedBackground(g, r));
     }
 
     /** Player sanzionati con questa regola, dal piu' recente. */
@@ -225,7 +249,7 @@ public final class RulePopups implements Listener {
         if (hits != null) {
             for (Rules.Hit h : hits) {
                 List<String> lore = new ArrayList<>();
-                lore.add("&7sanzione: &f" + (h.kind() == null ? "-" : Rules.typeLabel(h.kind())));
+                lore.add("&7sanzione: &f" + (h.kind() == null ? "-" : rules.label(h.kind())));
                 lore.add("&7da: &f" + name(h.byName()));
                 lore.add("&7il: &f" + date(h.time()));
                 lore.add("&7durata: &f" + durationLabel(h.durationMs()));
@@ -234,7 +258,7 @@ public final class RulePopups implements Listener {
             }
         }
         openList(staff, "sanzionati " + r.code(), list, faces, onBack,
-                g -> plugin.getRuleDetailGui().drawDimmedBackground(g, r));
+                g -> detail().drawDimmedBackground(g, r));
     }
 
     /** UUID noto, altrimenti dal nome solo se in cache (nessun lookup di rete sul main thread); null se sconosciuto. */
@@ -314,7 +338,7 @@ public final class RulePopups implements Listener {
                 case "type" -> askType(staff, cur, onBack, onDone);
                 default -> onBack.run();
             }
-        }, onBack, false, null, g -> plugin.getRuleDetailGui().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
+        }, onBack, false, null, g -> detail().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
     }
 
     private interface Edit {
@@ -333,7 +357,7 @@ public final class RulePopups implements Listener {
             Rules.Rule bgRule = rules.get(r.code()) != null ? rules.get(r.code()) : r;
             Runnable backToMenu = () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, bgRule, onBack, onDone));
             ui.confirmOver(staff, "Salvare: " + (v.length() > 40 ? v.substring(0, 40) + "..." : v) + "?",
-                    g -> plugin.getRuleDetailGui().drawDimmedBackground(g, bgRule), () -> {
+                    g -> detail().drawDimmedBackground(g, bgRule), () -> {
                 String err = edit.apply(v);
                 if (err != null) {
                     GuiMsg.send(plugin, staff, "&c" + err);
@@ -349,33 +373,33 @@ public final class RulePopups implements Listener {
 
     private void askType(Player staff, Rules.Rule r, Runnable onBack, Runnable onDone) {
         final String code = r.code();
-        ui.openCommands(staff, "modifica sanzione " + code, List.of("ban", "warn", "mute", "regolamento"), cmd -> {
-            Rules.Type t;
-            try {
-                t = Rules.Type.valueOf(cmd.toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException e) {
+        // stessi tasti (e immagini) per player e staff: per lo staff ban = depex, mute = sospensione
+        ui.openCommands(staff, (rules.isStaff() ? "modifica sanzione staff " : "modifica sanzione ") + code,
+                List.of("ban", "warn", "mute", "regolamento"), cmd -> {
+            Rules.Type t = rules.typeOf(cmd);
+            if (t == null) {
                 onBack.run();
                 return;
             }
-            if (t == Rules.Type.BAN || t == Rules.Type.MUTE) {
+            if (rules.needsTime(t)) {
                 askMinutes(staff, code, t, onBack, onDone);
             } else {
-                applyType(staff, code, t, 0, onDone);
+                applyType(staff, code, t, rules.time(t, ""), onDone);
             }
         }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(code) != null ? rules.get(code) : r, onBack, onDone)),
-                false, null, g -> plugin.getRuleDetailGui().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
+                false, null, g -> detail().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
     }
 
     private void askMinutes(Player staff, String code, Rules.Type t, Runnable onBack, Runnable onDone) {
-        String hint = t == Rules.Type.BAN ? "permanente (e blacklist per i ban)" : "permanente";
+        String hint = rules.timeHint(t);
         ui.askText(staff, "scrivi il tempo: 10s 10m 10h 10d, anche somme come 10h+23m+16s; " + hint, "TEMPO", "", in -> {
-            String err = Rules.parseTimeError(t, in);
+            String err = rules.timeError(t, in);
             if (err != null) {
                 GuiMsg.send(plugin, staff, "&c" + err);
                 Bukkit.getScheduler().runTask(plugin, () -> askMinutes(staff, code, t, onBack, onDone));
                 return;
             }
-            applyType(staff, code, t, Rules.parseTime(t, in), onDone);
+            applyType(staff, code, t, rules.time(t, in), onDone);
         }, () -> Bukkit.getScheduler().runTask(plugin, () -> {
             Rules.Rule cur = rules.get(code);
             if (cur == null) {
@@ -539,7 +563,7 @@ public final class RulePopups implements Listener {
         if (!(event.getWhoClicked() instanceof Player p)) {
             return;
         }
-        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h)) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h) || h.owner != this) {
             return;
         }
         event.setCancelled(true);
@@ -579,7 +603,7 @@ public final class RulePopups implements Listener {
 
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Holder) {
+        if (mine(event.getView().getTopInventory().getHolder())) {
             event.setCancelled(true);
         }
     }
@@ -593,7 +617,7 @@ public final class RulePopups implements Listener {
         if (switching.contains(id)) {
             return;
         }
-        if (event.getInventory().getHolder() instanceof Holder h && sessions.get(id) == h.session) {
+        if (event.getInventory().getHolder() instanceof Holder h && h.owner == this && sessions.get(id) == h.session) {
             sessions.remove(id);
         }
     }

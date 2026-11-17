@@ -63,6 +63,10 @@ public final class BlockMania extends JavaPlugin {
     private RulesGui rulesGui;
     private RulePopups rulePopups;
     private RuleDetailGui ruleDetailGui;
+    private Rules staffRules;
+    private RulesGui staffRulesGui;
+    private RulePopups staffRulePopups;
+    private RuleDetailGui staffRuleDetailGui;
     private StaffRoles staffRoles;
     private RoleGui roleGui;
     private Tutorial tutorial;
@@ -71,6 +75,7 @@ public final class BlockMania extends JavaPlugin {
     private MineTemplates mineTemplates;
     private MovementLog movements;
     private StaffStats staffStats;
+    private StaffDiscipline staffDiscipline;
 
     /** Palette: codice colore (c, a, e ...) -> {r1,g1,b1, r2,g2,b2}. */
     private final Map<Character, int[]> palette = new HashMap<>();
@@ -105,6 +110,10 @@ public final class BlockMania extends JavaPlugin {
         movements.load();
         staffStats = new StaffStats(this);
         staffStats.load();
+        // prima di StaffRoles.load(): apply() controlla le sospensioni
+        staffDiscipline = new StaffDiscipline(this);
+        staffDiscipline.load();
+        staffDiscipline.start();
         ammo.start();
         upgrades = new UpgradeManager(this);
         shops = new ShopManager(this);
@@ -181,6 +190,9 @@ public final class BlockMania extends JavaPlugin {
         // regole (rules.yml): create PRIMA delle GUI che le usano
         rules = new Rules(this);
         rules.load();
+        // regole staff (staff-rules.yml): seconda istanza, etichette warn/depex/sospensione
+        staffRules = new Rules(this, "staff-rules.yml", "staff-rules-log.yml", true);
+        staffRules.load();
         // profilo player (/adminmania userprofile): l'ordine conta, le GUI usano i servizi creati prima
         sanctions = new SanctionManager(this);
         getServer().getPluginManager().registerEvents(sanctions, this);
@@ -211,6 +223,16 @@ public final class BlockMania extends JavaPlugin {
         getProfileLists();   // crea ProfileLists (il costruttore registra il Listener)
         ruleDetailGui = new RuleDetailGui(this, rules, profileUi);
         getServer().getPluginManager().registerEvents(ruleDetailGui, this);
+        // GUI regole staff (/adminmania staffrules): istanze proprie collegate tra loro
+        staffRulesGui = new RulesGui(this, staffRules, profileUi);
+        getServer().getPluginManager().registerEvents(staffRulesGui, this);
+        staffRulePopups = new RulePopups(this, staffRules, profileUi);
+        getServer().getPluginManager().registerEvents(staffRulePopups, this);
+        staffRuleDetailGui = new RuleDetailGui(this, staffRules, profileUi);
+        getServer().getPluginManager().registerEvents(staffRuleDetailGui, this);
+        staffRulesGui.setDetail(staffRuleDetailGui);
+        staffRuleDetailGui.setPopups(staffRulePopups);
+        staffRulePopups.setDetail(staffRuleDetailGui);
         staffRoles = new StaffRoles(this);
         staffRoles.load();
         getServer().getPluginManager().registerEvents(staffRoles, this);
@@ -490,6 +512,9 @@ public final class BlockMania extends JavaPlugin {
         if (staffStats != null) {
             staffStats.save();
         }
+        if (staffDiscipline != null) {
+            staffDiscipline.stop();
+        }
     }
 
     /** Rilegge gli oggetti dal config.yml. */
@@ -594,6 +619,23 @@ public final class BlockMania extends JavaPlugin {
         return rules;
     }
 
+    /** Regole staff (staff-rules.yml): BAN = depex, MUTE = sospensione, WARN = warn staff. */
+    public Rules getStaffRules() {
+        return staffRules;
+    }
+
+    public RulesGui getStaffRulesGui() {
+        return staffRulesGui;
+    }
+
+    public RulePopups getStaffRulePopups() {
+        return staffRulePopups;
+    }
+
+    public RuleDetailGui getStaffRuleDetailGui() {
+        return staffRuleDetailGui;
+    }
+
     public SanctionManager getSanctions() {
         return sanctions;
     }
@@ -680,6 +722,10 @@ public final class BlockMania extends JavaPlugin {
 
     public StaffStats getStaffStats() {
         return staffStats;
+    }
+
+    public StaffDiscipline getStaffDiscipline() {
+        return staffDiscipline;
     }
 
     private PlayerReset playerReset;

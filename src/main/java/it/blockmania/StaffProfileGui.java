@@ -7,10 +7,13 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
@@ -19,22 +22,29 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * GUI del profilo staff (/adminmania staffprofile <nome>, oppure click destro sulla testa dello userprofile di uno staffer).
- * Una sola pagina: scena disegnata nel titolo (immagine staffprofile del pack, testa 2D, tre barre di stelle con il valore
+ * Due pagine (frecce in alto come UserProfileGui, numero pagina 1/2 e 2/2). Pagina 1: scena disegnata nel titolo (immagine staffprofile del pack, testa 2D, tre barre di stelle con il valore
  * nel box VAL) e sotto gli slot invisibili con nome e lore. Orologio = info (lore), carta = carriera (popup lista),
  * mute / warn / ban / blacklist / ticket / assistenze vocali = conteggi (lore) e popup lista con le singole azioni.
+ * Pagina 2: stessa parte alta, barra del grado staff (glifo colorato del ruolo), pezzetti dei ruoli aggiuntivi
+ * (dev, texture, builder) e pannello azioni: depex, warn, aggiungi/modifica ruolo, sospendi, tutor, promuovi/degrada.
+ * Warn/depex/sospendi usano le regole staff (/adminmania staffrules) e StaffDiscipline; click destro = elenco con reset.
  * Schema copiato da UserProfileGui (titolo con avanzamento dichiarato/reale, holder, azioni, refresh) e da ProfileLists (popup).
  * <p>
  * Misure: pixel dell'immagine staffprofile (256x256); nel titolo si sottrae IMG come in UserProfileGui.
@@ -101,6 +111,8 @@ public final class StaffProfileGui implements Listener {
 
     // slot (rawSlot): griglia 9x6, container = immagine - (7,15)
     private static final int[] S_CLOSE = {0, 1};
+    private static final int[] S_PREV = {2};
+    private static final int[] S_NEXT = {6};
     private static final int[] S_INFO = {7, 8};
     private static final int[] S_HEAD = {9, 10, 18, 19};
     private static final int[] S_STAR30 = {11, 12, 13, 14};
@@ -115,6 +127,19 @@ public final class StaffProfileGui implements Listener {
     private static final int[] S_BAN = {43};
     private static final int[] S_BLACKLIST = {44};
 
+    // pagina 2: barra ruolo (riga 3, colonne 0..5), pezzetti ruoli aggiuntivi (riga 4, colonne 0..5), pannello icone 3x2
+    private static final int PAGES = 2;
+    private static final int[] S_ROLE = {27, 28, 29, 30, 31, 32};
+    private static final int[] S_SUB = {36, 37, 38, 39, 40, 41};
+    private static final int[] S_DEPEX = {33};
+    private static final int[] S_DWARN = {34};
+    private static final int[] S_SPECIAL = {35};
+    private static final int[] S_SUSPEND = {42};
+    private static final int[] S_TUTOR = {43};
+    private static final int[] S_PROMOTE = {44};
+    /** Ordine dei pezzetti dei ruoli aggiuntivi (come i glifi di StaffPage2Glyphs). */
+    private static final List<String> SUB_ORDER = List.of("dev", "t_maker", "builder");
+
     private static final ZoneId ROME = ZoneId.of("Europe/Rome");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ROME);
 
@@ -127,11 +152,13 @@ public final class StaffProfileGui implements Listener {
     public static final class Holder implements InventoryHolder {
         private Inventory inventory;
         private final UUID target;
+        private final int page;
         private String sig = "";
         private final Map<Integer, String> actions = new HashMap<>();
 
-        Holder(UUID target) {
+        Holder(UUID target, int page) {
             this.target = target;
+            this.page = page;
         }
 
         @Override
@@ -180,6 +207,11 @@ public final class StaffProfileGui implements Listener {
 
     /** Apre il profilo staff di target allo staffer (target deve essere staff, anche se offline). */
     public void open(Player staff, UUID target) {
+        open(staff, target, 0);
+    }
+
+    /** Come sopra, sulla pagina indicata (0 = pagina 1, 1 = pagina 2). */
+    public void open(Player staff, UUID target, int page) {
         AdminCommand a = plugin.getAdminCommand();
         if (a == null ? !staff.isOp() : (a.level(staff) <= 0 && !staff.isOp())) {
             GuiMsg.send(plugin, staff, "&cSolo lo staff puo' aprire lo staffprofile.");
@@ -196,7 +228,7 @@ public final class StaffProfileGui implements Listener {
         if (up != null) {
             up.ensureFaceFor(target, () -> refresh(target));
         }
-        Holder h = build(target);
+        Holder h = build(target, Math.max(0, Math.min(PAGES - 1, page)));
         staff.openInventory(h.inventory);
     }
 
@@ -205,7 +237,12 @@ public final class StaffProfileGui implements Listener {
      * immagine, testa e barre con avanzamento reale 186. Non scurisce.
      */
     public void drawDimmedBackground(GuiTitle g, UUID target) {
-        scene(g, target, data(target), true);
+        drawDimmedBackground(g, target, 0);
+    }
+
+    /** Come sopra, per la pagina indicata (0 = pagina 1, 1 = pagina 2). */
+    public void drawDimmedBackground(GuiTitle g, UUID target, int page) {
+        scene(g, target, data(target), Math.max(0, Math.min(PAGES - 1, page)), true);
     }
 
     /** Aggiorna le GUI aperte su questo target (es. faccia caricata). */
@@ -311,12 +348,44 @@ public final class StaffProfileGui implements Listener {
         return avg < 0 ? "-" : String.format(Locale.ROOT, "%.1f", avg);
     }
 
-    private String sig(UUID target, Data d) {
+    private String sig(UUID target, Data d, int page) {
         UserProfileGui up = plugin.getUserProfile();
         StaffStats.Ratings r = d.ratings();
-        return (up != null && up.loadedFace(target) != null ? "F" : "f")
+        String base = (up != null && up.loadedFace(target) != null ? "F" : "f")
                 + fill(r.avg30(), BAR30_N) + "/" + fill(r.avg7(), BAR7_N) + "/" + fill(r.avgAll(), BARALL_N)
                 + "/" + valText(r.avg30()) + "/" + valText(r.avg7()) + "/" + valText(r.avgAll());
+        if (page == 1) {
+            // pagina 2: nel titolo ci sono anche la barra del grado e i pezzetti dei ruoli aggiuntivi
+            base += "/r" + roleIndex(target) + "/" + String.join(",", subsOf(target));
+        }
+        return base;
+    }
+
+    /** Ruoli aggiuntivi del target nell'ordine dei pezzetti (dev, t_maker, builder). */
+    private List<String> subsOf(UUID target) {
+        List<String> out = new ArrayList<>();
+        StaffRoles roles = plugin.getStaffRoles();
+        if (roles == null) {
+            return out;
+        }
+        java.util.Set<String> sp = roles.specialsOf(target);
+        for (String id : SUB_ORDER) {
+            if (sp.contains(id)) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
+    /** Indice in StaffRoles.ORDER del glifo della barra: grado della scala, altrimenti il primo ruolo speciale; -1 = nessuno. */
+    private int roleIndex(UUID target) {
+        StaffRoles roles = plugin.getStaffRoles();
+        String r = roles == null ? null : roles.roleOf(target);
+        if (r != null) {
+            return StaffRoles.ORDER.indexOf(r);
+        }
+        List<String> subs = subsOf(target);
+        return subs.isEmpty() ? -1 : StaffRoles.ORDER.indexOf(subs.get(0));
     }
 
     // ------------------------------------------------------------------
@@ -410,11 +479,16 @@ public final class StaffProfileGui implements Listener {
         }
     }
 
-    /** Disegno comune (immagine, testa, barre e numeri). real = avanzamento 186 per lo sfondo dei popup. */
-    private void scene(GuiTitle g, UUID target, Data d, boolean real) {
+    /** Disegno comune (immagine, testa, barre e numeri, numero pagina). real = avanzamento reale per lo sfondo dei popup. */
+    private void scene(GuiTitle g, UUID target, Data d, int page, boolean real) {
         final int shift = real ? IMG_REAL - IMG_ADV : 0;
         final int ox = IMG + shift;
-        g.at(-15, "&f" + IMAGE, FONT, real ? IMG_REAL : IMG_ADV);
+        if (page == 1) {
+            // sfondo pagina 2: stesso schema della pagina 1 (a -15, avanzamento reale o dichiarato = reale - 7)
+            g.at(-15, "&f" + StaffPage2Glyphs.BG, StaffPage2Glyphs.BG_FONT, real ? StaffPage2Glyphs.BG_REAL : StaffPage2Glyphs.BG_REAL - 7);
+        } else {
+            g.at(-15, "&f" + IMAGE, FONT, real ? IMG_REAL : IMG_ADV);
+        }
         UserProfileGui up = plugin.getUserProfile();
         UserProfileGui.drawFaceAt(g, up == null ? null : up.loadedFace(target), FACE_X + shift, FACE_Y, FACE_SCALE);
         StaffStats.Ratings r = d.ratings();
@@ -424,11 +498,57 @@ public final class StaffProfileGui implements Listener {
         drawMini(g, valText(r.avg30()), VAL30_X, VAL30_Y, ox);
         drawMini(g, valText(r.avg7()), VAL7_X, VAL7_Y, ox);
         drawMini(g, valText(r.avgAll()), VALALL_X, VALALL_Y, ox);
+        if (page == 1) {
+            drawRoleAndSubs(g, target, real);
+        }
+        var num = page == 1 ? StaffPage2Glyphs.PAGE_2_2 : StaffPage2Glyphs.PAGE_1_2;
+        overlay(g, num.ch(), num.font(), num.real(), real);
     }
 
-    private Component title(UUID target, Data d) {
+    /**
+     * Overlay 256x256 del pack (come UserProfileGui.drawPageNumber): titolo normale a -22 con avanzamento dichiarato
+     * (reale - 7), sfondo dei popup a -15 con avanzamento reale.
+     */
+    private static void overlay(GuiTitle g, String ch, String font, int real, boolean realPath) {
+        if (ch == null || ch.isEmpty()) {
+            return;
+        }
+        if (realPath) {
+            g.at(-15, "&f" + ch, font, real);
+        } else {
+            g.at(-15 - 7, "&f" + ch, font, real - 7);
+        }
+    }
+
+    /** Pagina 2: barra del grado (glifo colorato del ruolo) e pezzetti dei ruoli aggiuntivi (0 = nessuno, 1 intero, 2 meta', 3 terzi). */
+    private void drawRoleAndSubs(GuiTitle g, UUID target, boolean real) {
+        int ri = roleIndex(target);
+        if (ri >= 0) {
+            overlay(g, String.valueOf(StaffPage2Glyphs.roleChar(ri)), StaffPage2Glyphs.ROLE_FONT, StaffPage2Glyphs.roleReal(ri), real);
+        }
+        List<String> subs = subsOf(target);
+        if (subs.isEmpty()) {
+            var gl = StaffPage2Glyphs.subFull(null);
+            overlay(g, gl.ch(), gl.font(), gl.real(), real);
+        } else if (subs.size() == 1) {
+            var gl = StaffPage2Glyphs.subFull(subs.get(0));
+            overlay(g, gl.ch(), gl.font(), gl.real(), real);
+        } else if (subs.size() == 2) {
+            for (int i = 0; i < 2; i++) {
+                var gl = StaffPage2Glyphs.subHalf(subs.get(i), i);
+                overlay(g, gl.ch(), gl.font(), gl.real(), real);
+            }
+        } else {
+            for (int i = 0; i < 3; i++) {
+                var gl = StaffPage2Glyphs.subThird(subs.get(i), i);
+                overlay(g, gl.ch(), gl.font(), gl.real(), real);
+            }
+        }
+    }
+
+    private Component title(UUID target, Data d, int page) {
         GuiTitle g = new GuiTitle(plugin);
-        scene(g, target, d, false);
+        scene(g, target, d, page, false);
         UserProfilePowers.topTitle(plugin, g, "staff " + UserProfilePowers.nameOf(target));
         return g.build();
     }
@@ -437,20 +557,20 @@ public final class StaffProfileGui implements Listener {
     //  Costruzione e aggiornamento
     // ------------------------------------------------------------------
 
-    private Holder build(UUID target) {
+    private Holder build(UUID target, int page) {
         Data d = data(target);
-        Holder h = new Holder(target);
-        h.sig = sig(target, d);
-        h.inventory = Bukkit.createInventory(h, SIZE, title(target, d));
+        Holder h = new Holder(target, page);
+        h.sig = sig(target, d, page);
+        h.inventory = Bukkit.createInventory(h, SIZE, title(target, d, page));
         fill(h, target, d);
         return h;
     }
 
     private void update(Player p, Holder h) {
         Data d = data(h.target);
-        String sg = sig(h.target, d);
+        String sg = sig(h.target, d, h.page);
         if (!sg.equals(h.sig)) {
-            p.openInventory(build(h.target).inventory);   // il titolo (barre, numeri, testa) cambia: inventario nuovo
+            p.openInventory(build(h.target, h.page).inventory);   // il titolo (barre, numeri, testa) cambia: inventario nuovo
         } else {
             fill(h, h.target, d);   // solo lore: si aggiorna al volo senza richiudere
         }
@@ -476,6 +596,21 @@ public final class StaffProfileGui implements Listener {
 
     private void fill(Holder h, UUID target, Data d) {
         setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
+        boolean hasPrev = h.page > 0;
+        boolean hasNext = h.page < PAGES - 1;
+        setAll(h, S_PREV, pane(hasPrev ? "&epagina precedente" : "&8pagina precedente", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+                hasPrev ? "pg:prev" : null);
+        setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+                hasNext ? "pg:next" : null);
+        setAll(h, S_HEAD, headItem(target, d), null);
+        StaffStats.Ratings r0 = d.ratings();
+        setAll(h, S_STAR30, starItem("ultimi 30 giorni", r0.avg30(), r0.n30()), null);
+        setAll(h, S_STAR7, starItem("ultimi 7 giorni", r0.avg7(), r0.n7()), null);
+        setAll(h, S_STARALL, starItem("generale", r0.avgAll(), r0.nAll()), null);
+        if (h.page == 1) {
+            fillPage2(h, target, d);
+            return;
+        }
         setAll(h, S_INFO, pane("&6informazioni", List.of(
                 "&7Profilo staff: attivita' e valutazioni.", "",
                 "&fStelle: &7media dei voti dei ticket gestiti",
@@ -483,14 +618,8 @@ public final class StaffProfileGui implements Listener {
                 "&fOrologio: &7primo accesso, playtime, grado.",
                 "&fCarta: &7click = carriera staff.",
                 "&fMute, warn, ban, blacklist, ticket, cuffie:",
-                "&7click = elenco delle azioni.")), null);
-
-        setAll(h, S_HEAD, headItem(target, d), null);
-
-        StaffStats.Ratings r = d.ratings();
-        setAll(h, S_STAR30, starItem("ultimi 30 giorni", r.avg30(), r.n30()), null);
-        setAll(h, S_STAR7, starItem("ultimi 7 giorni", r.avg7(), r.n7()), null);
-        setAll(h, S_STARALL, starItem("generale", r.avgAll(), r.nAll()), null);
+                "&7click = elenco delle azioni.",
+                "&fFreccia destra: &7pagina 2 (grado, ruoli, warn,", "&7depex, sospensioni, tutor).")), null);
 
         setAll(h, S_CLOCK, infoItem(d.info()), null);
         setAll(h, S_CAREER, careerItem(d.careerKinds()), "career");
@@ -665,13 +794,18 @@ public final class StaffProfileGui implements Listener {
 
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Holder) {
+        if (event.getView().getTopInventory().getHolder() instanceof Holder
+                || event.getView().getTopInventory().getHolder() instanceof PopupHolder) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler
     public void onClick(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof PopupHolder ph) {
+            popupClick(event, ph);
+            return;
+        }
         if (!(event.getView().getTopInventory().getHolder() instanceof Holder h)) {
             return;
         }
@@ -688,18 +822,37 @@ public final class StaffProfileGui implements Listener {
         }
         plugin.guiClick(p);
         final UUID target = h.target;
+        final boolean right = event.isRightClick();
+        final int page = h.page;
         // tutto al tick dopo: aprire o chiudere inventari dentro l'evento click lascia la gui in stato incerto
         Bukkit.getScheduler().runTask(plugin, () -> {
-            handle(p, target, action);
+            handle(p, target, action, right, page);
         });
     }
 
-    private void handle(Player p, UUID target, String action) {
+    private void handle(Player p, UUID target, String action, boolean right, int page) {
         if (!p.isOnline()) {
             return;
         }
         if (action.equals("close")) {
             p.closeInventory();
+        } else if (action.equals("pg:prev")) {
+            open(p, target, Math.max(0, page - 1));
+        } else if (action.equals("pg:next")) {
+            open(p, target, Math.min(PAGES - 1, page + 1));
+        } else if (action.startsWith("d:")) {
+            StaffDiscipline.Kind kind = StaffDiscipline.Kind.valueOf(action.substring(2));
+            if (right) {
+                openDiscipline(p, target, kind, 0);
+            } else {
+                disciplineLeft(p, target, kind);
+            }
+        } else if (action.equals("tutor")) {
+            openTutor(p, target, 0);
+        } else if (action.equals("special")) {
+            openSpecial(p, target);
+        } else if (action.equals("promote")) {
+            openPromote(p, target);
         } else if (action.equals("career")) {
             openCareer(p, target);
         } else if (action.startsWith("cat:")) {
@@ -865,5 +1018,924 @@ public final class StaffProfileGui implements Listener {
         meta.lore(l);
         stack.setItemMeta(meta);
         return new ProfileLists.Row(stack, ProfileLists.iconIndex(iconName));
+    }
+
+    // ------------------------------------------------------------------
+    //  Pagina 2: item
+    // ------------------------------------------------------------------
+
+    private void fillPage2(Holder h, UUID target, Data d) {
+        setAll(h, S_INFO, pane("&6informazioni", List.of(
+                "&7Profilo staff: pagina &f2&8/&f" + PAGES + "&7.", "",
+                "&fBarra: &7grado staff (colore del ruolo).",
+                "&fPezzetti: &7ruoli aggiuntivi (dev, texture, builder).",
+                "&fWarn, depex, sospendi: &7click sinistro = azione",
+                "&7con una regola staff (/adminmania staffrules),",
+                "&7click destro = elenco con reset e cancella voce.",
+                "&fTutor: &7assegna o togli il tutor.",
+                "&fRuolo / promuovi: &7popup con le frecce.")), null);
+
+        StaffRoles roles = plugin.getStaffRoles();
+        String role = roles == null ? null : roles.roleOf(target);
+        List<String> subs = subsOf(target);
+        StaffDiscipline disc = plugin.getStaffDiscipline();
+        boolean suspended = disc != null && disc.isSuspended(target);
+
+        // barra del grado
+        List<String> rl = new ArrayList<>();
+        rl.add("&7grado staff: &f" + (role == null ? "nessuno" : roleLabel(role)));
+        if (role == null && !subs.isEmpty()) {
+            rl.add("&8nessun grado della scala: si vede il ruolo aggiuntivo");
+        }
+        rl.add("&7ruoli aggiuntivi: &f" + (subs.isEmpty() ? "nessuno" : subsText(subs)));
+        if (suspended) {
+            rl.add("");
+            rl.add("&csospeso &7fino al &f" + date(disc.suspendedUntil(target)));
+        }
+        setAll(h, S_ROLE, pane("&f" + (role == null ? (subs.isEmpty() ? "nessun grado" : roleLabel(subs.get(0))) : roleLabel(role)), rl), null);
+
+        // pezzetti dei ruoli aggiuntivi: 0 = nessuno (riga intera grigia), 1 = riga intera, 2 = meta', 3 = terzi
+        if (subs.isEmpty()) {
+            setAll(h, S_SUB, pane("&7nessun ruolo aggiuntivo", List.of("&7Ruoli aggiuntivi: dev, texture, builder.", "",
+                    "&eusa 'aggiungi/modifica ruolo' per darne uno")), null);
+        } else {
+            int n = subs.size();
+            int per = S_SUB.length / n;
+            for (int i = 0; i < S_SUB.length; i++) {
+                String id = subs.get(Math.min(n - 1, i / per));
+                set(h, S_SUB[i], pane("&b" + roleLabel(id), List.of("&7ruolo aggiuntivo di &f" + nameOf(target),
+                        "&7ruoli aggiuntivi: &f" + subsText(subs), "",
+                        "&eusa 'aggiungi/modifica ruolo' per cambiarli")), null);
+            }
+        }
+
+        int nWarn = disc == null ? 0 : disc.entries(target, StaffDiscipline.Kind.WARN).size();
+        int nDepex = disc == null ? 0 : disc.entries(target, StaffDiscipline.Kind.DEPEX).size();
+        int nSusp = disc == null ? 0 : disc.entries(target, StaffDiscipline.Kind.SUSPEND).size();
+
+        setAll(h, S_DEPEX, pane("&cdepex staff", List.of(
+                "&7depex ricevuti: &f" + nDepex,
+                "&7grado attuale: &f" + (role == null ? "nessuno" : roleLabel(role)),
+                "&8toglie il grado staff, i ruoli aggiuntivi restano", "",
+                "&esinistro: depexa con una regola staff",
+                "&edestro: elenco dei depex (reset e cancella voce)")), "d:DEPEX");
+        setAll(h, S_DWARN, pane("&ewarn staff", List.of(
+                "&7warn ricevuti: &f" + nWarn, "",
+                "&esinistro: warna con una regola staff",
+                "&edestro: elenco dei warn (reset e cancella voce)")), "d:WARN");
+        setAll(h, S_SPECIAL, pane("&baggiungi/modifica ruolo", List.of(
+                "&7ruoli aggiuntivi: &f" + (subs.isEmpty() ? "nessuno" : subsText(subs)), "",
+                "&esinistro: scegli dev, texture o builder con le frecce",
+                "&8se ce l'ha gia', confermando lo togli")), "special");
+        List<String> sl = new ArrayList<>();
+        sl.add("&7sospensioni ricevute: &f" + nSusp);
+        if (suspended) {
+            sl.add("&7stato: &csospeso &7fino al &f" + date(disc.suspendedUntil(target)));
+            sl.add("&8niente permessi staff finche' e' sospeso");
+            sl.add("");
+            sl.add("&esinistro: togli la sospensione");
+        } else {
+            sl.add("&7stato: &anon sospeso");
+            sl.add("");
+            sl.add("&esinistro: sospendi con una regola staff");
+        }
+        sl.add("&edestro: elenco delle sospensioni (reset e cancella voce)");
+        setAll(h, S_SUSPEND, pane("&6sospendi staff", sl), "d:SUSPEND");
+
+        UUID tutor = disc == null ? null : disc.tutorOf(target);
+        List<UUID> pupils = disc == null ? List.of() : disc.pupilsOf(target);
+        List<String> tl = new ArrayList<>();
+        tl.add("&7tutor: &f" + (tutor == null ? "nessuno" : nameOf(tutor)));
+        tl.add("&7allievi: &f" + pupils.size());
+        for (int i = 0; i < Math.min(5, pupils.size()); i++) {
+            tl.add("&8- &f" + nameOf(pupils.get(i)));
+        }
+        if (pupils.size() > 5) {
+            tl.add("&8... e altri " + (pupils.size() - 5));
+        }
+        tl.add("");
+        tl.add("&esinistro: scegli il tutor (o toglilo)");
+        setAll(h, S_TUTOR, pane("&dassegna tutor", tl), "tutor");
+
+        setAll(h, S_PROMOTE, pane("&apromuovi/degrada staff", List.of(
+                "&7grado attuale: &f" + (role == null ? "nessuno" : roleLabel(role)), "",
+                "&esinistro: scegli il grado con le frecce",
+                "&8si parte dal grado attuale")), "promote");
+    }
+
+    private String subsText(List<String> subs) {
+        List<String> names = new ArrayList<>();
+        for (String id : subs) {
+            names.add(roleLabel(id));
+        }
+        return String.join(", ", names);
+    }
+
+    // ------------------------------------------------------------------
+    //  Pagina 2: permessi
+    // ------------------------------------------------------------------
+
+    private boolean authorize(Player p, UUID target, String group, String verb) {
+        AdminCommand a = plugin.getAdminCommand();
+        if (a == null) {
+            return p.isOp();
+        }
+        return a.authorize(p, group, verb, target, 0);
+    }
+
+    private void audit(Player p, String text) {
+        AdminCommand a = plugin.getAdminCommand();
+        if (a != null) {
+            a.record(p, text);
+        }
+    }
+
+    /** Livello staff del target: grado salvato, permessi se online (anche OP); OP offline = massimo. */
+    private int targetLevel(UUID target) {
+        int lv = 0;
+        StaffRoles roles = plugin.getStaffRoles();
+        String r = roles == null ? null : roles.roleOf(target);
+        if (r != null) {
+            lv = StaffRoles.SCALE.indexOf(r) + 1;
+        }
+        AdminCommand a = plugin.getAdminCommand();
+        Player tp = Bukkit.getPlayer(target);
+        if (tp != null) {
+            if (a != null) {
+                lv = Math.max(lv, a.level(tp));
+            } else if (tp.isOp()) {
+                lv = Integer.MAX_VALUE;
+            }
+        } else if (Bukkit.getOfflinePlayer(target).isOp()) {
+            lv = Integer.MAX_VALUE;
+        }
+        return lv;
+    }
+
+    /** Solo chi ha un grado piu' alto del target (OP sempre); mai su se stessi. */
+    private boolean canAct(Player p, UUID target) {
+        if (p.isOp()) {
+            return true;
+        }
+        if (p.getUniqueId().equals(target)) {
+            deny(p, "non puoi farlo su te stesso.");
+            return false;
+        }
+        AdminCommand a = plugin.getAdminCommand();
+        if (a == null || a.level(p) <= targetLevel(target)) {
+            deny(p, "puoi agire solo su staffer con un grado piu' basso del tuo.");
+            return false;
+        }
+        return true;
+    }
+
+    private void deny(Player p, String text) {
+        GuiMsg.send(plugin, p, "&c" + text);
+        plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
+    }
+
+    /** Verbo di AdminCommand (gruppo sanctions) per il tipo: warn, ban (= depex), mute (= sospensione). */
+    private static String verbOf(StaffDiscipline.Kind kind) {
+        return switch (kind) {
+            case WARN -> "warn";
+            case DEPEX -> "ban";
+            case SUSPEND -> "mute";
+        };
+    }
+
+    /** Tipo della regola staff per il tipo di disciplina: WARN, BAN (= depex), MUTE (= sospensione). */
+    private static Rules.Type ruleType(StaffDiscipline.Kind kind) {
+        return switch (kind) {
+            case WARN -> Rules.Type.WARN;
+            case DEPEX -> Rules.Type.BAN;
+            case SUSPEND -> Rules.Type.MUTE;
+        };
+    }
+
+    private static String kindLabel(StaffDiscipline.Kind kind) {
+        return switch (kind) {
+            case WARN -> "warn";
+            case DEPEX -> "depex";
+            case SUSPEND -> "sospensione";
+        };
+    }
+
+    private static String kindPlural(StaffDiscipline.Kind kind) {
+        return switch (kind) {
+            case WARN -> "warn";
+            case DEPEX -> "depex";
+            case SUSPEND -> "sospensioni";
+        };
+    }
+
+    /** Sfondo dei popup della pagina 2. */
+    private Consumer<GuiTitle> bg2(UUID target) {
+        return g -> {
+            drawDimmedBackground(g, target, 1);
+        };
+    }
+
+    /** Riapre la pagina 2 al tick dopo. */
+    private void back2(Player p, UUID target) {
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (p.isOnline()) {
+                open(p, target, 1);
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
+    //  Pagina 2: warn / depex / sospensione (copia di UserProfileGui.askRuleCode / doRuleSanction)
+    // ------------------------------------------------------------------
+
+    private void disciplineLeft(Player p, UUID target, StaffDiscipline.Kind kind) {
+        StaffDiscipline disc = plugin.getStaffDiscipline();
+        if (disc == null || plugin.getStaffRules() == null) {
+            GuiMsg.send(plugin, p, "&7non ancora disponibile.");
+            return;
+        }
+        if (!authorize(p, target, "sanctions", kind == StaffDiscipline.Kind.SUSPEND && disc.isSuspended(target) ? "undo" : verbOf(kind))
+                || !canAct(p, target)) {
+            return;
+        }
+        if (kind == StaffDiscipline.Kind.SUSPEND && disc.isSuspended(target)) {
+            plugin.getProfileUi().confirmOver(p, "Togliere la sospensione a " + nameOf(target) + "?", bg2(target), () -> {
+                if (!p.isOnline()) {
+                    return;
+                }
+                if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
+                    back2(p, target);
+                    return;
+                }
+                if (disc.unsuspend(target, p)) {
+                    audit(p, "staff.unsuspend " + nameOf(target));
+                    GuiMsg.send(plugin, p, "&asospensione di " + nameOf(target) + " tolta");
+                    plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+                } else {
+                    GuiMsg.send(plugin, p, "&c" + nameOf(target) + " non e' sospeso");
+                }
+                back2(p, target);
+            }, () -> {
+                back2(p, target);
+            });
+            return;
+        }
+        if (kind == StaffDiscipline.Kind.DEPEX && (plugin.getStaffRoles() == null || plugin.getStaffRoles().roleOf(target) == null)) {
+            deny(p, nameOf(target) + " non ha un grado staff da togliere.");
+            return;
+        }
+        askStaffRule(p, target, kind);
+    }
+
+    /** Flusso con regola staff: codice -> messaggio -> conferma -> StaffDiscipline. */
+    private void askStaffRule(Player p, UUID target, StaffDiscipline.Kind kind) {
+        UserProfilePowers ui = plugin.getProfileUi();
+        Runnable cancel = () -> {
+            back2(p, target);
+        };
+        ui.askText(p, "codice regola staff (" + kindLabel(kind) + ")", "CODICE REGOLA", "", code -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            Rules rules = plugin.getStaffRules();
+            Rules.Rule rule = rules == null ? null : rules.get(code == null ? "" : code.trim());
+            if (rule == null || rule.type() != ruleType(kind)) {
+                GuiMsg.send(plugin, p, "&cregola staff inesistente o di altro tipo (serve una regola " + kindLabel(kind)
+                        + ", vedi /adminmania staffrules)");
+                back2(p, target);
+                return;
+            }
+            if (kind == StaffDiscipline.Kind.SUSPEND && rule.durationMs() <= 0) {
+                GuiMsg.send(plugin, p, "&cla regola " + rule.code() + " non ha una durata valida per la sospensione");
+                back2(p, target);
+                return;
+            }
+            ui.askText(p, "messaggio per lo staffer", "MESSAGGIO STAFF", "null", msg -> Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!p.isOnline()) {
+                    return;
+                }
+                String verb = switch (kind) {
+                    case WARN -> "Warnare";
+                    case DEPEX -> "Depexare";
+                    case SUSPEND -> "Sospendere";
+                };
+                ui.confirmOver(p, verb + " " + nameOf(target) + " con la regola " + rule.code() + "?", bg2(target), () -> {
+                    doDiscipline(p, target, kind, rule, msg);
+                }, cancel);
+            }), cancel);
+        }), cancel);
+    }
+
+    /** Applica la regola staff scelta, con permessi, audit e messaggio allo staff. */
+    private void doDiscipline(Player p, UUID target, StaffDiscipline.Kind kind, Rules.Rule rule, String msg) {
+        if (!p.isOnline()) {
+            return;
+        }
+        StaffDiscipline disc = plugin.getStaffDiscipline();
+        if (disc == null || !authorize(p, target, "sanctions", verbOf(kind)) || !canAct(p, target)) {
+            back2(p, target);
+            return;
+        }
+        String m = msg == null || msg.trim().equalsIgnoreCase("null") ? "" : msg.trim();
+        StaffDiscipline.Entry e = switch (kind) {
+            case WARN -> disc.warn(p, target, rule, m);
+            case DEPEX -> disc.depex(p, target, rule, m);
+            case SUSPEND -> disc.suspend(p, target, rule, m);
+        };
+        if (e != null) {
+            audit(p, "staff." + kindLabel(kind) + " " + nameOf(target) + " regola " + rule.code());
+            GuiMsg.send(plugin, p, "&a" + kindLabel(kind) + " eseguito su " + nameOf(target) + " (regola " + rule.code() + ")");
+            plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+        } else {
+            GuiMsg.send(plugin, p, "&cnessuna azione eseguita (regola non applicabile)");
+        }
+        back2(p, target);
+    }
+
+    // ------------------------------------------------------------------
+    //  Pagina 2: elenco warn / depex / sospensioni (come la cronologia sanzioni: reset totale e Q = cancella voce)
+    // ------------------------------------------------------------------
+
+    private void openDiscipline(Player p, UUID target, StaffDiscipline.Kind kind, int page) {
+        StaffDiscipline disc = plugin.getStaffDiscipline();
+        if (disc == null) {
+            GuiMsg.send(plugin, p, "&7non ancora disponibile.");
+            return;
+        }
+        Rules rules = plugin.getStaffRules();
+        String icon = kind == StaffDiscipline.Kind.WARN ? "warn" : kind == StaffDiscipline.Kind.DEPEX ? "ban" : "mute";
+        long now = System.currentTimeMillis();
+        List<PRow> rows = new ArrayList<>();
+        for (StaffDiscipline.Entry e : disc.entries(target, kind)) {
+            boolean live = e.kind() == StaffDiscipline.Kind.SUSPEND && e.active() && e.until() > now;
+            String color = kind == StaffDiscipline.Kind.WARN ? "&e" : kind == StaffDiscipline.Kind.DEPEX ? "&c" : "&6";
+            List<String> lore = new ArrayList<>();
+            Rules.Rule r = rules == null || e.ruleCode() == null ? null : rules.get(e.ruleCode());
+            lore.add("&7regola: &f" + clean(e.ruleCode()) + (r == null || r.title() == null ? "" : " &8(" + clean(r.title()) + ")"));
+            lore.add("&7da: &f" + (e.byName() == null || e.byName().isBlank() ? "sistema" : clean(e.byName())));
+            lore.add("&7quando: &f" + date(e.ts()));
+            if (e.kind() == StaffDiscipline.Kind.SUSPEND) {
+                lore.add("&7durata: &f" + dur(e.durationMs()));
+                if (live) {
+                    lore.add("&7stato: &cin corso &7fino al &f" + date(e.until()));
+                } else {
+                    lore.add("&7stato: &afinita" + (e.endedAt() > 0 ? " &7il &f" + date(e.endedAt()) : ""));
+                }
+            }
+            if (e.message() != null && !e.message().isBlank()) {
+                lore.add("&7messaggio:");
+                for (String line : wrap(clean(e.message()), 34)) {
+                    lore.add("&f" + line);
+                }
+            }
+            lore.add("");
+            lore.add("&etasto Q per eliminare la voce");
+            ItemStack it = new ItemStack(Material.PAPER);
+            ItemMeta meta = it.getItemMeta();
+            meta.displayName(plugin.text(color + kindLabel(kind) + " &7- &f" + date(e.ts()) + (live ? " &c(in corso)" : "")));
+            List<Component> l = new ArrayList<>();
+            for (String line : lore) {
+                l.add(line.isEmpty() ? plugin.color(" ") : plugin.text(line));
+            }
+            meta.lore(l);
+            it.setItemMeta(meta);
+            rows.add(new PRow(it, ProfileLists.iconIndex(icon), null, e.id()));
+        }
+        Popup s = new Popup();
+        s.staff = p;
+        s.title = kindPlural(kind) + " di " + nameOf(target);
+        s.bar = kindPlural(kind);
+        s.rows = rows;
+        s.reset = true;
+        s.buttonName = "&breset " + kindPlural(kind);
+        s.buttonLore = List.of("&7azzera tutto: " + kindPlural(kind) + " di " + nameOf(target), "&eclicca per resettare (chiede conferma)");
+        s.background = bg2(target);
+        s.onBack = () -> {
+            back2(p, target);
+        };
+        s.onButton = () -> {
+            resetDiscipline(p, target, kind);
+        };
+        s.onRow = (key, click, pg) -> {
+            if (click == ClickType.DROP || click == ClickType.CONTROL_DROP) {
+                deleteDiscipline(p, target, kind, key, pg);
+            }
+        };
+        showPopup(s, page);
+    }
+
+    private void resetDiscipline(Player p, UUID target, StaffDiscipline.Kind kind) {
+        if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
+            return;
+        }
+        plugin.getProfileUi().confirmOver(p, "Resettare tutti i " + kindPlural(kind) + " di " + nameOf(target) + "?", bg2(target), () -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            StaffDiscipline disc = plugin.getStaffDiscipline();
+            if (disc != null && authorize(p, target, "sanctions", "undo") && canAct(p, target)) {
+                int n = disc.resetAll(target, kind);
+                audit(p, "staff.reset " + kindPlural(kind) + " " + nameOf(target) + " (" + n + ")");
+                GuiMsg.send(plugin, p, "&a" + kindPlural(kind) + " di " + nameOf(target) + " resettati (" + n + " voci)");
+                plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+            }
+            openDiscipline(p, target, kind, 0);
+        }, () -> {
+            openDiscipline(p, target, kind, 0);
+        });
+    }
+
+    private void deleteDiscipline(Player p, UUID target, StaffDiscipline.Kind kind, String entryId, int page) {
+        if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
+            return;
+        }
+        plugin.getProfileUi().confirmOver(p, "Eliminare questa voce (" + kindLabel(kind) + ")?", bg2(target), () -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            StaffDiscipline disc = plugin.getStaffDiscipline();
+            if (disc != null && authorize(p, target, "sanctions", "undo") && canAct(p, target)) {
+                if (disc.removeEntry(target, entryId)) {
+                    audit(p, "staff.delete " + kindLabel(kind) + " " + nameOf(target));
+                    GuiMsg.send(plugin, p, "&avoce eliminata");
+                    plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+                }
+            }
+            openDiscipline(p, target, kind, page);
+        }, () -> {
+            openDiscipline(p, target, kind, page);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    //  Pagina 2: tutor (lista degli staffer con le facce, come RulePopups.openList)
+    // ------------------------------------------------------------------
+
+    private void openTutor(Player p, UUID target, int page) {
+        StaffDiscipline disc = plugin.getStaffDiscipline();
+        if (disc == null) {
+            GuiMsg.send(plugin, p, "&7non ancora disponibile.");
+            return;
+        }
+        if (!canAct(p, target)) {
+            return;
+        }
+        UUID current = disc.tutorOf(target);
+        List<PRow> rows = new ArrayList<>();
+        {
+            ItemStack none = new ItemStack(Material.BARRIER);
+            ItemMeta meta = none.getItemMeta();
+            meta.displayName(plugin.text("&cnessun tutor"));
+            meta.lore(List.of(plugin.text("&7Toglie il tutor a &f" + nameOf(target) + "&7."),
+                    plugin.text("&7tutor attuale: &f" + (current == null ? "nessuno" : nameOf(current))),
+                    plugin.color(" "), plugin.text("&eclicca per togliere")));
+            none.setItemMeta(meta);
+            rows.add(new PRow(none, -1, null, "none"));
+        }
+        for (UUID id : staffers(target)) {
+            boolean cur = id.equals(current);
+            StaffRoles roles = plugin.getStaffRoles();
+            String r = roles == null ? null : roles.roleOf(id);
+            List<String> lore = new ArrayList<>();
+            lore.add("&7grado: &f" + (r == null ? "nessuno" : roleLabel(r)));
+            lore.add("&7allievi: &f" + disc.pupilsOf(id).size());
+            lore.add("&7stato: " + (Bukkit.getPlayer(id) != null ? "&aonline" : "&8offline"));
+            lore.add("");
+            lore.add(cur ? "&ae' gia' il tutor" : "&eclicca per sceglierlo come tutor");
+            rows.add(new PRow(pane((cur ? "&a" : "&f") + nameOf(id) + (cur ? " &a(attuale)" : ""), lore), -1, id, id.toString()));
+        }
+        Popup s = new Popup();
+        s.staff = p;
+        s.title = "tutor di " + nameOf(target);
+        s.bar = "scegli tutor";
+        s.rows = rows;
+        s.reset = false;
+        s.buttonName = "&einformazioni";
+        s.buttonLore = List.of("&7tutor attuale: &f" + (current == null ? "nessuno" : nameOf(current)),
+                "&7clicca uno staffer per assegnarlo,", "&7oppure 'nessun tutor' per toglierlo.");
+        s.background = bg2(target);
+        s.onBack = () -> {
+            back2(p, target);
+        };
+        s.onButton = null;
+        s.onRow = (key, click, pg) -> {
+            if (click == ClickType.LEFT || click == ClickType.RIGHT || click == ClickType.SHIFT_LEFT) {
+                pickTutor(p, target, key.equals("none") ? null : UUID.fromString(key), pg);
+            }
+        };
+        showPopup(s, page);
+    }
+
+    private void pickTutor(Player p, UUID target, UUID tutor, int page) {
+        if (!canAct(p, target)) {
+            return;
+        }
+        String text = tutor == null ? "Togliere il tutor a " + nameOf(target) + "?"
+                : "Assegnare " + nameOf(tutor) + " come tutor di " + nameOf(target) + "?";
+        plugin.getProfileUi().confirmOver(p, text, bg2(target), () -> {
+            if (!p.isOnline()) {
+                return;
+            }
+            StaffDiscipline disc = plugin.getStaffDiscipline();
+            if (disc != null && canAct(p, target)) {
+                disc.setTutor(target, tutor, p);
+                audit(p, "staff.tutor " + nameOf(target) + " -> " + (tutor == null ? "nessuno" : nameOf(tutor)));
+                GuiMsg.send(plugin, p, tutor == null ? "&atutor di " + nameOf(target) + " tolto"
+                        : "&a" + nameOf(tutor) + " ora e' il tutor di " + nameOf(target));
+                plugin.playConfiguredSound(p.getLocation(), "message-sounds.success");
+            }
+            back2(p, target);
+        }, () -> {
+            openTutor(p, target, page);
+        });
+    }
+
+    /** Staffer conosciuti (roles.yml: gradi e ruoli speciali, piu' OP e staff online), escluso uno; dal grado piu' alto. */
+    private List<UUID> staffers(UUID exclude) {
+        LinkedHashSet<UUID> ids = new LinkedHashSet<>();
+        File f = new File(plugin.getDataFolder(), "roles.yml");
+        if (f.exists()) {
+            YamlConfiguration y = YamlConfiguration.loadConfiguration(f);
+            for (String sec : List.of("roles", "special")) {
+                ConfigurationSection cs = y.getConfigurationSection(sec);
+                if (cs == null) {
+                    continue;
+                }
+                for (String k : cs.getKeys(false)) {
+                    try {
+                        ids.add(UUID.fromString(k));
+                    } catch (IllegalArgumentException ex) {
+                        // chiave non valida: ignorata
+                    }
+                }
+            }
+        }
+        for (OfflinePlayer op : Bukkit.getOperators()) {
+            ids.add(op.getUniqueId());
+        }
+        for (Player on : Bukkit.getOnlinePlayers()) {
+            ids.add(on.getUniqueId());
+        }
+        ids.remove(exclude);
+        List<UUID> out = new ArrayList<>();
+        Map<UUID, Integer> levels = new HashMap<>();
+        for (UUID id : ids) {
+            if (isStaff(id)) {
+                out.add(id);
+                levels.put(id, targetLevel(id));
+            }
+        }
+        out.sort(Comparator.comparingInt((UUID id) -> -Math.min(Integer.MAX_VALUE - 1, levels.getOrDefault(id, 0)))
+                .thenComparing((UUID id) -> nameOf(id).toLowerCase(Locale.ROOT)));
+        return out;
+    }
+
+    // ------------------------------------------------------------------
+    //  Pagina 2: ruoli (RoleGui con le frecce, come il pexa dello userprofile)
+    // ------------------------------------------------------------------
+
+    /** Aggiungi/modifica ruolo aggiuntivo: solo i ruoli speciali (toggle, conferma nel popup). */
+    private void openSpecial(Player p, UUID target) {
+        if (!canAct(p, target)) {
+            return;
+        }
+        List<String> subs = subsOf(target);
+        int start = subs.isEmpty() ? StaffRoles.SCALE.size() : StaffRoles.ORDER.indexOf(subs.get(0));
+        plugin.getRoleGui().open(p, target, bg2(target), () -> {
+            back2(p, target);
+        }, StaffRoles.SCALE.size(), StaffRoles.ORDER.size(), start);
+    }
+
+    /** Promuovi/degrada: solo la scala, partendo dal grado attuale. */
+    private void openPromote(Player p, UUID target) {
+        if (!canAct(p, target)) {
+            return;
+        }
+        StaffRoles roles = plugin.getStaffRoles();
+        String r = roles == null ? null : roles.roleOf(target);
+        int start = r == null ? 0 : Math.max(0, StaffRoles.SCALE.indexOf(r));
+        plugin.getRoleGui().open(p, target, bg2(target), () -> {
+            back2(p, target);
+        }, 0, StaffRoles.SCALE.size(), start);
+    }
+
+    // ------------------------------------------------------------------
+    //  Popup lista della pagina 2 (copia di ProfileLists / RulePopups: pannello 7x3 sopra la pagina scurita)
+    // ------------------------------------------------------------------
+
+    /** userprofile-26 (pulsante blu in alto a destra = reset) e userprofile-23 (pulsante arancione = info): solo pannello. */
+    private static final String P_IMG_RESET = "";
+    private static final String P_FONT_RESET = "minecraft:userprofile3";
+    private static final String P_IMG_INFO = "";
+    private static final String P_FONT_INFO = "minecraft:userprofile2";
+    private static final int P_IMG = -22;
+    /** Avanzamento dichiarato del pannello (reale 169 - 7), come ProfileLists.ADV / RulePopups.DEF_ADV. */
+    private static final int P_ADV = 162;
+    private static final char P_ICON_BASE = '';
+    private static final int P_ICON_ADV = 17;
+    private static final int P_ICON_X0 = 15;
+    private static final int P_ICON_STEP = 18;
+    private static final char P_NAV = '';
+    private static final char P_NAV_SH = '';
+    private static final int P_NAV_CX = 96;
+    private static final char P_BAR = '';
+    private static final char P_BAR_SH = '';
+    private static final String P_BAR_FONT = "minecraft:tiny3";
+    private static final int P_BAR_CX = 95;
+    private static final int P_BAR_MAX = 70;
+    private static final int P_PER_PAGE = 21;
+    private static final int[] P_X = {1, 2};
+    private static final int[] P_BTN = {6, 7};
+    private static final int P_PREV = 38;
+    private static final int P_NEXT = 42;
+
+    /** Riga: item (nome/lore), icona custom nel titolo (-1 = nessuna), faccia 2D nel titolo (null = nessuna), chiave. */
+    private record PRow(ItemStack item, int icon, UUID face, String key) {
+    }
+
+    private interface RowClick {
+        void click(String key, ClickType click, int page);
+    }
+
+    private static final class PopupHolder implements InventoryHolder {
+        private Inventory inventory;
+        private Popup popup;
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
+    private static final class Popup {
+        Player staff;
+        String title;
+        String bar;
+        List<PRow> rows;
+        boolean reset;
+        String buttonName;
+        List<String> buttonLore;
+        Consumer<GuiTitle> background;
+        Runnable onBack;
+        Runnable onButton;
+        RowClick onRow;
+        int page;
+        boolean refreshQueued;
+        PopupHolder holder;
+    }
+
+    private static int pGridSlot(int i) {
+        return 10 + (i / 7) * 9 + (i % 7);
+    }
+
+    private static int pPageCount(int n) {
+        return Math.max(1, (n + P_PER_PAGE - 1) / P_PER_PAGE);
+    }
+
+    private void showPopup(Popup s, int page) {
+        int pages = pPageCount(s.rows.size());
+        s.page = Math.max(0, Math.min(page, pages - 1));
+        PopupHolder h = new PopupHolder();
+        h.popup = s;
+        s.holder = h;
+        h.inventory = Bukkit.createInventory(h, SIZE, popupTitle(s, pages));
+        Inventory inv = h.inventory;
+        String back = s.onBack != null ? "&cindietro" : "&cchiudi";
+        for (int x : P_X) {
+            inv.setItem(x, pane(back, List.of()));
+        }
+        for (int b : P_BTN) {
+            inv.setItem(b, pane(s.buttonName, s.buttonLore));
+        }
+        inv.setItem(P_PREV, pane("&7pagina precedente", List.of()));
+        inv.setItem(P_NEXT, pane("&7pagina successiva", List.of()));
+        if (s.rows.isEmpty()) {
+            inv.setItem(pGridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
+        } else {
+            for (int i = 0; i < P_PER_PAGE; i++) {
+                int idx = s.page * P_PER_PAGE + i;
+                if (idx >= s.rows.size()) {
+                    break;
+                }
+                PRow r = s.rows.get(idx);
+                inv.setItem(pGridSlot(i), r.icon() >= 0 || r.face() != null ? invisible(r.item()) : r.item().clone());
+            }
+        }
+        s.staff.openInventory(inv);
+        requestFaces(s);
+    }
+
+    private Component popupTitle(Popup s, int pages) {
+        GuiTitle g = new GuiTitle(plugin);
+        if (s.background != null) {
+            UserProfilePowers.drawDimmed(plugin, g, s.background);
+        }
+        g.at(-15, "&f" + (s.reset ? P_IMG_RESET : P_IMG_INFO), s.reset ? P_FONT_RESET : P_FONT_INFO, P_ADV);
+        UserProfileGui up = plugin.getUserProfile();
+        for (int i = 0; i < P_PER_PAGE; i++) {
+            int idx = s.page * P_PER_PAGE + i;
+            if (idx >= s.rows.size()) {
+                break;
+            }
+            PRow r = s.rows.get(idx);
+            if (r.face() != null) {
+                // facce 2D 16x16 nelle celle della griglia, come RulePopups.drawFaces
+                UserProfileGui.drawFaceAt(g, up == null ? null : up.loadedFace(r.face()), 33 + 18 * (i % 7), 51 + 18 * (i / 7), 2);
+            } else if (r.icon() >= 0) {
+                // icone custom come ProfileLists.drawIcons (font per riga della griglia)
+                int slot = pGridSlot(i);
+                Component glyph = Component.text(String.valueOf((char) (P_ICON_BASE + r.icon())))
+                        .font(Key.key("minecraft", "ico_r" + (slot / 9)))
+                        .color(TextColor.color(0xFFFFFF))
+                        .shadowColor(ShadowColor.none())
+                        .decoration(TextDecoration.ITALIC, false);
+                g.atComponent(P_ICON_X0 + P_ICON_STEP * (slot % 9) + P_IMG, glyph, P_ICON_ADV);
+            }
+        }
+        popupBar(g, s.bar);
+        popupNav(g, s.page + 1, pages);
+        UserProfilePowers.topTitle(plugin, g, s.title);
+        return g.build();
+    }
+
+    /** Larghezza di un testo del font tiny3 (come ProfileLists.tinyAdvance). */
+    private static int tinyAdvance(String text) {
+        int total = 0;
+        for (char ch : text.toCharArray()) {
+            total += ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
+        }
+        return total;
+    }
+
+    private static String letters(String text, char base) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? (char) (base + ch) : ' ');
+        }
+        return sb.toString();
+    }
+
+    /** Testo nella barra grigia in alto (copia di ProfileLists.barText). */
+    private void popupBar(GuiTitle g, String raw) {
+        StringBuilder safe = new StringBuilder();
+        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        String text = safe.toString().replaceAll(" +", " ").trim();
+        while (tinyAdvance(text) > P_BAR_MAX && text.length() > 1) {
+            text = text.substring(0, text.length() - 1).trim();
+        }
+        if (text.isEmpty()) {
+            return;
+        }
+        int st = P_BAR_CX - Math.max(0, tinyAdvance(text) - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            g.at(st + off + 1 + P_IMG, GuiTitle.shadowCode(plugin) + letters(w, P_BAR_SH), P_BAR_FONT, wa);
+            g.at(st + off + P_IMG, "&f" + letters(w, P_BAR), P_BAR_FONT, wa);
+            off += wa + 4;
+        }
+    }
+
+    /** Numero pagina tra le frecce (copia di ProfileLists.navText). */
+    private void popupNav(GuiTitle g, int page, int pages) {
+        String plain = page + "/" + pages;
+        StringBuilder n = new StringBuilder();
+        StringBuilder sh = new StringBuilder();
+        for (char ch : plain.toCharArray()) {
+            int o = ch == '/' ? 10 : ch - '0';
+            n.append((char) (P_NAV + o));
+            sh.append((char) (P_NAV_SH + o));
+        }
+        int adv = plain.length() * 6;
+        int start = P_NAV_CX - (adv - 1) / 2;
+        g.at(start + 1 + P_IMG, GuiTitle.shadowCode(plugin) + sh, "", adv);
+        g.at(start + P_IMG, "&f" + n, "", adv);
+    }
+
+    /** Pane trasparente con nome e lore dell'item (icona o faccia sono nel titolo). */
+    private ItemStack invisible(ItemStack src) {
+        ItemStack stack = new ItemStack(Material.GLASS_PANE);
+        ItemMeta meta = stack.getItemMeta();
+        ItemMeta sm = src.getItemMeta();
+        meta.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
+        if (sm != null) {
+            meta.displayName(sm.displayName());
+            meta.lore(sm.lore());
+        }
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /** Carica le facce della pagina; a ogni faccia pronta ridisegna (coalescendo), come RulePopups.requestFaces. */
+    private void requestFaces(Popup s) {
+        UserProfileGui up = plugin.getUserProfile();
+        if (up == null) {
+            return;
+        }
+        for (int i = 0; i < P_PER_PAGE; i++) {
+            int idx = s.page * P_PER_PAGE + i;
+            if (idx >= s.rows.size()) {
+                break;
+            }
+            UUID f = s.rows.get(idx).face();
+            if (f != null && up.loadedFace(f) == null) {
+                up.ensureFaceFor(f, () -> {
+                    queuePopupRefresh(s);
+                });
+            }
+        }
+    }
+
+    private void queuePopupRefresh(Popup s) {
+        if (s.refreshQueued) {
+            return;
+        }
+        s.refreshQueued = true;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            s.refreshQueued = false;
+            Player p = s.staff;
+            if (p == null || !p.isOnline() || p.getOpenInventory().getTopInventory().getHolder() != s.holder) {
+                return;
+            }
+            // il titolo non si cambia a inventario aperto: si riapre
+            showPopup(s, s.page);
+        }, 5L);
+    }
+
+    private static boolean in(int[] arr, int slot) {
+        for (int a : arr) {
+            if (a == slot) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void popupClick(InventoryClickEvent event, PopupHolder ph) {
+        event.setCancelled(true);
+        if (!(event.getWhoClicked() instanceof Player p) || event.getClickedInventory() != event.getView().getTopInventory()) {
+            return;
+        }
+        Popup s = ph.popup;
+        int slot = event.getRawSlot();
+        if (in(P_X, slot)) {
+            plugin.guiClick(p);
+            Runnable back = s.onBack;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (back != null) {
+                    back.run();
+                } else {
+                    p.closeInventory();
+                }
+            });
+            return;
+        }
+        if (in(P_BTN, slot)) {
+            if (s.onButton != null) {
+                plugin.guiClick(p);
+                Runnable btn = s.onButton;
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    btn.run();
+                });
+            }
+            return;
+        }
+        if (slot == P_PREV || slot == P_NEXT) {
+            plugin.guiClick(p);
+            int pages = pPageCount(s.rows.size());
+            int np = Math.max(0, Math.min(s.page + (slot == P_NEXT ? 1 : -1), pages - 1));
+            if (np != s.page) {
+                // il numero pagina e' nel titolo: serve un inventario nuovo
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    showPopup(s, np);
+                });
+            }
+            return;
+        }
+        for (int i = 0; i < P_PER_PAGE; i++) {
+            if (pGridSlot(i) != slot) {
+                continue;
+            }
+            int idx = s.page * P_PER_PAGE + i;
+            if (idx >= s.rows.size() || s.onRow == null) {
+                return;
+            }
+            String key = s.rows.get(idx).key();
+            ClickType click = event.getClick();
+            int page = s.page;
+            RowClick rc = s.onRow;
+            plugin.guiClick(p);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (p.isOnline()) {
+                    rc.click(key, click, page);
+                }
+            });
+            return;
+        }
     }
 }

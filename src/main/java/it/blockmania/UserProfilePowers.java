@@ -377,6 +377,21 @@ public final class UserProfilePowers implements Listener {
         }
         if (label != null && (label.toLowerCase(java.util.Locale.ROOT).startsWith("modifica")
                 || label.toLowerCase(java.util.Locale.ROOT).startsWith("tipo regola"))) {
+            if (label.toLowerCase(java.util.Locale.ROOT).contains("staff")) {
+                // regole staff: stessi tasti (ban/warn/mute) ma con il significato per lo staff
+                switch (cmd) {
+                    case "ban" -> {
+                        return new String[]{"&cdepex", "Lo staffer perde il grado (per sempre).", "&eclicca per scegliere il depex"};
+                    }
+                    case "warn" -> {
+                        return new String[]{"&ewarn", "Lo staffer riceve un warn staff.", "&eclicca per scegliere il warn"};
+                    }
+                    case "mute" -> {
+                        return new String[]{"&6sospensione", "Lo staffer e' sospeso per un tempo.", "&eclicca per scegliere la sospensione"};
+                    }
+                    default -> { }
+                }
+            }
             switch (cmd) {
                 case "code" -> {
                     return new String[]{"&bcodice", "Cambia il codice della regola.", "&eclicca per cambiare il codice"};

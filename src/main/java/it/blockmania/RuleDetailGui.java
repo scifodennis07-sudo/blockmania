@@ -37,6 +37,7 @@ import java.util.UUID;
  * con 2 messaggi (titolo e descrizione) e frecce su/giu' per scorrere; sotto il quadrato 4 icone gia' disegnate
  * nell'immagine: cestino (elimina), matita (modifica), i (info + cronologia), persone (player sanzionati).
  * Live: si ridisegna da sola a ogni Rules.onChange.
+ * Istanziabile per piu' Rules (regole player e regole staff): ogni istanza riconosce solo i propri Holder.
  *
  * Misure (pixel di regole-3.png; container = immagine - 7 in x, - 15 in y; slot x=15+18c, y=33+18r):
  * X (19..43, 30..43) = slot 0,1; striscia (50..140, 31..43); pulsante arancione (146..170, 30..43) = slot 7,8;
@@ -111,6 +112,8 @@ public final class RuleDetailGui implements Listener {
         Inventory inventory;
         Session session;
         final Map<Integer, Runnable> actions = new HashMap<>();
+        /** GUI che ha creato l'inventario: le altre istanze lo ignorano. */
+        RuleDetailGui owner;
 
         @Override
         public Inventory getInventory() {
@@ -132,12 +135,32 @@ public final class RuleDetailGui implements Listener {
     private final UserProfilePowers ui;
     private final Map<UUID, Session> sessions = new HashMap<>();
     private final Set<UUID> switching = new HashSet<>();
+    /** Popup usati da questo dettaglio (null = plugin.getRulePopups()). */
+    private RulePopups popups;
 
     public RuleDetailGui(BlockMania plugin, Rules rules, UserProfilePowers ui) {
         this.plugin = plugin;
         this.rules = rules;
         this.ui = ui;
         rules.onChange(() -> Bukkit.getScheduler().runTask(plugin, () -> refreshAll()));
+    }
+
+    /** Collega i popup di questa istanza (serve per la seconda istanza, quella delle regole staff). */
+    public void setPopups(RulePopups popups) {
+        this.popups = popups;
+    }
+
+    private RulePopups popups() {
+        return popups != null ? popups : plugin.getRulePopups();
+    }
+
+    /** Le regole mostrate da questa GUI. */
+    public Rules rules() {
+        return rules;
+    }
+
+    private boolean mine(InventoryHolder holder) {
+        return holder instanceof Holder h && h.owner == this;
     }
 
     // ------------------------------------------------------------------
@@ -154,13 +177,13 @@ public final class RuleDetailGui implements Listener {
 
     /** True se il giocatore ha aperto questa GUI. */
     public boolean owns(Player p) {
-        return p != null && p.getOpenInventory().getTopInventory().getHolder() instanceof Holder;
+        return p != null && mine(p.getOpenInventory().getTopInventory().getHolder());
     }
 
     private void openNoAuth(Player staff, String code, Runnable onBack, int scroll) {
         Rules.Rule r = rules.get(code);
         if (r == null) {
-            GuiMsg.send(plugin, staff, "&cregola " + code + " non trovata");
+            GuiMsg.send(plugin, staff, "&cregola " + (rules.isStaff() ? "staff " : "") + code + " non trovata");
             if (onBack != null) {
                 onBack.run();
             }
@@ -458,7 +481,7 @@ public final class RuleDetailGui implements Listener {
 
     private void strip(GuiTitle g, Rules.Rule r, int ox) {
         String[] codeParts = r.code().split("\\.");
-        String type = Rules.typeLabel(r.type()).toLowerCase(Locale.ROOT);
+        String type = rules.label(r.type()).toLowerCase(Locale.ROOT);
         List<String[]> variants = new ArrayList<>();
         variants.add(new String[]{"regola", null, type});
         variants.add(new String[]{null, null, type});
@@ -600,14 +623,14 @@ public final class RuleDetailGui implements Listener {
             put(h, slot, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()), () -> back(s));
         }
         List<String> orange = new ArrayList<>();
-        orange.add("&7Tipo: " + colorOf(r.type()) + Rules.typeLabel(r.type()));
+        orange.add("&7Tipo: " + colorOf(r.type()) + rules.label(r.type()));
         orange.add("&7Tempo: &f" + Rules.timeLabel(r));
         for (int slot : SLOTS_ORANGE) {
             put(h, slot, pane("&6sanzione", orange), null);
         }
         List<String> sq = new ArrayList<>();
         sq.add("&7Regola &f" + code);
-        sq.add("&7Tipo: " + colorOf(r.type()) + Rules.typeLabel(r.type()));
+        sq.add("&7Tipo: " + colorOf(r.type()) + rules.label(r.type()));
         for (int slot : SLOTS_SQUARE) {
             put(h, slot, pane("&f" + (r.title() == null || r.title().isBlank() ? "Regola " + code : r.title()), sq), null);
         }
@@ -632,8 +655,9 @@ public final class RuleDetailGui implements Listener {
         info.add("");
         info.add("&eclicca per la cronologia");
         put(h, SLOT_INFO, pane("&binformazioni", info), () -> history(s));
-        put(h, SLOT_HITS, pane("&6player sanzionati",
-                List.of("&7Player sanzionati: &f" + rules.hitCount(code), "", "&eclicca per la lista")), () -> hits(s));
+        put(h, SLOT_HITS, pane(rules.isStaff() ? "&6staffer sanzionati" : "&6player sanzionati",
+                List.of("&7" + (rules.isStaff() ? "Staffer sanzionati: &f" : "Player sanzionati: &f") + rules.hitCount(code), "",
+                        "&eclicca per la lista")), () -> hits(s));
     }
 
     private static String nameOr(String n) {
@@ -650,6 +674,7 @@ public final class RuleDetailGui implements Listener {
         s.code = r.code();
         s.titleKey = key(r, s.scroll);
         Holder h = new Holder();
+        h.owner = this;
         h.session = s;
         s.holder = h;
         h.inventory = Bukkit.createInventory(h, SIZE, title(r, s.scroll));
@@ -740,7 +765,7 @@ public final class RuleDetailGui implements Listener {
             if (rules.remove(code)) {
                 AdminCommand a = plugin.getAdminCommand();
                 if (a != null) {
-                    a.record(p, "rules remove " + code);
+                    a.record(p, (rules.isStaff() ? "staffrules" : "rules") + " remove " + code);
                 }
                 GuiMsg.send(plugin, p, "&aregola " + code + " eliminata");
             } else {
@@ -759,7 +784,7 @@ public final class RuleDetailGui implements Listener {
         if (!authorize(p, "edit")) {
             return;
         }
-        RulePopups popups = plugin.getRulePopups();
+        RulePopups popups = popups();
         Rules.Rule r = rules.get(s.code);
         if (popups == null || r == null) {
             return;
@@ -791,7 +816,7 @@ public final class RuleDetailGui implements Listener {
     }
 
     private void history(Session s) {
-        RulePopups popups = plugin.getRulePopups();
+        RulePopups popups = popups();
         Rules.Rule r = rules.get(s.code);
         if (popups == null || r == null) {
             return;
@@ -800,7 +825,7 @@ public final class RuleDetailGui implements Listener {
     }
 
     private void hits(Session s) {
-        RulePopups popups = plugin.getRulePopups();
+        RulePopups popups = popups();
         Rules.Rule r = rules.get(s.code);
         if (popups == null || r == null) {
             return;
@@ -817,7 +842,7 @@ public final class RuleDetailGui implements Listener {
         if (!(event.getWhoClicked() instanceof Player p)) {
             return;
         }
-        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h)) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h) || h.owner != this) {
             return;
         }
         event.setCancelled(true);
@@ -835,7 +860,7 @@ public final class RuleDetailGui implements Listener {
 
     @EventHandler
     public void onDrag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Holder) {
+        if (mine(event.getView().getTopInventory().getHolder())) {
             event.setCancelled(true);
         }
     }
@@ -849,7 +874,7 @@ public final class RuleDetailGui implements Listener {
         if (switching.contains(id)) {
             return;
         }
-        if (event.getInventory().getHolder() instanceof Holder h && sessions.get(id) == h.session) {
+        if (event.getInventory().getHolder() instanceof Holder h && h.owner == this && sessions.get(id) == h.session) {
             sessions.remove(id);
         }
     }

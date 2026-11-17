@@ -19,6 +19,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Regole del server (codice, testo, tipo di sanzione, durata), salvate in rules.yml.
+ * Seconda istanza per le regole staff (staff = true, staff-rules.yml): stessi tipi ma con etichette
+ * diverse (BAN = depex, MUTE = sospensione); depex sempre permanente, sospensione con durata obbligatoria.
  */
 public final class Rules {
 
@@ -53,11 +55,25 @@ public final class Rules {
     // codice -> regola
     private final TreeMap<String, Rule> rules = new TreeMap<>(Rules::compareCodes);
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
+    /** true = regole staff (etichette e durate diverse). */
+    private final boolean staff;
 
+    /** Regole dei player: rules.yml / rules-log.yml. */
     public Rules(BlockMania plugin) {
+        this(plugin, "rules.yml", "rules-log.yml", false);
+    }
+
+    /** Istanza su file dati scelti (es. staff-rules.yml / staff-rules-log.yml con staff = true). */
+    public Rules(BlockMania plugin, String fileName, String logFileName, boolean staff) {
         this.plugin = plugin;
-        this.file = new File(plugin.getDataFolder(), "rules.yml");
-        this.logFile = new File(plugin.getDataFolder(), "rules-log.yml");
+        this.file = new File(plugin.getDataFolder(), fileName);
+        this.logFile = new File(plugin.getDataFolder(), logFileName);
+        this.staff = staff;
+    }
+
+    /** true se sono le regole staff. */
+    public boolean isStaff() {
+        return staff;
     }
 
     // ------------------------------------------------------------------ query
@@ -230,6 +246,13 @@ public final class Rules {
                 return "Sanzione non valida.";
             }
             long m = (t == Type.WARN || t == Type.REGOLAMENTO) ? 0 : durationMs;
+            if (staff && t == Type.BAN) {
+                // depex: sempre permanente, nessuna durata
+                m = PERMANENT;
+            }
+            if (staff && t == Type.MUTE && m <= 0) {
+                return "La sospensione richiede una durata (es: 10h+23m+16s).";
+            }
             if ((t == Type.BAN || t == Type.MUTE) && m == 0) {
                 return "Serve una durata valida (es: 10h+23m+16s, o permanente).";
             }
@@ -242,7 +265,7 @@ public final class Rules {
             Rule n = withEdit(r, r.code(), r.title(), r.text(), t, m, by);
             rules.put(r.code(), n);
             if (t != r.type()) {
-                addChange(r.code(), by, "sanzione", typeLabel(r.type()), typeLabel(t));
+                addChange(r.code(), by, "sanzione", label(r.type()), label(t));
             }
             if (m != r.durationMs()) {
                 addChange(r.code(), by, "tempo", timeLabel(r), timeLabel(n));
@@ -429,6 +452,84 @@ public final class Rules {
         return t == null ? "" : t.name();
     }
 
+    // ------------------------------------------------------------------ versioni d'istanza (player o staff)
+
+    /** Etichetta del tipo per questa istanza: player = nome del tipo (BAN, WARN...); staff = warn/depex/sospensione/regolamento. */
+    public String label(Type t) {
+        if (!staff || t == null) {
+            return typeLabel(t);
+        }
+        return switch (t) {
+            case WARN -> "warn";
+            case BAN -> "depex";
+            case MUTE -> "sospensione";
+            case REGOLAMENTO -> "regolamento";
+        };
+    }
+
+    /** Tipo dal nome del tipo (ban, warn, mute, regolamento) o dall'etichetta di questa istanza (depex, sospensione); null se sconosciuto. */
+    public Type typeOf(String label) {
+        if (label == null) {
+            return null;
+        }
+        String l = label.trim().toLowerCase(Locale.ROOT);
+        for (Type t : Type.values()) {
+            if (label(t).toLowerCase(Locale.ROOT).equals(l)) {
+                return t;
+            }
+        }
+        try {
+            return Type.valueOf(l.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** true se per questo tipo bisogna chiedere la durata (player: ban e mute; staff: solo sospensione). */
+    public boolean needsTime(Type t) {
+        if (staff) {
+            return t == Type.MUTE;
+        }
+        return t == Type.BAN || t == Type.MUTE;
+    }
+
+    /** Suggerimento per il popup del tempo. */
+    public String timeHint(Type t) {
+        if (staff) {
+            return "la sospensione deve avere una durata";
+        }
+        return t == Type.BAN ? "permanente (e blacklist per i ban)" : "permanente";
+    }
+
+    /** Come parseTimeError, ma per lo staff: depex senza durata, sospensione solo a tempo (niente permanente/blacklist). */
+    public String timeError(Type t, String in) {
+        if (!staff) {
+            return parseTimeError(t, in);
+        }
+        if (t != Type.MUTE) {
+            return null;
+        }
+        String s = in == null ? "" : in.trim().toLowerCase(Locale.ROOT);
+        if (s.equals("permanente") || s.equals("blacklist")) {
+            return "La sospensione deve avere una durata (es: 10h+23m+16s): per togliere il grado per sempre usa un depex.";
+        }
+        return parseTimeError(t, s);
+    }
+
+    /** Come parseTime, con le regole dello staff (depex = PERMANENT, warn/regolamento = 0, sospensione = ms). */
+    public long time(Type t, String in) {
+        if (!staff) {
+            return parseTime(t, in);
+        }
+        if (t == Type.BAN) {
+            return PERMANENT;
+        }
+        if (t != Type.MUTE || timeError(t, in) != null) {
+            return 0;
+        }
+        return parseTime(t, in);
+    }
+
     // ------------------------------------------------------------------ persistenza
 
     private static UUID uuid(String s) {
@@ -578,7 +679,7 @@ public final class Rules {
             y.save(file);
             lg.save(logFile);
         } catch (IOException e) {
-            plugin.getLogger().warning("rules.yml: " + e.getMessage());
+            plugin.getLogger().warning(file.getName() + ": " + e.getMessage());
         }
     }
 }

@@ -505,6 +505,24 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             plugin.getRulesGui().open(rp);
             return true;
         }
+        // /adminmania staffrules (alias regolestaff): GUI delle regole staff, stesso permesso di /adminmania rules
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("staffrules") || args[0].equalsIgnoreCase("regolestaff"))) {
+            if (!(sender instanceof Player rp)) {
+                sender.sendMessage("solo i giocatori possono aprire le regole staff");
+                return true;
+            }
+            if (!allowed(rp, "sanctions", "see")) {
+                log(sender, "NEGATO sanctions.see | " + String.join(" ", args));
+                deny(sender, "il tuo ruolo (" + roleName(sender) + ") non può vedere le regole staff");
+                return true;
+            }
+            if (plugin.getStaffRulesGui() == null) {
+                sender.sendMessage("le regole staff non sono disponibili");
+                return true;
+            }
+            plugin.getStaffRulesGui().open(rp);
+            return true;
+        }
         if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
             help(sender, args.length > 1 ? group(args[1]) : "");
             return true;
@@ -763,6 +781,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         }
         if (only.isEmpty() && allowed(sender, "sanctions", "see")) {
             sender.sendMessage(plugin.text("&e/adminmania rules &7(regole: apre la GUI delle regole, alias regole)"));
+            sender.sendMessage(plugin.text("&e/adminmania staffrules &7(regole staff: apre la GUI delle regole staff, alias regolestaff)"));
         }
         if (only.isEmpty()) {
             sender.sendMessage(plugin.text("&8scrivi /adminmania help <gruppo> per gli esempi. Italiano: economia, profilo, oggetti, costruzione, negozi, sistema"));
@@ -795,6 +814,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             }
             if (allowed(sender, "sanctions", "see")) {
                 out.add("rules");
+                out.add("staffrules");
             }
             for (String g : GROUPS) {
                 if (anyAllowed(sender, g)) {

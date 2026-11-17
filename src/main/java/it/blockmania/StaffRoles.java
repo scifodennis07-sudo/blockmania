@@ -150,39 +150,62 @@ public final class StaffRoles implements Listener {
         if (id == null) {
             return;
         }
-        String old = roles.get(id);
         if (isSpecial(roleId)) {
-            java.util.Set<String> set = specials.computeIfAbsent(id, k -> new java.util.LinkedHashSet<>());
-            if (!set.remove(roleId)) {
-                set.add(roleId);
-            }
-            if (set.isEmpty()) {
-                specials.remove(id);
-            }
-            old = "speciale " + roleId;
-        } else {
-            String to = roleId != null && SCALE.contains(roleId) ? roleId : null;
-            if (to == null) {
-                roles.remove(id);
-            } else {
-                roles.put(id, to);
-            }
-            // carriera staff: PEX (primo grado), REPEX (di nuovo dopo un depex), CAMBIO, DEPEX
-            String kind = null;
-            if (to == null && old != null) {
-                kind = "DEPEX";
-            } else if (to != null && old == null) {
-                kind = wasStaff.contains(id) ? "REPEX" : "PEX";
-            } else if (to != null && !to.equals(old)) {
-                kind = "CAMBIO";
-            }
-            if (to != null) {
-                wasStaff.add(id);
-            }
-            if (kind != null && plugin.getStaffStats() != null) {
-                plugin.getStaffStats().recordCareer(id, by instanceof Player bp ? bp.getUniqueId() : null, kind, old, to);
-            }
+            boolean has = specials.getOrDefault(id, java.util.Set.of()).contains(roleId);
+            setSpecial(id, roleId, !has, by);
+            return;
         }
+        String old = roles.get(id);
+        String to = roleId != null && SCALE.contains(roleId) ? roleId : null;
+        if (to == null) {
+            roles.remove(id);
+        } else {
+            roles.put(id, to);
+        }
+        // carriera staff: PEX (primo grado), REPEX (di nuovo dopo un depex), CAMBIO, DEPEX
+        String kind = null;
+        if (to == null && old != null) {
+            kind = "DEPEX";
+        } else if (to != null && old == null) {
+            kind = wasStaff.contains(id) ? "REPEX" : "PEX";
+        } else if (to != null && !to.equals(old)) {
+            kind = "CAMBIO";
+        }
+        if (to != null) {
+            wasStaff.add(id);
+        }
+        if (kind != null && plugin.getStaffStats() != null) {
+            plugin.getStaffStats().recordCareer(id, by instanceof Player bp ? bp.getUniqueId() : null, kind, old, to);
+        }
+        saveApplyLog(id, old, by);
+    }
+
+    /** Aggiunge un ruolo speciale (builder, dev, t_maker) senza toggle; non fa nulla se c'e' gia'. */
+    public void addSpecial(UUID id, String roleId, CommandSender by) {
+        setSpecial(id, roleId, true, by);
+    }
+
+    /** Toglie un ruolo speciale senza toggle; non fa nulla se non c'e'. */
+    public void removeSpecial(UUID id, String roleId, CommandSender by) {
+        setSpecial(id, roleId, false, by);
+    }
+
+    private void setSpecial(UUID id, String roleId, boolean add, CommandSender by) {
+        if (id == null || !isSpecial(roleId)) {
+            return;
+        }
+        java.util.Set<String> set = specials.computeIfAbsent(id, k -> new java.util.LinkedHashSet<>());
+        boolean changed = add ? set.add(roleId) : set.remove(roleId);
+        if (set.isEmpty()) {
+            specials.remove(id);
+        }
+        if (!changed) {
+            return;
+        }
+        saveApplyLog(id, "speciale " + roleId + (add ? " (aggiunto)" : " (tolto)"), by);
+    }
+
+    private void saveApplyLog(UUID id, String old, CommandSender by) {
         save();
         Player p = Bukkit.getPlayer(id);
         if (p != null) {
@@ -202,6 +225,11 @@ public final class StaffRoles implements Listener {
             } catch (IllegalArgumentException ex) {
                 // gia' rimosso
             }
+        }
+        if (plugin.getStaffDiscipline() != null && plugin.getStaffDiscipline().isSuspended(p.getUniqueId())) {
+            // sospeso: niente permessi di ruolo (scala e speciali) finche' la sospensione non finisce
+            p.recalculatePermissions();
+            return;
         }
         String role = roles.get(p.getUniqueId());
         java.util.Set<String> sp = specials.get(p.getUniqueId());
