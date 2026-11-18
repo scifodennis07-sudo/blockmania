@@ -674,6 +674,13 @@ public final class StaffProfileGui implements Listener {
     private ItemStack headItem(UUID target, Data d) {
         boolean online = Bukkit.getPlayer(target) != null;
         List<String> lore = new ArrayList<>();
+        if (plugin.getPlayerIds() != null) {
+            lore.add("&7id utente: &f" + plugin.getPlayerIds().userId(target));
+            String sid = plugin.getPlayerIds().staffId(target);
+            if (sid != null) {
+                lore.add("&7id staffer: &f" + sid);
+            }
+        }
         lore.add("&7stato: " + (online ? "&aonline" : "&8offline"));
         String role = d.info().role();
         lore.add("&7grado: &f" + (role == null || role.isEmpty() ? "nessuno" : role));

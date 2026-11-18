@@ -15,13 +15,14 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Task dello staff v2 (GUI TaskGui, /adminmania task). Una task e' una CARTELLA per un player con piu' step (azioni):
- * dai / togli / setta / azzera una risorsa (con la sua specifica: tipo di ball, ricompensa, potenziamento) oppure
- * banna / warna / muta con un codice regola. Ogni step e' ORDINARIA o CUSTOM (con un messaggio libero).
- * Gli helper creano, i mod eseguono/rifiutano gli step ordinari, gli sr_mod quelli custom, gli admin eliminano e
- * ripristinano. Le azioni usano i metodi interni di /adminmania e del profilo player (PlayerCounters.apply,
- * AmmoManager, UpgradeManager, Rewards.setReached, Power, SanctionManager.applyRule).
- * Tutto finisce nel resoconto. Si salva in staff-tasks.yml (version: 2). Da usare dal thread principale.
+ * Task dello staff v3 (GUI TaskGui, /adminmania task, frasi capite da TaskParser). Una task e' una CARTELLA con id
+ * numerico (#1, #2...) e piu' step; ogni step ha il SUO player (target): dai / togli / setta / azzera una risorsa (con
+ * la sua specifica: tipo di ball, ricompensa, potenziamento) oppure banna / warna / muta con un codice regola.
+ * Ogni step e' ORDINARIA o CUSTOM (messaggio libero, con o senza azione).
+ * Gli helper creano, i mod eseguono/rifiutano gli step ordinari, gli sr_mod quelli custom; il creatore o un admin
+ * eliminano task e step, gli admin ripristinano. Le azioni usano i metodi interni di /adminmania e del profilo player
+ * (PlayerCounters.apply, AmmoManager, UpgradeManager, Rewards.setReached, Power, SanctionManager.applyRule).
+ * Tutto finisce nel resoconto. Si salva in staff-tasks.yml (version: 3, legge anche la 2). Da usare dal thread principale.
  */
 public final class StaffTasks {
 
@@ -31,16 +32,26 @@ public final class StaffTasks {
     public enum Status { APERTA, ESEGUITA, RIFIUTATA, ELIMINATA }
 
     /**
-     * verb = give|remove|set|reset|ban|warn|mute ; what = ball|ricompense|coin|blockcoin|blockshell|mine|upgrade|power|stamina
-     * (null per ban/warn/mute) ; spec = id ball / ricompensa / potenziamento ("all" = tutte) o null ; text = solo CUSTOM.
+     * target/targetName = player dello step (null solo per un CUSTOM senza player) ; targetUid = id utente (u-00012,
+     * PlayerIds) salvato di nascosto con UUID e nome: nei testi e nella GUI si mostra solo il nome ;
+     * verb = give|remove|set|reset|ban|warn|mute ("" per un CUSTOM senza azione) ;
+     * what = ball|ricompense|coin|blockcoin|blockshell|mine|upgrade|power|stamina (null per ban/warn/mute) ;
+     * spec = id ball / ricompensa / potenziamento ("all" = tutte) o null ; text = solo CUSTOM.
      */
-    public record Step(String id, Kind kind, String verb, String what, String spec, long amount, String ruleCode, String text,
-                       Status status, UUID doneBy, String doneByName, long doneAt, String reason) {
+    public record Step(String id, Kind kind, UUID target, String targetName, String targetUid, String verb, String what,
+                       String spec, long amount, String ruleCode, String text, Status status, UUID doneBy, String doneByName,
+                       long doneAt, String reason) {
     }
 
-    /** status: APERTA finche' c'e' uno step aperto; poi ESEGUITA (almeno uno eseguito) o RIFIUTATA; ELIMINATA = cestino. */
-    public record Task(String id, UUID target, String targetName, UUID createdBy, String createdByName, long createdAt,
-                       Status status, List<Step> steps) {
+    /**
+     * id = numero progressivo come testo ("1", "2"...: la GUI mostra "#" + id).
+     * status: APERTA finche' c'e' uno step aperto; poi ESEGUITA (almeno uno eseguito) o RIFIUTATA; ELIMINATA = cestino.
+     */
+    public record Task(String id, UUID createdBy, String createdByName, long createdAt, Status status, List<Step> steps) {
+    }
+
+    /** Conteggi di una cartella: done = step chiusi (eseguiti o rifiutati). */
+    public record Counts(int total, int ord, int custom, int done, int doneOrd, int doneCustom) {
     }
 
     /** event: CREATA ESEGUITA RIFIUTATA ELIMINATA RIPRISTINATA ; stepId null per gli eventi della task intera. */
@@ -51,7 +62,7 @@ public final class StaffTasks {
     public record Spec(String id, String label) {
     }
 
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final int MAX_LOG = 5000;
 
     private static final List<String> VERBS = List.of("give", "remove", "set", "reset", "ban", "warn", "mute");
@@ -73,10 +84,21 @@ public final class StaffTasks {
     private final File file;
     private final Map<String, Task> tasks = new LinkedHashMap<>();
     private final List<LogEntry> log = new ArrayList<>();
+    private long nextId = 1;
 
     public StaffTasks(BlockMania plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "staff-tasks.yml");
+    }
+
+    private TaskParser parser;
+
+    /** Parser delle frasi (task-words.yml), creato alla prima richiesta. */
+    public synchronized TaskParser parser() {
+        if (parser == null) {
+            parser = new TaskParser(plugin);
+        }
+        return parser;
     }
 
     // ------------------------------------------------------------------ metadati per la GUI
@@ -197,19 +219,27 @@ public final class StaffTasks {
         };
     }
 
-    /** Riga leggibile: "dai 5 ball ghost", "setta livello 3 battlepass (ricompense)", "warna (regola 1.2)". */
+    /**
+     * Riga leggibile col player: "dai 5 ball ghost a crack", "setta livello 3 battlepass (ricompense) a crack",
+     * "warna crack (regola 1.2)", custom senza azione: "custom: verifica se ..." (testo tagliato a 40 lettere).
+     */
     public static String describe(Step s) {
         if (s == null) {
             return "";
         }
         String v = low(s.verb());
+        String who = s.targetName() == null || s.targetName().isEmpty() ? "?" : s.targetName();
+        if (v.isEmpty()) {
+            String tx = s.text() == null ? "" : s.text();
+            return "custom: " + (tx.length() > 40 ? tx.substring(0, 39) + "..." : tx);
+        }
         if (isSanction(v)) {
-            return label(v) + " (regola " + (s.ruleCode() == null ? "?" : s.ruleCode()) + ")";
+            return label(v) + " " + who + " (regola " + (s.ruleCode() == null ? "?" : s.ruleCode()) + ")";
         }
         String w = low(s.what());
         String spec = s.spec() == null || s.spec().isEmpty() ? "" : " " + specLabel(w, s.spec());
         if (v.equals("reset")) {
-            return label(v) + " " + labelWhat(w) + spec;
+            return label(v) + " " + labelWhat(w) + spec + " a " + who;
         }
         String amount = w.equals("stamina") ? s.amount() + "%" : String.valueOf(s.amount());
         return switch (w) {
@@ -218,20 +248,30 @@ public final class StaffTasks {
                     + " (" + labelWhat(w) + ")";
             case "stamina" -> label(v) + " " + amount + " stamina";
             default -> label(v) + " " + amount + " " + labelWhat(w) + spec;
-        };
+        } + " a " + who;
     }
 
-    /** Nuovo step APERTO (id provvisorio; create assegna l'id definitivo). Normalizza i campi che non servono. */
-    public static Step newStep(Kind kind, String verb, String what, String spec, long amount, String ruleCode, String text) {
+    /** Nome italiano della specifica (ball "ghost", upgrade "danno", ricompense "battlepass", "tutte"/"tutti"). */
+    public static String labelSpec(String what, String spec) {
+        return specLabel(what, spec);
+    }
+
+    /**
+     * Nuovo step APERTO (id provvisorio; create assegna l'id definitivo). Normalizza i campi che non servono.
+     * verb vuoto/null = CUSTOM senza azione (solo il testo). target null ammesso solo per i CUSTOM.
+     */
+    public static Step newStep(Kind kind, UUID target, String targetName, String verb, String what, String spec, long amount,
+                               String ruleCode, String text) {
         String v = low(verb);
         boolean sanction = isSanction(v);
-        String w = sanction ? null : low(what);
-        String sp = sanction || spec == null || spec.isBlank() ? null : spec.trim().toLowerCase(Locale.ROOT);
-        long a = sanction || v.equals("reset") ? 0 : amount;
+        boolean none = v.isEmpty();
+        String w = sanction || none ? null : low(what);
+        String sp = sanction || none || spec == null || spec.isBlank() ? null : spec.trim().toLowerCase(Locale.ROOT);
+        long a = sanction || none || v.equals("reset") ? 0 : amount;
         String rc = sanction && ruleCode != null ? ruleCode.trim() : null;
         String tx = kind == Kind.CUSTOM && text != null ? text.trim() : "";
-        return new Step(UUID.randomUUID().toString().substring(0, 8), kind == null ? Kind.ORDINARIA : kind, v, w, sp, a, rc, tx,
-                Status.APERTA, null, "", 0L, "");
+        return new Step(UUID.randomUUID().toString().substring(0, 8), kind == null ? Kind.ORDINARIA : kind, target,
+                targetName == null ? "" : targetName, "", v, w, sp, a, rc, tx, Status.APERTA, null, "", 0L, "");
     }
 
     // ------------------------------------------------------------------ persistenza
@@ -243,7 +283,8 @@ public final class StaffTasks {
             return;
         }
         YamlConfiguration y = YamlConfiguration.loadConfiguration(file);
-        if (y.getInt("version", 1) != VERSION) {
+        int version = y.getInt("version", 1);
+        if (version != VERSION && version != 2) {
             // formato v1 (task con una sola azione): si mette da parte
             File old = new File(plugin.getDataFolder(), "staff-tasks.yml.old");
             if (old.exists()) {
@@ -256,46 +297,73 @@ public final class StaffTasks {
             }
             return;
         }
+        // v2: il player era della task e l'id era esadecimale -> player nello step, id numerici (in ordine di creazione)
+        boolean v2 = version == 2;
+        List<Task> read = new ArrayList<>();
         for (Map<?, ?> m : y.getMapList("tasks")) {
             try {
                 Object id = m.get("id");
                 Object status = m.get("status");
-                UUID target = uuid(str(m.get("target")));
-                if (id == null || status == null || target == null) {
+                if (id == null || status == null) {
                     continue;
                 }
+                UUID oldTarget = v2 ? uuid(str(m.get("target"))) : null;
+                String oldName = v2 ? str(m.get("targetName")) : "";
                 List<Step> steps = new ArrayList<>();
                 Object raw = m.get("steps");
                 if (raw instanceof List<?> list) {
                     for (Object o : list) {
                         if (o instanceof Map<?, ?> sm) {
-                            Step s = readStep(sm);
+                            Step s = readStep(sm, oldTarget, oldName);
                             if (s != null) {
                                 steps.add(s);
                             }
                         }
                     }
                 }
-                Task t = new Task(String.valueOf(id), target, str(m.get("targetName")), uuid(str(m.get("createdBy"))),
-                        str(m.get("createdByName")), num(m.get("createdAt")), Status.valueOf(String.valueOf(status)), steps);
-                tasks.put(t.id(), t);
+                read.add(new Task(String.valueOf(id), uuid(str(m.get("createdBy"))), str(m.get("createdByName")),
+                        num(m.get("createdAt")), Status.valueOf(String.valueOf(status)), steps));
             } catch (IllegalArgumentException ignored) {
                 // voce non valida: saltata
             }
         }
+        Map<String, String> renamed = new LinkedHashMap<>();
+        if (v2) {
+            read.sort((a, b) -> Long.compare(a.createdAt(), b.createdAt()));
+            long n = 1;
+            List<Task> again = new ArrayList<>();
+            for (Task t : read) {
+                String nid = String.valueOf(n++);
+                renamed.put(t.id(), nid);
+                again.add(new Task(nid, t.createdBy(), t.createdByName(), t.createdAt(), t.status(), t.steps()));
+            }
+            read = again;
+        }
+        long max = 0;
+        for (Task t : read) {
+            tasks.put(t.id(), t);
+            max = Math.max(max, num(t.id()));
+        }
+        nextId = Math.max(max + 1, y.getLong("next-id", 1));
         for (Map<?, ?> m : y.getMapList("log")) {
             Object tid = m.get("task");
             Object ev = m.get("event");
             if (tid == null || ev == null) {
                 continue;
             }
+            String task = renamed.getOrDefault(String.valueOf(tid), String.valueOf(tid));
             String sid = str(m.get("step"));
-            log.add(new LogEntry(num(m.get("ts")), String.valueOf(tid), sid.isEmpty() ? null : sid, String.valueOf(ev),
+            log.add(new LogEntry(num(m.get("ts")), task, sid.isEmpty() ? null : sid, String.valueOf(ev),
                     uuid(str(m.get("by"))), str(m.get("byName")), str(m.get("detail"))));
+        }
+        if (v2) {
+            plugin.getLogger().info("staff-tasks.yml: convertito dal formato 2 (" + tasks.size() + " task)");
+            save();
         }
     }
 
-    private static Step readStep(Map<?, ?> m) {
+    /** Step dal file; per il formato 2 il player e' quello della task (defTarget). */
+    private static Step readStep(Map<?, ?> m, UUID defTarget, String defName) {
         try {
             Object id = m.get("id");
             Object kind = m.get("kind");
@@ -306,7 +374,10 @@ public final class StaffTasks {
             String what = str(m.get("what"));
             String spec = str(m.get("spec"));
             String rule = str(m.get("rule"));
-            return new Step(String.valueOf(id), Kind.valueOf(String.valueOf(kind)), str(m.get("verb")),
+            UUID target = m.containsKey("target") ? uuid(str(m.get("target"))) : defTarget;
+            String targetName = m.containsKey("targetName") ? str(m.get("targetName")) : defName;
+            return new Step(String.valueOf(id), Kind.valueOf(String.valueOf(kind)), target, targetName, str(m.get("targetUid")),
+                    str(m.get("verb")),
                     what.isEmpty() ? null : what, spec.isEmpty() ? null : spec, num(m.get("amount")),
                     rule.isEmpty() ? null : rule, str(m.get("text")), Status.valueOf(String.valueOf(status)),
                     uuid(str(m.get("doneBy"))), str(m.get("doneByName")), num(m.get("doneAt")), str(m.get("reason")));
@@ -318,12 +389,11 @@ public final class StaffTasks {
     public synchronized void save() {
         YamlConfiguration y = new YamlConfiguration();
         y.set("version", VERSION);
+        y.set("next-id", nextId);
         List<Map<String, Object>> out = new ArrayList<>();
         for (Task t : tasks.values()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", t.id());
-            m.put("target", t.target().toString());
-            m.put("targetName", nz(t.targetName()));
             m.put("createdBy", t.createdBy() == null ? "" : t.createdBy().toString());
             m.put("createdByName", nz(t.createdByName()));
             m.put("createdAt", t.createdAt());
@@ -333,6 +403,9 @@ public final class StaffTasks {
                 Map<String, Object> sm = new LinkedHashMap<>();
                 sm.put("id", s.id());
                 sm.put("kind", s.kind().name());
+                sm.put("target", s.target() == null ? "" : s.target().toString());
+                sm.put("targetName", nz(s.targetName()));
+                sm.put("targetUid", nz(s.targetUid()));
                 sm.put("verb", nz(s.verb()));
                 sm.put("what", nz(s.what()));
                 sm.put("spec", nz(s.spec()));
@@ -389,8 +462,44 @@ public final class StaffTasks {
         return out;
     }
 
+    /** Accetta "12" o "#12". */
     public synchronized Task get(String id) {
-        return id == null ? null : tasks.get(id);
+        if (id == null) {
+            return null;
+        }
+        String k = id.trim();
+        return tasks.get(k.startsWith("#") ? k.substring(1) : k);
+    }
+
+    /** Conteggi della cartella (per la GUI: niente nomi di player). */
+    public static Counts counts(Task t) {
+        int total = 0;
+        int ord = 0;
+        int custom = 0;
+        int done = 0;
+        int doneOrd = 0;
+        int doneCustom = 0;
+        if (t != null) {
+            for (Step s : t.steps()) {
+                boolean c = s.kind() == Kind.CUSTOM;
+                boolean closed = s.status() == Status.ESEGUITA || s.status() == Status.RIFIUTATA;
+                total++;
+                if (c) {
+                    custom++;
+                } else {
+                    ord++;
+                }
+                if (closed) {
+                    done++;
+                    if (c) {
+                        doneCustom++;
+                    } else {
+                        doneOrd++;
+                    }
+                }
+            }
+        }
+        return new Counts(total, ord, custom, done, doneOrd, doneCustom);
     }
 
     /**
@@ -451,19 +560,23 @@ public final class StaffTasks {
         return p != null && !suspended(p) && rank(p) >= ADMIN;
     }
 
+    /** Puo' eliminare la task (o un suo step): chi l'ha creata o admin+, non sospeso. */
+    public boolean canDelete(Player p, Task t) {
+        return p != null && t != null && !suspended(p) && (p.getUniqueId().equals(t.createdBy()) || isAdmin(p));
+    }
+
     // ------------------------------------------------------------------ azioni
 
-    /** Crea la cartella; null se non puo' crearla o uno step non e' valido (o la lista e' vuota). */
-    public Task create(Player by, UUID target, List<Step> steps) {
-        if (by == null || target == null || steps == null || steps.isEmpty() || !canCreate(by)) {
-            return null;
-        }
-        // niente task su se stessi (un helper non si fa dare risorse da un mod), salvo gli admin
-        if (by.getUniqueId().equals(target) && !isAdmin(by)) {
+    /**
+     * Crea la cartella; null se non puo' crearla, la lista e' vuota o uno step non e' valido (vedi whyInvalid).
+     * Niente step su se stessi (un helper non si fa dare risorse da un mod), salvo gli admin.
+     */
+    public Task create(Player by, List<Step> steps) {
+        if (by == null || steps == null || steps.isEmpty() || !canCreate(by)) {
             return null;
         }
         for (Step s : steps) {
-            if (invalid(s) != null) {
+            if (whyInvalid(by, s) != null) {
                 return null;
             }
         }
@@ -471,19 +584,31 @@ public final class StaffTasks {
         synchronized (this) {
             List<Step> clean = new ArrayList<>();
             for (Step s : steps) {
-                Step n = newStep(s.kind(), s.verb(), s.what(), s.spec(), s.amount(), s.ruleCode(), s.text());
-                clean.add(new Step(newStepId(clean), n.kind(), n.verb(), n.what(), n.spec(), n.amount(), n.ruleCode(), n.text(),
-                        Status.APERTA, null, "", 0L, ""));
+                Step n = newStep(s.kind(), s.target(), s.target() == null ? s.targetName() : playerName(s.target()), s.verb(),
+                        s.what(), s.spec(), s.amount(), s.ruleCode(), s.text());
+                clean.add(new Step(newStepId(clean), n.kind(), n.target(), n.targetName(), userId(n.target()), n.verb(), n.what(),
+                        n.spec(), n.amount(), n.ruleCode(), n.text(), Status.APERTA, null, "", 0L, ""));
             }
-            t = new Task(newTaskId(), target, playerName(target), by.getUniqueId(), by.getName(), System.currentTimeMillis(),
-                    Status.APERTA, List.copyOf(clean));
+            t = new Task(newTaskId(), by.getUniqueId(), by.getName(), System.currentTimeMillis(), Status.APERTA, List.copyOf(clean));
             tasks.put(t.id(), t);
             addLog(t.id(), null, "CREATA", by, clean.size() + (clean.size() == 1 ? " azione: " : " azioni: ") + summary(clean));
             save();
         }
-        movement(by.getUniqueId(), "Ha creato la task staff " + t.id() + " su " + t.targetName() + ": " + summary(t.steps()));
-        log("task " + t.id() + " creata da " + by.getName() + " su " + t.targetName() + ": " + summary(t.steps()));
+        movement(by.getUniqueId(), "Ha creato la task staff #" + t.id() + ": " + summary(t.steps()));
+        log("task #" + t.id() + " creata da " + by.getName() + ": " + summary(t.steps()));
         return t;
+    }
+
+    /** Perche' lo step non si puo' salvare (per la GUI dell'anteprima), o null se va bene. */
+    public String whyInvalid(Player by, Step s) {
+        String err = invalid(s);
+        if (err != null) {
+            return err;
+        }
+        if (by != null && s.target() != null && by.getUniqueId().equals(s.target()) && !isAdmin(by)) {
+            return "col tuo grado non puoi creare azioni su te stesso";
+        }
+        return null;
     }
 
     /** Esegue davvero lo step. null = ok, altrimenti il messaggio d'errore. */
@@ -496,12 +621,14 @@ public final class StaffTasks {
         }
         String v = low(s.verb());
         String err;
-        if (isSanction(v)) {
-            err = applySanction(by, t, s);
+        if (v.isEmpty()) {
+            err = null; // custom senza azione: lo staffer l'ha fatto a mano
+        } else if (isSanction(v)) {
+            err = applySanction(by, s);
         } else {
-            Player target = Bukkit.getPlayer(t.target());
+            Player target = s.target() == null ? null : Bukkit.getPlayer(s.target());
             if (target == null) {
-                return "il player " + t.targetName() + " e' offline: si puo' eseguire solo quando e' online";
+                return "il player " + s.targetName() + " e' offline: si puo' eseguire solo quando e' online";
             }
             err = apply(by, target, s);
         }
@@ -516,14 +643,13 @@ public final class StaffTasks {
         }
         AdminCommand ac = plugin.getAdminCommand();
         if (ac != null) {
-            ac.record(by, "task " + t.id() + "/" + s.id() + " (" + kindLabel(s.kind()) + ") | " + describe(s) + " | " + t.targetName());
+            ac.record(by, "task #" + t.id() + "/" + s.id() + " (" + kindLabel(s.kind()) + ") | " + describe(s));
         }
-        movement(t.target(), "Task staff " + t.id() + ": " + describe(s) + " (eseguita da " + by.getName() + ")");
-        movement(by.getUniqueId(), "Ha eseguito nella task staff " + t.id() + " di " + t.createdByName() + ": " + describe(s)
-                + " su " + t.targetName());
-        notify(t.createdBy(), "&aNella tua task &f" + t.id() + "&a (" + t.targetName() + ") &f" + by.getName()
-                + "&a ha eseguito: &7" + describe(s) + closedNote(done));
-        log("task " + t.id() + " step " + s.id() + " eseguito da " + by.getName() + ": " + describe(s));
+        movement(s.target(), "Task staff #" + t.id() + ": " + describe(s) + " (eseguita da " + by.getName() + ")");
+        movement(by.getUniqueId(), "Ha eseguito nella task staff #" + t.id() + " di " + t.createdByName() + ": " + describe(s));
+        notify(t.createdBy(), "&aNella tua task &f#" + t.id() + "&a &f" + by.getName() + "&a ha eseguito: &7" + describe(s)
+                + closedNote(done));
+        log("task #" + t.id() + " step " + s.id() + " eseguito da " + by.getName() + ": " + describe(s));
         return null;
     }
 
@@ -545,31 +671,60 @@ public final class StaffTasks {
             addLog(t.id(), s.id(), "RIFIUTATA", by, describe(s) + " | motivo: " + r);
             save();
         }
-        movement(by.getUniqueId(), "Ha rifiutato nella task staff " + t.id() + " di " + t.createdByName() + ": " + describe(s)
+        movement(by.getUniqueId(), "Ha rifiutato nella task staff #" + t.id() + " di " + t.createdByName() + ": " + describe(s)
                 + " (" + r + ")");
-        notify(t.createdBy(), "&cNella tua task &f" + t.id() + "&c (" + t.targetName() + ") &f" + by.getName()
-                + "&c ha rifiutato: &7" + describe(s) + " &7Motivo: &f\"" + r + "\"" + closedNote(done));
-        log("task " + t.id() + " step " + s.id() + " rifiutato da " + by.getName() + ": " + r);
+        notify(t.createdBy(), "&cNella tua task &f#" + t.id() + "&c &f" + by.getName() + "&c ha rifiutato: &7" + describe(s)
+                + " &7Motivo: &f\"" + r + "\"" + closedNote(done));
+        log("task #" + t.id() + " step " + s.id() + " rifiutato da " + by.getName() + ": " + r);
         return null;
     }
 
-    /** Admin: manda la task nel cestino. */
+    /** Creatore o admin+: manda la task nel cestino. */
     public boolean delete(Player admin, String taskId) {
-        if (!isAdmin(admin)) {
-            return false;
-        }
         Task t;
         synchronized (this) {
-            t = tasks.get(taskId);
-            if (t == null || t.status() == Status.ELIMINATA) {
+            t = get(taskId);
+            if (t == null || t.status() == Status.ELIMINATA || !canDelete(admin, t)) {
                 return false;
             }
             tasks.put(t.id(), withStatus(t, Status.ELIMINATA));
             addLog(t.id(), null, "ELIMINATA", admin, "era " + statusLabel(t.status()));
             save();
         }
-        movement(admin.getUniqueId(), "Ha eliminato la task staff " + t.id() + " di " + t.createdByName());
-        log("task " + t.id() + " eliminata da " + admin.getName());
+        movement(admin.getUniqueId(), "Ha eliminato la task staff #" + t.id() + " di " + t.createdByName());
+        log("task #" + t.id() + " eliminata da " + admin.getName());
+        return true;
+    }
+
+    /**
+     * Creatore o admin+: toglie uno step APERTO dalla cartella (resta nel resoconto). Se era l'ultimo step la task va
+     * nel cestino (con lo step, cosi' si puo' ripristinare).
+     */
+    public boolean deleteStep(Player by, String taskId, String stepId) {
+        Task t;
+        Step s;
+        boolean whole;
+        synchronized (this) {
+            t = get(taskId);
+            s = stepOf(t, stepId);
+            if (t == null || s == null || t.status() == Status.ELIMINATA || s.status() != Status.APERTA || !canDelete(by, t)) {
+                return false;
+            }
+            whole = t.steps().size() == 1;
+            if (whole) {
+                tasks.put(t.id(), withStatus(t, Status.ELIMINATA));
+                addLog(t.id(), s.id(), "ELIMINATA", by, describe(s) + " (ultima azione: task nel cestino)");
+            } else {
+                List<Step> rest = new ArrayList<>(t.steps());
+                rest.remove(s);
+                tasks.put(t.id(), new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(), statusOf(rest),
+                        List.copyOf(rest)));
+                addLog(t.id(), s.id(), "ELIMINATA", by, describe(s));
+            }
+            save();
+        }
+        movement(by.getUniqueId(), "Ha eliminato dalla task staff #" + t.id() + ": " + describe(s));
+        log("task #" + t.id() + " step " + s.id() + " eliminato da " + by.getName() + (whole ? " (task nel cestino)" : ""));
         return true;
     }
 
@@ -581,7 +736,7 @@ public final class StaffTasks {
         Task t;
         Status back;
         synchronized (this) {
-            t = tasks.get(taskId);
+            t = get(taskId);
             if (t == null || t.status() != Status.ELIMINATA) {
                 return false;
             }
@@ -590,15 +745,15 @@ public final class StaffTasks {
             addLog(t.id(), null, "RIPRISTINATA", admin, "torna " + statusLabel(back));
             save();
         }
-        movement(admin.getUniqueId(), "Ha ripristinato la task staff " + t.id() + " di " + t.createdByName());
-        log("task " + t.id() + " ripristinata da " + admin.getName() + " (" + statusLabel(back) + ")");
+        movement(admin.getUniqueId(), "Ha ripristinato la task staff #" + t.id() + " di " + t.createdByName());
+        log("task #" + t.id() + " ripristinata da " + admin.getName() + " (" + statusLabel(back) + ")");
         return true;
     }
 
     // ------------------------------------------------------------------ applicazione delle azioni
 
     /** Sanzione con regola, come UserProfileGui.doRuleSanction (permessi sanctions + SanctionManager.applyRule). */
-    private String applySanction(Player by, Task t, Step s) {
+    private String applySanction(Player by, Step s) {
         String v = low(s.verb());
         Rules rules = plugin.getRules();
         Rules.Rule rule = rules == null || s.ruleCode() == null ? null : rules.get(s.ruleCode());
@@ -606,14 +761,17 @@ public final class StaffTasks {
             return "la regola " + s.ruleCode() + " non esiste piu' o non e' di tipo " + v;
         }
         AdminCommand ac = plugin.getAdminCommand();
-        if (ac != null && !ac.authorize(by, "sanctions", v, t.target(), 0)) {
+        if (s.target() == null) {
+            return "manca il player";
+        }
+        if (ac != null && !ac.authorize(by, "sanctions", v, s.target(), 0)) {
             return "il tuo ruolo non puo' fare " + v;
         }
         SanctionManager sm = plugin.getSanctions();
         if (sm == null) {
             return "sanzioni non disponibili";
         }
-        if (!sm.applyRule(by, t.target(), rule, null)) {
+        if (!sm.applyRule(by, s.target(), rule, null)) {
             return "nessuna sanzione applicata (regola non applicabile o limite warn raggiunto)";
         }
         return null;
@@ -778,7 +936,7 @@ public final class StaffTasks {
         if (by.getUniqueId().equals(t.createdBy())) {
             return "non puoi eseguire o rifiutare le azioni di una task creata da te";
         }
-        if (by.getUniqueId().equals(t.target()) && !isAdmin(by)) {
+        if (by.getUniqueId().equals(s.target()) && !isAdmin(by)) {
             return "col tuo grado non puoi eseguire azioni su te stesso";
         }
         if (rank(by) < (s.kind() == Kind.CUSTOM ? SR_MOD : MOD)) {
@@ -793,11 +951,17 @@ public final class StaffTasks {
             return "azione vuota";
         }
         String v = low(s.verb());
+        if (s.kind() == Kind.CUSTOM && (s.text() == null || s.text().isBlank())) {
+            return "manca il messaggio custom";
+        }
+        if (v.isEmpty() && s.kind() == Kind.CUSTOM) {
+            return null; // custom senza azione: basta il testo (player facoltativo)
+        }
         if (!VERBS.contains(v)) {
             return "verbo sconosciuto";
         }
-        if (s.kind() == Kind.CUSTOM && (s.text() == null || s.text().isBlank())) {
-            return "manca il messaggio custom";
+        if (s.target() == null) {
+            return "player inesistente: " + (s.targetName() == null || s.targetName().isEmpty() ? "?" : s.targetName());
         }
         if (isSanction(v)) {
             Rules rules = plugin.getRules();
@@ -862,10 +1026,12 @@ public final class StaffTasks {
         Task t = tasks.get(taskId);
         List<Step> steps = new ArrayList<>();
         for (Step s : t.steps()) {
-            steps.add(!s.id().equals(stepId) ? s : new Step(s.id(), s.kind(), s.verb(), s.what(), s.spec(), s.amount(),
-                    s.ruleCode(), s.text(), st, by.getUniqueId(), by.getName(), System.currentTimeMillis(), reason));
+            steps.add(!s.id().equals(stepId) ? s : new Step(s.id(), s.kind(), s.target(), s.targetName(), s.targetUid(),
+                    s.verb(), s.what(),
+                    s.spec(), s.amount(), s.ruleCode(), s.text(), st, by.getUniqueId(), by.getName(), System.currentTimeMillis(),
+                    reason));
         }
-        Task done = new Task(t.id(), t.target(), t.targetName(), t.createdBy(), t.createdByName(), t.createdAt(),
+        Task done = new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(),
                 t.status() == Status.ELIMINATA ? Status.ELIMINATA : statusOf(steps), List.copyOf(steps));
         tasks.put(done.id(), done);
         return done;
@@ -885,7 +1051,7 @@ public final class StaffTasks {
     }
 
     private static Task withStatus(Task t, Status s) {
-        return new Task(t.id(), t.target(), t.targetName(), t.createdBy(), t.createdByName(), t.createdAt(), s, t.steps());
+        return new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(), s, t.steps());
     }
 
     /** " (task completata)" quando l'ultimo step si e' chiuso. */
@@ -964,14 +1130,12 @@ public final class StaffTasks {
         };
     }
 
-    /** Id corto univoco della task (8 caratteri esadecimali). Chiamare dentro synchronized. */
+    /** Id numerico progressivo della task ("1", "2"...). Chiamare dentro synchronized. */
     private String newTaskId() {
-        while (true) {
-            String id = UUID.randomUUID().toString().substring(0, 8);
-            if (!tasks.containsKey(id)) {
-                return id;
-            }
+        while (tasks.containsKey(String.valueOf(nextId))) {
+            nextId++;
         }
+        return String.valueOf(nextId++);
     }
 
     /** Id corto dello step, univoco fra tutte le task (canExecute trova la task dallo step). Dentro synchronized. */
@@ -1020,6 +1184,13 @@ public final class StaffTasks {
 
     private static String nz(String s) {
         return s == null ? "" : s;
+    }
+
+    /** Id utente nascosto (u-00012) del player, "" se non c'e'. */
+    private String userId(UUID id) {
+        PlayerIds ids = plugin.getPlayerIds();
+        String u = id == null || ids == null ? null : ids.userId(id);
+        return u == null ? "" : u;
     }
 
     private static String playerName(UUID id) {

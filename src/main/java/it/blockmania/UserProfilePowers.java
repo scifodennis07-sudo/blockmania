@@ -156,7 +156,12 @@ public final class UserProfilePowers implements Listener {
         boolean text;
         String initial = "";
         Consumer<String> onText;
+        /** Testo arrivato al limite dell'incudine (ANVIL_LIMIT caratteri): null = nessun avviso (comportamento di sempre). */
+        Consumer<String> onFull;
     }
+
+    /** Caratteri massimi del nome nell'incudine (limite del client). */
+    private static final int ANVIL_LIMIT = 50;
 
     // ------------------------------------------------------------------
     //  API pubblica
@@ -231,7 +236,18 @@ public final class UserProfilePowers implements Listener {
      * Il testo vuoto e' accettato (onOk(""))); la X chiama onCancel.
      */
     public void askText(Player staff, String title, String barText, String initial, Consumer<String> onOk, Runnable onCancel) {
+        askText(staff, title, barText, initial, onOk, onCancel, null);
+    }
+
+    /**
+     * Come sopra; onFull (se non null) viene chiamato al tick dopo quando il testo scritto arriva al limite dell'incudine
+     * (50 caratteri) ed e' diverso da quello iniziale: l'incudine si considera chiusa (niente onCancel) e il chiamante
+     * decide cosa fare (es. TaskGui: conferma "continuare in chat?").
+     */
+    public void askText(Player staff, String title, String barText, String initial, Consumer<String> onOk, Runnable onCancel,
+                        Consumer<String> onFull) {
         AnvilSession s = new AnvilSession();
+        s.onFull = onFull;
         s.text = true;
         s.title = title == null ? "testo" : title;
         s.barText = barText == null ? s.title : barText;
@@ -784,6 +800,14 @@ public final class UserProfilePowers implements Listener {
         AnvilView av = (AnvilView) event.getView();
         if (s.text) {
             String raw = av.getRenameText() == null ? s.initial : av.getRenameText();
+            if (s.onFull != null && !s.done && raw.length() >= ANVIL_LIMIT && !raw.equals(s.initial)) {
+                // arrivato al limite dell'incudine: lo decide il chiamante (al tick dopo, fuori dall'evento)
+                s.done = true;
+                final String full = raw;
+                final Consumer<String> cb = s.onFull;
+                later(() -> cb.accept(full));
+                return;
+            }
             boolean okText = raw.length() <= 100;
             event.setResult(pane(okText ? "&ainvia" : "&ctesto troppo lungo",
                     List.of(okText ? "&7" + (raw.isEmpty() ? "(vuoto)" : raw) : "&7Massimo 100 caratteri.")));
@@ -930,7 +954,7 @@ public final class UserProfilePowers implements Listener {
         s.done = true;
         p.closeInventory();
         if (s.text) {
-            later(() -> askText(p, s.title, s.barText, s.initial, s.onText, s.onCancel));
+            later(() -> askText(p, s.title, s.barText, s.initial, s.onText, s.onCancel, s.onFull));
             return;
         }
         later(() -> askNumber(p, s.title, s.barText, s.min, s.max, s.onOk, s.onCancel));

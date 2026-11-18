@@ -397,12 +397,20 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (args.length < 2) {
-            GuiMsg.sendTiny(plugin, sender, "&7usa: &f/adminmania " + args[0].toLowerCase(Locale.ROOT) + " <nome>");
+            GuiMsg.sendTiny(plugin, sender, "&7usa: &f/adminmania " + args[0].toLowerCase(Locale.ROOT) + " <nome|u-id|s-id>");
             return true;
         }
         UUID id;
         Player online = Bukkit.getPlayerExact(args[1]);
-        if (online != null) {
+        // anche per id utente/staffer (u-00012, s-3): un nome minecraft non puo' contenere '-'
+        boolean isId = plugin.getPlayerIds() != null && args[1].matches("(?i)[us]-[0-9]+");
+        if (isId) {
+            id = plugin.getPlayerIds().byId(args[1]);
+            if (id == null) {
+                deny(sender, "id sconosciuto: " + args[1]);
+                return true;
+            }
+        } else if (online != null) {
             id = online.getUniqueId();
         } else {
             org.bukkit.OfflinePlayer off = Bukkit.getOfflinePlayerIfCached(args[1]);

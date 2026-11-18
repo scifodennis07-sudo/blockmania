@@ -68,6 +68,7 @@ public final class BlockMania extends JavaPlugin {
     private RulePopups staffRulePopups;
     private RuleDetailGui staffRuleDetailGui;
     private StaffRoles staffRoles;
+    private PlayerIds playerIds;
     private RoleGui roleGui;
     private TaskGui taskGui;
     private Tutorial tutorial;
@@ -110,6 +111,9 @@ public final class BlockMania extends JavaPlugin {
         blocks.load();
         movements = new MovementLog(this);
         movements.load();
+        // id utente u-00001 / staffer s-00001 (player-ids.yml): prima di StaffRoles e delle GUI profilo
+        playerIds = new PlayerIds(this);
+        playerIds.load();
         staffStats = new StaffStats(this);
         staffStats.load();
         // prima di StaffRoles.load(): apply() controlla le sospensioni
@@ -240,6 +244,8 @@ public final class BlockMania extends JavaPlugin {
         staffRoles = new StaffRoles(this);
         staffRoles.load();
         getServer().getPluginManager().registerEvents(staffRoles, this);
+        playerIds.ensureStaffIds(staffRoles.knownStaff());
+        getServer().getPluginManager().registerEvents(playerIds, this);
         roleGui = new RoleGui(this);
         getServer().getPluginManager().registerEvents(roleGui, this);
         // GUI task staff (/adminmania task): dopo profileUi, staffRoles e staffTasks
@@ -516,6 +522,9 @@ public final class BlockMania extends JavaPlugin {
         if (movements != null) {
             movements.save();
         }
+        if (playerIds != null) {
+            playerIds.save();
+        }
         if (staffStats != null) {
             staffStats.save();
         }
@@ -688,6 +697,10 @@ public final class BlockMania extends JavaPlugin {
 
     public StaffRoles getStaffRoles() {
         return staffRoles;
+    }
+
+    public PlayerIds getPlayerIds() {
+        return playerIds;
     }
 
     public RoleGui getRoleGui() {

@@ -654,6 +654,13 @@ public final class UserProfileGui implements Listener {
     private List<String> headLore(UUID target, boolean online) {
         OfflinePlayer op = Bukkit.getOfflinePlayer(target);
         List<String> lore = new ArrayList<>();
+        if (plugin.getPlayerIds() != null) {
+            lore.add("&7id utente: &f" + plugin.getPlayerIds().userId(target));
+            String sid = plugin.getPlayerIds().staffId(target);
+            if (sid != null) {
+                lore.add("&7id staffer: &f" + sid);
+            }
+        }
         if (online) {
             lore.add("&7stato: &aonline");
         } else {

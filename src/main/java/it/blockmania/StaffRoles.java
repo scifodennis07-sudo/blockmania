@@ -136,6 +136,14 @@ public final class StaffRoles implements Listener {
         return id == null ? null : roles.get(id);
     }
 
+    /** Chi ha (o ha avuto) un grado staff o ha un ruolo speciale: per assegnare gli id staffer all'avvio. */
+    public java.util.Set<UUID> knownStaff() {
+        java.util.Set<UUID> out = new java.util.HashSet<>(wasStaff);
+        out.addAll(roles.keySet());
+        out.addAll(specials.keySet());
+        return out;
+    }
+
     /** Ruoli speciali (builder, dev, t_maker) del player. */
     public java.util.Set<String> specialsOf(UUID id) {
         java.util.Set<String> s = id == null ? null : specials.get(id);
@@ -173,6 +181,9 @@ public final class StaffRoles implements Listener {
         }
         if (to != null) {
             wasStaff.add(id);
+            if (plugin.getPlayerIds() != null) {
+                plugin.getPlayerIds().ensureStaffId(id);   // id staffer al primo grado, resta anche dopo il depex
+            }
         }
         if (kind != null && plugin.getStaffStats() != null) {
             plugin.getStaffStats().recordCareer(id, by instanceof Player bp ? bp.getUniqueId() : null, kind, old, to);
@@ -201,6 +212,9 @@ public final class StaffRoles implements Listener {
         }
         if (!changed) {
             return;
+        }
+        if (add && plugin.getPlayerIds() != null) {
+            plugin.getPlayerIds().ensureStaffId(id);   // id staffer anche per chi ha solo un ruolo speciale
         }
         saveApplyLog(id, "speciale " + roleId + (add ? " (aggiunto)" : " (tolto)"), by);
     }
