@@ -530,6 +530,58 @@ public final class Rules {
         return parseTime(t, in);
     }
 
+    // ------------------------------------------------------------------ regolamento di default
+
+    /**
+     * Aggiunge le regole del regolamento di default (file nel jar: regolamento-player.yml / regolamento-staff.yml)
+     * che non esistono ancora. Non tocca le regole gia' presenti. Ritorna {aggiunte, saltate, errori}.
+     */
+    public int[] importDefaults(Player by) {
+        int added = 0, skipped = 0, bad = 0;
+        String res = staff ? "regolamento-staff.yml" : "regolamento-player.yml";
+        java.io.InputStream in = plugin.getResource(res);
+        if (in == null) {
+            return new int[] {0, 0, -1};
+        }
+        YamlConfiguration y = YamlConfiguration.loadConfiguration(
+                new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+        for (Map<?, ?> m : y.getMapList("rules")) {
+            String code = String.valueOf(m.get("code"));
+            String tipo = String.valueOf(m.get("tipo")).toUpperCase(Locale.ROOT);
+            Object tempoObj = m.get("tempo");
+            String tempo = tempoObj == null ? "" : String.valueOf(tempoObj);
+            String title = String.valueOf(m.get("titolo"));
+            String text = String.valueOf(m.get("testo"));
+            Type t;
+            switch (tipo) {
+                case "DEPEX" -> t = Type.BAN;
+                case "SOSPENSIONE" -> t = Type.MUTE;
+                default -> {
+                    try {
+                        t = Type.valueOf(tipo);
+                    } catch (IllegalArgumentException e) {
+                        t = null;
+                    }
+                }
+            }
+            if (!validCode(code) || t == null || (needsTime(t) && timeError(t, tempo) != null)) {
+                bad++;
+                continue;
+            }
+            if (get(code) != null) {
+                skipped++;
+                continue;
+            }
+            long ms = needsTime(t) ? time(t, tempo) : (staff ? time(t, tempo) : 0L);
+            if (add(Rule.created(code, title, text, t, ms, by))) {
+                added++;
+            } else {
+                skipped++;
+            }
+        }
+        return new int[] {added, skipped, bad};
+    }
+
     // ------------------------------------------------------------------ persistenza
 
     private static UUID uuid(String s) {

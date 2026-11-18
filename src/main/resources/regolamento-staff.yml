@@ -1,0 +1,24 @@
+# Regolamento staff di default. Importa con /adminmania staffrules importa (aggiunge solo i codici che mancano).
+# tipo: WARN, DEPEX (= BAN), SOSPENSIONE (= MUTE, serve il tempo), REGOLAMENTO (solo informativa).
+rules:
+  - {code: "1.1", tipo: WARN, tempo: "", titolo: "linguaggio scorretto", testo: "lo staffer deve essere educato con tutti: niente insulti, provocazioni o risposte maleducate."}
+  - {code: "1.2", tipo: WARN, tempo: "", titolo: "mancanza di rispetto tra staffer", testo: "rispetta gli altri staffer; i problemi si risolvono in privato o con un admin."}
+  - {code: "1.3", tipo: SOSPENSIONE, tempo: 3d, titolo: "favoritismi", testo: "non favorire amici o conoscenti: stesse regole e stesse sanzioni per tutti."}
+  - {code: "1.4", tipo: DEPEX, tempo: "", titolo: "abuso dei permessi", testo: "i permessi staff servono solo per il lavoro da staff, mai per vantaggio personale o di altri."}
+  - {code: "1.5", tipo: DEPEX, tempo: "", titolo: "informazioni interne", testo: "vietato rivelare a chi non e' staff discussioni, decisioni, task, segnalazioni o dati interni."}
+  - {code: "2.1", tipo: WARN, tempo: "", titolo: "sanzione senza prove", testo: "ogni sanzione deve avere un motivo e delle prove (screen, log, registrazione)."}
+  - {code: "2.2", tipo: WARN, tempo: "", titolo: "regola sbagliata", testo: "usa sempre il codice di regola giusto quando sanzioni."}
+  - {code: "2.3", tipo: SOSPENSIONE, tempo: 7d, titolo: "togliere sanzioni senza permesso", testo: "non togliere o ridurre sanzioni date da altri senza l'ok di un admin."}
+  - {code: "2.4", tipo: SOSPENSIONE, tempo: 3d, titolo: "sanzioni sproporzionate", testo: "la sanzione deve rispettare il regolamento: non aumentarla a piacere."}
+  - {code: "3.1", tipo: DEPEX, tempo: "", titolo: "dare o togliere fuori dalle task", testo: "vietato dare o togliere risorse ai player senza una task approvata."}
+  - {code: "3.2", tipo: SOSPENSIONE, tempo: 3d, titolo: "task non verificate", testo: "prima di eseguire una task controlla che sia giusta; nel dubbio rifiutala col motivo."}
+  - {code: "3.3", tipo: SOSPENSIONE, tempo: 7d, titolo: "task false", testo: "vietato creare task inventate o per favorire qualcuno."}
+  - {code: "3.4", tipo: WARN, tempo: "", titolo: "rifiuti senza motivo", testo: "se rifiuti una task scrivi un motivo chiaro."}
+  - {code: "4.1", tipo: WARN, tempo: "", titolo: "ticket ignorati", testo: "rispondi ai ticket che ti spettano entro un tempo ragionevole."}
+  - {code: "4.2", tipo: WARN, tempo: "", titolo: "ticket chiusi senza soluzione", testo: "non chiudere un ticket finche' il problema non e' risolto o spiegato al player."}
+  - {code: "5.1", tipo: WARN, tempo: "", titolo: "inattivita' senza avviso", testo: "se non puoi esserci per piu' giorni avvisa un admin."}
+  - {code: "5.2", tipo: SOSPENSIONE, tempo: 14d, titolo: "inattivita' prolungata", testo: "lunghi periodi di assenza senza avviso portano alla sospensione e, se continuano, al depex."}
+  - {code: "5.3", tipo: SOSPENSIONE, tempo: 7d, titolo: "troppi warn", testo: "al terzo warn staff si viene sospesi."}
+  - {code: "6.1", tipo: DEPEX, tempo: "", titolo: "account staff condiviso", testo: "l'account staff e' personale: non farlo usare a nessuno."}
+  - {code: "6.2", tipo: DEPEX, tempo: "", titolo: "hack anche per controllare", testo: "uno staffer non usa mai hack, x-ray o client modificati, nemmeno per controllare gli altri."}
+  - {code: "6.3", tipo: REGOLAMENTO, tempo: "", titolo: "esempio per gli altri", testo: "lo staffer rispetta per primo il regolamento dei player."}

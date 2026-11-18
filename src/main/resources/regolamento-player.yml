@@ -1,0 +1,29 @@
+# Regolamento player di default. Importa con /adminmania rules importa (aggiunge solo i codici che mancano).
+# tipo: BAN, MUTE, WARN, REGOLAMENTO (solo informativa). tempo: 10m, 2h, 7d, 10h+30m, permanente, blacklist.
+rules:
+  - {code: "1.1", tipo: MUTE, tempo: 30m, titolo: "spam e flood", testo: "non scrivere lo stesso messaggio piu' volte, non riempire la chat di caratteri o messaggi senza senso."}
+  - {code: "1.2", tipo: WARN, tempo: "", titolo: "maiuscole eccessive", testo: "non scrivere interi messaggi in maiuscolo."}
+  - {code: "1.3", tipo: MUTE, tempo: 2h, titolo: "insulti e provocazioni", testo: "non insultare, deridere o provocare gli altri player in chat, in privato o nei ticket."}
+  - {code: "1.4", tipo: MUTE, tempo: 1h, titolo: "bestemmie e linguaggio volgare", testo: "niente bestemmie, volgarita' pesanti o contenuti sessuali in chat."}
+  - {code: "1.5", tipo: BAN, tempo: 7d, titolo: "discriminazione", testo: "vietati razzismo, omofobia, sessismo e qualsiasi discriminazione."}
+  - {code: "1.6", tipo: BAN, tempo: permanente, titolo: "pubblicita'", testo: "vietato pubblicizzare altri server, canali o servizi senza permesso dello staff."}
+  - {code: "1.7", tipo: MUTE, tempo: 1d, titolo: "link e contenuti inappropriati", testo: "non condividere link pericolosi, truffe o contenuti inappropriati."}
+  - {code: "1.8", tipo: BAN, tempo: permanente, titolo: "minacce e dati personali", testo: "vietato minacciare altri player o diffondere i loro dati personali (nome, indirizzo, foto...)."}
+  - {code: "2.1", tipo: BAN, tempo: 30d, titolo: "hack e client modificati", testo: "vietati hack, cheat e client o mod che danno vantaggi (killaura, fly, reach, autoclick...)."}
+  - {code: "2.2", tipo: BAN, tempo: 7d, titolo: "macro e autoclicker", testo: "vietati macro, autoclicker e programmi che giocano al posto tuo, anche per farmare blocchi o ricompense."}
+  - {code: "2.3", tipo: BAN, tempo: 14d, titolo: "x-ray e texture vantaggiose", testo: "vietate texture pack o mod che fanno vedere attraverso i blocchi o danno vantaggi."}
+  - {code: "2.4", tipo: BAN, tempo: 14d, titolo: "abuso di bug", testo: "se trovi un bug (duplicazioni di ball, coin, blockcoin, blockshell, ricompense...) segnalalo con un ticket: usarlo e' vietato."}
+  - {code: "2.5", tipo: BAN, tempo: 3d, titolo: "farm afk vietata", testo: "non lasciare il personaggio a farmare blocchi, colpi o tempo di gioco in afk con trucchi."}
+  - {code: "2.6", tipo: BAN, tempo: 3d, titolo: "boosting", testo: "vietati accordi tra player per gonfiare ricompense, statistiche o battlepass."}
+  - {code: "2.7", tipo: BAN, tempo: permanente, titolo: "account secondari", testo: "vietato usare altri account per aggirare limiti, sanzioni o per accumulare risorse."}
+  - {code: "2.8", tipo: BAN, tempo: blacklist, titolo: "aggiramento del ban", testo: "rientrare da bannato con un altro account o con un altro ip porta alla blacklist."}
+  - {code: "3.1", tipo: BAN, tempo: 7d, titolo: "truffe tra player", testo: "vietato truffare altri player negli scambi di coin, blockcoin o oggetti."}
+  - {code: "3.2", tipo: BAN, tempo: permanente, titolo: "compravendita con soldi veri", testo: "vietato vendere o comprare account, coin o oggetti del server con soldi reali fuori dallo store ufficiale."}
+  - {code: "3.3", tipo: BAN, tempo: 3d, titolo: "passaggio di risorse per aggirare sanzioni", testo: "vietato passare risorse a un altro account per salvarle da reset o sanzioni."}
+  - {code: "4.1", tipo: WARN, tempo: "", titolo: "ticket falsi o spam", testo: "non aprire ticket inutili, falsi o lo stesso ticket piu' volte."}
+  - {code: "4.2", tipo: WARN, tempo: "", titolo: "segnalazioni false", testo: "non segnalare player innocenti per fargli prendere una sanzione."}
+  - {code: "4.3", tipo: MUTE, tempo: 1h, titolo: "mancanza di rispetto allo staff", testo: "rispetta lo staff; se non sei d'accordo con una decisione apri un ticket."}
+  - {code: "4.4", tipo: BAN, tempo: 3d, titolo: "fingersi staff", testo: "vietato fingersi membro dello staff o chiedere password e dati agli altri a nome dello staff."}
+  - {code: "5.1", tipo: WARN, tempo: "", titolo: "nome o skin inappropriati", testo: "nome, skin e cape non devono essere offensivi o volgari: se richiesto vanno cambiati."}
+  - {code: "5.2", tipo: REGOLAMENTO, tempo: "", titolo: "responsabilita' dell'account", testo: "sei responsabile di tutto quello che succede col tuo account, anche se lo usa qualcun altro."}
+  - {code: "5.3", tipo: REGOLAMENTO, tempo: "", titolo: "decisioni dello staff", testo: "lo staff puo' sanzionare comportamenti dannosi anche se non sono scritti qui. per contestare una sanzione apri un ticket."}

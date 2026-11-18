@@ -125,6 +125,25 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         return s == null ? List.of() : new ArrayList<>(s.getKeys(false));
     }
 
+    /** /adminmania rules importa | staffrules importa: aggiunge il regolamento di default (solo codici mancanti). */
+    private boolean importRules(CommandSender sender, Player rp, Rules rules, String what) {
+        String role = plugin.getStaffRoles() == null ? null : plugin.getStaffRoles().roleOf(rp.getUniqueId());
+        boolean ok = rp.isOp() || (role != null && StaffRoles.SCALE.indexOf(role) >= StaffRoles.SCALE.indexOf("admin"));
+        if (!ok) {
+            deny(sender, "solo gli admin possono importare il regolamento");
+            return true;
+        }
+        int[] r = rules.importDefaults(rp);
+        if (r[2] < 0) {
+            sender.sendMessage("§cregolamento di default non trovato nel plugin");
+            return true;
+        }
+        sender.sendMessage("§a" + what + ": aggiunte " + r[0] + " regole§7, gia' presenti " + r[1]
+                + (r[2] > 0 ? ", §cnon valide " + r[2] : ""));
+        log(sender, "importa regolamento " + what + " | aggiunte " + r[0]);
+        return true;
+    }
+
     /** Livello del ruolo piu' alto (1 = primo della lista, 0 = nessun ruolo). Console e OP sono all'ultimo. */
     int level(CommandSender sender) {
         List<String> roles = roleIds();
@@ -510,6 +529,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                 deny(sender, "il tuo ruolo (" + roleName(sender) + ") non può vedere le regole");
                 return true;
             }
+            if (args.length >= 2 && args[1].equalsIgnoreCase("importa")) {
+                return importRules(sender, rp, plugin.getRules(), "regolamento player");
+            }
             plugin.getRulesGui().open(rp);
             return true;
         }
@@ -527,6 +549,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             if (plugin.getStaffRulesGui() == null) {
                 sender.sendMessage("le regole staff non sono disponibili");
                 return true;
+            }
+            if (args.length >= 2 && args[1].equalsIgnoreCase("importa")) {
+                return importRules(sender, rp, plugin.getStaffRules(), "regolamento staff");
             }
             plugin.getStaffRulesGui().open(rp);
             return true;
