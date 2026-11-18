@@ -324,6 +324,15 @@ public final class UserProfilePowers implements Listener {
      */
     public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
                             Runnable onYes, Runnable onNo) {
+        confirmOver(staff, text, drawDimmedBackground, onYes, onNo, null);
+    }
+
+    /**
+     * Come sopra, ma top (se non null) disegna a colori pieni, sopra il pannello, al posto del titolo "conferma" nella barra
+     * in alto (cursore gia' spostato di 7 px come per topTitle). Es. TaskGui: il testo scritto nella barra dell'incudine.
+     */
+    public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
+                            Runnable onYes, Runnable onNo, Consumer<GuiTitle> top) {
         Holder h = new Holder();
         h.kind = "confirm";
         h.image = IMG_EMPTY;
@@ -335,7 +344,11 @@ public final class UserProfilePowers implements Listener {
         g.atComponent(0, MinesGui.tint(content.build(), null), content.cursor());
         g.at(-15, "&f" + '\uE207', MinesGui.F_MINES, 186);
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro (convenzione dei ticket)
-        topTitle(plugin, g, "conferma");
+        if (top == null) {
+            topTitle(plugin, g, "conferma");
+        } else {
+            top.accept(g);
+        }
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         List<String> yes = new ArrayList<>();
         yes.add("&7" + (text == null ? "" : text));

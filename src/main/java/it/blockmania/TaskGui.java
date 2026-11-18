@@ -99,6 +99,19 @@ public final class TaskGui implements Listener {
     private static final int L_PREV = 38;
     private static final int L_NEXT = 42;
 
+    // ---------- sfondo incudine del popup "continuare in chat?" (font task_anvil del pack) ----------
+    /**
+     * Stessa immagine dell'incudine custom (custom-gui/anvil/anvil_vanilla.png, U+3E08 nel font default) ma con ascent 0
+     * invece di 28: la chest da 6 righe (alta 222) a schermo parte 28 px piu' in alto dell'incudine (166), quindi l'immagine
+     * va 28 px piu' in basso. In x non serve lo spostamento tickets.anvil-shift (quello compensa il titolo dell'incudine a x 60).
+     */
+    private static final String ANVIL_IMAGE = "\ue190";
+    private static final String ANVIL_FONT = "minecraft:task_anvil";
+    private static final int ANVIL_REAL = 186;   // ultima colonna opaca 184 + 2
+    /** Testo nella barra grigia in alto dell'incudine (interno x32..157, y9..19 + 28): set F500/F600 di tiny3 abbassato di 2 px. */
+    private static final int ANVIL_BAR_CX = 95;
+    private static final int ANVIL_BAR_MAX = 118;
+
     private static final ZoneId ROME = ZoneId.of("Europe/Rome");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ROME);
 
@@ -396,7 +409,9 @@ public final class TaskGui implements Listener {
 
     /** Limite dell'incudine raggiunto: conferma (sfondo task) per continuare in chat; annulla = di nuovo l'incudine col testo. */
     private void askChat(Player p, String written) {
-        plugin.getProfileUi().confirmOver(p, "L'incudine e' piena (50 caratteri). Vuoi continuare a scrivere la task in chat?", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "L'incudine e' piena (50 caratteri). Vuoi continuare a scrivere la task in chat?", g -> {
+            g.at(-15, "&f" + ANVIL_IMAGE, ANVIL_FONT, ANVIL_REAL);
+        }, () -> {
             p.closeInventory();
             chatting.put(p.getUniqueId(), Boolean.TRUE);
             Component msg = plugin.color("&6[task] &e&nclicca qui per riprendere il testo&7, poi continua a scrivere e premi invio; scrivi &fannulla&7 per uscire.")
@@ -405,7 +420,22 @@ public final class TaskGui implements Listener {
             p.sendMessage(msg);
         }, () -> {
             askSentence(p, written);
+        }, g -> {
+            anvilText(g, written);
         });
+    }
+
+    /** Testo gia' scritto, nella barra dell'incudine di sfondo (la parte finale se non ci sta, a colori pieni). */
+    private void anvilText(GuiTitle g, String raw) {
+        StringBuilder safe = new StringBuilder();
+        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        String text = safe.toString().replaceAll(" +", " ").trim();
+        while (tinyAdvance(text) > ANVIL_BAR_MAX && text.length() > 1) {
+            text = text.substring(1).trim();   // si vede la fine, cioe' dove si continua a scrivere
+        }
+        smallText(g, text, ANVIL_FONT, ANVIL_BAR_CX, ANVIL_BAR_MAX);
     }
 
     /** Frase completa (dall'incudine o dalla chat) -> TaskParser -> anteprima. */
