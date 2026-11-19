@@ -1,16 +1,11 @@
 package it.blockmania;
 
-import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -36,13 +31,15 @@ import java.util.function.IntConsumer;
 /**
  * GUI delle task staff v4 (/adminmania task). Una task e' una cartella di ORDINI scritti a frase (TaskParser), con la
  * MOTIVAZIONE. Nella cartella ogni ordine e' un blocco di slot uniti su una riga (barra del font task_row dietro):
- * [testo][prendi] per l'ordine semplice / custom, [testo][ramo 1]..[ramo N][non fare nulla] per il condizionale; se non
- * entra in 7 slot continua sulla riga sotto. Cliccando "prendi" o un ramo lo staffer PRENDE IN CARICO l'ordine
+ * [testo][prendi] per l'ordine semplice / custom, [testo][ramo 1]..[ramo N][non fare nulla] per il condizionale; gli
+ * ordini sono separati da uno slot vuoto, uno piu' lungo di 7 slot continua sulla riga sotto. Il "+" verde aggiunge ordini
+ * (nell'anteprima e, per creatore/admin+, nelle task salvate: StaffTasks.addOrders). Cliccando "prendi" o un ramo lo staffer PRENDE IN CARICO l'ordine
  * (StaffTasks.take: bossbar con timer 5 minuti, le azioni le fa a mano con userprofile / adminmania).
  * Tutti gli item usano le icone del pack (blockmania:task_*, ItemMeta.setItemModel); nomi e lore passano da LoreWrap.
  * Popup: si chiudono solo con conferma/annulla (gli altri click non fanno niente). Q sull'item di una task nella lista =
- * elimina (solo creatore o admin+). Sfondo dei popup = schermata task scurita; il popup "continuare in chat?" ha come
- * sfondo l'incudine (font task_anvil del pack).
+ * elimina (solo creatore o admin+). Sfondo dei popup = schermata task scurita. Il popup "continuare in chat?" quando
+ * l'incudine e' piena e' quello generico di UserProfilePowers.askText. Niente istruzioni in chat: i suggerimenti sono
+ * nella GUI (nome/lore dell'incudine e degli item).
  */
 public final class TaskGui implements Listener {
 
@@ -104,18 +101,6 @@ public final class TaskGui implements Listener {
     private static final int F_LEFT = 37;
     private static final int F_RIGHT = 43;
 
-    // ---------- sfondo incudine del popup "continuare in chat?" (font task_anvil del pack) ----------
-    /**
-     * Stessa immagine dell'incudine custom (custom-gui/anvil/anvil_vanilla.png) con ascent 0 invece di 28: la chest da 6
-     * righe (222) a schermo parte 28 px piu' in alto dell'incudine (166). Senza il pack nuovo il glifo manca: il quadratino
-     * avanza di pochi px invece di 186 e tutto il resto (pannello) finisce spostato a sinistra.
-     */
-    private static final String ANVIL_IMAGE = "";
-    private static final String ANVIL_FONT = "minecraft:task_anvil";
-    private static final int ANVIL_REAL = 186;
-    private static final int ANVIL_BAR_CX = 95;
-    private static final int ANVIL_BAR_MAX = 118;
-
     // ---------- barre delle righe unite nella cartella (font task_row, Sara) ----------
     private static final String ROW_FONT = "minecraft:task_row";
     private static final char ROW_BASE = '\ue200';
@@ -125,6 +110,7 @@ public final class TaskGui implements Listener {
 
     private static final ZoneId ROME = ZoneId.of("Europe/Rome");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ROME);
+    private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ROME);
 
     // ---------- tipi interni ----------
 
@@ -164,17 +150,16 @@ public final class TaskGui implements Listener {
 
     /** Task scritta (CREA), in memoria finche' non si salva o si annulla. */
     private static final class Draft {
-        String text = "";
         String reason = "";
+        /** Id della task salvata a cui si aggiungono gli ordini (null = task nuova). */
+        String addTo;
+        /** Ordine da riscrivere con la prossima frase (-1 = la frase aggiunge ordini in coda). */
+        int replace = -1;
         final List<TaskParser.ParsedOrder> orders = new ArrayList<>();
-    }
-
-    private record ChatWait(Consumer<String> onText, Runnable onCancel) {
     }
 
     private final BlockMania plugin;
     private final Map<UUID, Draft> drafts = new HashMap<>();
-    private final Map<UUID, ChatWait> chatting = new java.util.concurrent.ConcurrentHashMap<>();
 
     public TaskGui(BlockMania plugin) {
         this.plugin = plugin;
@@ -290,11 +275,7 @@ public final class TaskGui implements Listener {
                 "&7Nella cartella clicca &fprendi&7 o il &framo&7 giusto per prendere in carico l'ordine:",
                 "&7hai 5 minuti (bossbar) per fare le azioni a mano con lo userprofile o /adminmania.",
                 "&7Un solo incarico alla volta.",
-                "&7Q su una task nella lista = elimina (chi l'ha creata o gli admin).",
-                "",
-                "&eclicca per ricevere l'aiuto in chat")), () -> {
-            help(p);
-        });
+                "&7Q su una task nella lista = elimina (chi l'ha creata o gli admin).")), null);
         put(h, S_LIST, pane("&elista task", List.of(
                 "&7task aperte: &f" + open.size(),
                 "&7create da te: &f" + mine,
@@ -308,7 +289,7 @@ public final class TaskGui implements Listener {
             put(h, S_CREATE, pane("&8crea task", List.of("&7Le task le creano gli helper in su.", "", "&cnon puoi creare task")), null);
         } else if (d != null) {
             put(h, S_CREATE, pane("&acrea task", List.of(
-                    "&7Anteprima aperta: &f" + d.orders.size() + " ordini",
+                    "&7Anteprima aperta: &f" + d.orders.size() + " ordini" + (d.addTo == null ? "" : " &8(per la task #" + d.addTo + ")"),
                     "",
                     "&eclick sinistro: riprendi l'anteprima",
                     "&eclick destro: scrivi una nuova task (l'anteprima si perde)")), () -> {
@@ -359,16 +340,9 @@ public final class TaskGui implements Listener {
         };
     }
 
-    private void help(Player p) {
-        GuiMsg.send(plugin, p, "&6task staff &8- &7come funzionano");
-        GuiMsg.send(plugin, p, "&7crea: scrivi una frase (anche con \"se ... se invece ...\"), poi la motivazione, controlla l'anteprima e salva.");
-        GuiMsg.send(plugin, p, "&7cartella: clicca prendi (o il ramo giusto) per prendere in carico l'ordine: 5 minuti, bossbar con cosa fare.");
-        GuiMsg.send(plugin, p, "&7le azioni le fai a mano (userprofile, /adminmania): il plugin le spunta da solo.");
-        GuiMsg.send(plugin, p, "&7Q su una task nella lista = elimina (chi l'ha creata o gli admin). cestino (admin): ripristina.");
-    }
-
     // ------------------------------------------------------------------
-    //  CREA: frase -> motivazione -> anteprima -> salva
+    //  CREA: frase -> motivazione -> anteprima ("+" = altre frasi) -> salva
+    //  (i suggerimenti stanno solo nella GUI: nome/lore dell'incudine; il popup "continua in chat" lo fa askText)
     // ------------------------------------------------------------------
 
     private void startCreate(Player p) {
@@ -379,6 +353,26 @@ public final class TaskGui implements Listener {
             deny(p, "non puoi creare task (servono helper o un grado piu' alto).");
             return;
         }
+        reloadWords();
+        Draft d = new Draft();
+        drafts.put(p.getUniqueId(), d);
+        askSentence(p, "");
+    }
+
+    /** "+" nella cartella di una task salvata: nuova anteprima che aggiunge ordini a quella task. */
+    private void startAdd(Player p, StaffTasks.Task k) {
+        if (!guard(p)) {
+            return;
+        }
+        reloadWords();
+        Draft d = new Draft();
+        d.addTo = k.id();
+        d.reason = k.reason() == null ? "" : k.reason();
+        drafts.put(p.getUniqueId(), d);
+        askSentence(p, "");
+    }
+
+    private void reloadWords() {
         TaskParser tp = parser();
         if (tp != null) {
             try {
@@ -387,79 +381,55 @@ public final class TaskGui implements Listener {
                 plugin.getLogger().warning("TaskGui: task-words.yml non valido: " + ex);
             }
         }
-        askSentence(p, "");
     }
 
+    /** Incudine per la frase (frase lunga: il popup "continua in chat" e' quello generico di askText). */
     private void askSentence(Player p, String initial) {
         if (parser() == null) {
             deny(p, "il lettore delle frasi non e' disponibile.");
             open(p);
             return;
         }
-        String init = initial == null || initial.length() > 50 ? "" : initial;
-        GuiMsg.send(plugin, p, "&7scrivi la task, es. &f\"dai 20 palle standard a mario e toglile a luigi\"&7. frase lunga? continua in chat.");
-        plugin.getProfileUi().askText(p, "scrivi la task (frase lunga: continua in chat)", "SCRIVI LA TASK", init, text -> {
+        String init = initial == null ? "" : initial;
+        Consumer<String> onOk = text -> {
             handleSentence(p, text);
-        }, () -> {
+        };
+        Runnable onCancel = () -> {
             cancelSentence(p);
-        }, full -> {
-            askChat(p, full, "la task", t -> {
-                handleSentence(p, t);
-            }, () -> {
-                askSentence(p, full);
-            }, () -> {
-                cancelSentence(p);
-            });
-        });
+        };
+        if (init.length() >= 50) {
+            plugin.getProfileUi().askTextInChat(p, "scrivi l'ordine", init, onOk, onCancel);   // non sta nell'incudine
+        } else {
+            plugin.getProfileUi().askText(p, "scrivi l'ordine, es. dai 20 palle standard a mario", "SCRIVI L'ORDINE", init, onOk, onCancel);
+        }
     }
 
+    /** Annulla la frase: torna all'anteprima se ha ordini, altrimenti (task nuova vuota) alla schermata task. */
     private void cancelSentence(Player p) {
-        if (drafts.containsKey(p.getUniqueId())) {
+        Draft d = drafts.get(p.getUniqueId());
+        if (d != null) {
+            d.replace = -1;
+        }
+        if (d != null && !d.orders.isEmpty()) {
             openPreview(p, 0);
         } else {
+            drafts.remove(p.getUniqueId());
             open(p);
         }
     }
 
-    /**
-     * Limite dell'incudine raggiunto: conferma (sfondo = incudine) per continuare in chat; annulla = di nuovo l'incudine
-     * col testo (backToAnvil). In chat: il testo finito va a onText, "annulla" a onCancel.
-     */
-    private void askChat(Player p, String written, String what, Consumer<String> onText, Runnable backToAnvil, Runnable onCancel) {
-        plugin.getProfileUi().confirmOver(p, "L'incudine e' piena (50 caratteri). Vuoi continuare a scrivere " + what + " in chat?", g -> {
-            g.at(-15, "&f" + ANVIL_IMAGE, ANVIL_FONT, ANVIL_REAL);
-        }, () -> {
-            p.closeInventory();
-            chatting.put(p.getUniqueId(), new ChatWait(onText, onCancel));
-            Component msg = plugin.color("&6[task] &e&nclicca qui per riprendere il testo&7, poi continua a scrivere e premi invio; scrivi &fannulla&7 per uscire.")
-                    .clickEvent(ClickEvent.suggestCommand(written))
-                    .hoverEvent(HoverEvent.showText(plugin.color("&7rimette nella chat il testo scritto")));
-            p.sendMessage(msg);
-        }, backToAnvil, g -> {
-            anvilText(g, written);
-        });
-    }
-
-    /** Testo gia' scritto, nella barra dell'incudine di sfondo (la parte finale se non ci sta, a colori pieni). */
-    private void anvilText(GuiTitle g, String raw) {
-        StringBuilder safe = new StringBuilder();
-        for (char ch : (raw == null ? "" : raw).toCharArray()) {
-            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
-        }
-        String text = safe.toString().replaceAll(" +", " ").trim();
-        while (tinyAdvance(text) > ANVIL_BAR_MAX && text.length() > 1) {
-            text = text.substring(1).trim();
-        }
-        smallText(g, text, ANVIL_FONT, ANVIL_BAR_CX, ANVIL_BAR_MAX);
-    }
-
-    /** Frase completa (dall'incudine o dalla chat) -> TaskParser -> motivazione. */
+    /** Frase completa (dall'incudine o dalla chat) -> TaskParser -> ordini aggiunti (o sostituiti) nella bozza. */
     private void handleSentence(Player p, String text) {
         if (!guard(p)) {
             return;
         }
+        Draft d = drafts.get(p.getUniqueId());
+        if (d == null) {
+            d = new Draft();
+            drafts.put(p.getUniqueId(), d);
+        }
         if (text == null || text.isBlank()) {
-            deny(p, "scrivi cosa deve fare la task.");
+            deny(p, "scrivi cosa deve fare l'ordine.");
             askSentence(p, "");
             return;
         }
@@ -475,36 +445,34 @@ public final class TaskGui implements Listener {
             askSentence(p, text.trim());
             return;
         }
-        Draft old = drafts.get(p.getUniqueId());
-        Draft d = new Draft();
-        d.text = text.trim();
-        d.reason = old == null ? "" : old.reason;
-        d.orders.addAll(parsed);
-        drafts.put(p.getUniqueId(), d);
-        if (d.reason.isBlank()) {
+        if (d.replace >= 0 && d.replace < d.orders.size()) {
+            d.orders.remove(d.replace);
+            d.orders.addAll(d.replace, parsed);
+        } else {
+            d.orders.addAll(parsed);
+        }
+        d.replace = -1;
+        if (d.addTo == null && d.reason.isBlank()) {
             askMotivation(p, "");
         } else {
-            openPreview(p, 0);   // riscrivi: la motivazione di prima resta (si cambia dall'anteprima)
+            openPreview(p, Integer.MAX_VALUE);   // ultima pagina: si vede l'ordine appena scritto
         }
     }
 
-    /** Motivazione della task (obbligatoria): incudine, lunga -> stesso passaggio alla chat. Annulla = anteprima. */
+    /** Motivazione della task (obbligatoria; lunga -> popup "continua in chat" di askText). Annulla = anteprima. */
     private void askMotivation(Player p, String initial) {
-        String init = initial == null || initial.length() > 50 ? "" : initial;
-        GuiMsg.send(plugin, p, "&7scrivi la motivazione della task (perche' va fatta). lunga? continua in chat.");
-        plugin.getProfileUi().askText(p, "motivazione della task", "MOTIVAZIONE", init, text -> {
+        String init = initial == null ? "" : initial;
+        Consumer<String> onOk = text -> {
             handleMotivation(p, text);
-        }, () -> {
+        };
+        Runnable onCancel = () -> {
             openPreview(p, 0);
-        }, full -> {
-            askChat(p, full, "la motivazione", t -> {
-                handleMotivation(p, t);
-            }, () -> {
-                askMotivation(p, full);
-            }, () -> {
-                openPreview(p, 0);
-            });
-        });
+        };
+        if (init.length() >= 50) {
+            plugin.getProfileUi().askTextInChat(p, "motivazione", init, onOk, onCancel);
+        } else {
+            plugin.getProfileUi().askText(p, "motivazione della task (perche' va fatta)", "MOTIVAZIONE", init, onOk, onCancel);
+        }
     }
 
     private void handleMotivation(Player p, String text) {
@@ -556,10 +524,17 @@ public final class TaskGui implements Listener {
                 tl.add("&c" + why);
             }
             tl.add("");
-            tl.add("&eclick destro: togli dall'anteprima");
+            tl.add("&eclick sinistro: riscrivi questo ordine");
+            tl.add("&eclick destro: toglilo");
             String color = u ? "&e" : o.type() == StaffTasks.OrderType.CUSTOM ? "&d" : "&a";
             cells.add(new Row(icon(u ? "task_dubbio" : o.type() == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo",
-                    color + "ordine " + (oi + 1), tl), null, () -> {
+                    color + "ordine " + (oi + 1), tl), () -> {
+                Draft cur = drafts.get(p.getUniqueId());
+                if (cur != null && orderIdx < cur.orders.size()) {
+                    cur.replace = orderIdx;
+                    askSentence(p, cur.orders.get(orderIdx).text());
+                }
+            }, () -> {
                 Draft cur = drafts.get(p.getUniqueId());
                 if (cur != null && orderIdx < cur.orders.size()) {
                     cur.orders.remove(orderIdx);
@@ -583,43 +558,37 @@ public final class TaskGui implements Listener {
         boolean noReason = d.reason == null || d.reason.isBlank();
         List<String> btnLore = new ArrayList<>();
         btnLore.add("&7ordini: &f" + d.orders.size() + (unsure > 0 ? " &8(&e" + unsure + " da chiarire&8)" : ""));
-        btnLore.add("&7motivazione: &f" + (noReason ? "&cmanca" : clean(d.reason)));
         btnLore.add("");
-        btnLore.add(d.orders.isEmpty() || unsure > 0 || noReason ? "&8click sinistro: salva (prima completa)" : "&aclick sinistro: salva la task");
-        btnLore.add("&eclick destro: riscrivi la frase");
+        btnLore.add("&eclicca per scrivere un altro ordine");
+        Runnable add = () -> {
+            d.replace = -1;
+            askSentence(p, "");
+        };
         int unsureCount = unsure;
         Runnable save = () -> {
             if (d.orders.isEmpty()) {
-                deny(p, "non ci sono ordini da salvare: riscrivi la frase.");
+                deny(p, "non ci sono ordini da salvare.");
             } else if (unsureCount > 0) {
                 deny(p, "ci sono " + unsureCount + " ordini da chiarire (gialli): clicca e scegli cosa intendevi.");
-            } else if (d.reason == null || d.reason.isBlank()) {
+            } else if (d.addTo == null && (d.reason == null || d.reason.isBlank())) {
                 deny(p, "manca la motivazione.");
                 askMotivation(p, "");
             } else {
                 confirmSave(p);
             }
         };
-        Runnable rewrite = () -> {
-            if (d.text.length() >= 50) {
-                askChat(p, d.text, "la task", t -> {
-                    handleSentence(p, t);
-                }, () -> {
-                    openPreview(p, 0);
-                }, () -> {
-                    openPreview(p, 0);
-                });
-            } else {
-                askSentence(p, d.text);
-            }
-        };
         Map<Integer, Row> extra = new HashMap<>();
-        extra.put(F_LEFT, new Row(icon("task_motivazione", "&fmotivazione", List.of(
-                "&7" + (noReason ? "&cmanca" : clean(d.reason)), "", "&eclicca per cambiarla")), () -> {
-            askMotivation(p, d.reason);
-        }, null));
-        extra.put(F_RIGHT, new Row(icon("task_riscrivi", "&friscrivi", List.of(
-                "&7Riapre la scrittura con la frase di prima.", "", "&eclicca per riscrivere")), rewrite, null));
+        if (d.addTo == null) {
+            extra.put(F_LEFT, new Row(icon("task_motivazione", "&fmotivazione", List.of(
+                    noReason ? "&cmanca" : "&f" + clean(d.reason), "", "&eclicca per cambiarla")), () -> {
+                askMotivation(p, d.reason);
+            }, null));
+        }
+        boolean ready = !d.orders.isEmpty() && unsure == 0 && (d.addTo != null || !noReason);
+        extra.put(F_RIGHT, new Row(icon("task_salva", ready ? "&asalva" : "&8salva", List.of(
+                d.addTo == null ? "&7Salva la task nuova." : "&7Aggiunge gli ordini alla task #" + d.addTo + ".",
+                ready ? "" : "&7Prima chiarisci le parti gialle" + (d.addTo == null ? " e scrivi la motivazione." : "."),
+                ready ? "&eclicca per salvare" : "")), save, null));
         folder(p, "anteprima task", "anteprima", fp, pg, pages.size(), pgn -> {
             openPreview(p, pgn);
         }, () -> {
@@ -627,7 +596,7 @@ public final class TaskGui implements Listener {
             GuiMsg.send(plugin, p, "&7task annullata.");
             open(p);
         }, "&cannulla", List.of("&7Butta l'anteprima e torna alla schermata task."),
-                pane("&asalva task", btnLore), save, rewrite, extra);
+                pane("&a+ altro ordine", btnLore), add, null, extra);
     }
 
     private String invalidReason(Player p, TaskParser.ParsedOrder o) {
@@ -777,6 +746,28 @@ public final class TaskGui implements Listener {
             }
             orders.add(ord);
         }
+        if (d.addTo != null) {
+            String id = d.addTo;
+            plugin.getProfileUi().confirmOver(p, "Aggiungere " + orders.size() + " ordini alla task #" + id + "?", bg(), () -> {
+                if (!guard(p)) {
+                    return;
+                }
+                String err = tasks().addOrders(p, id, orders);
+                if (err != null) {
+                    deny(p, err);
+                    openPreview(p, 0);
+                    return;
+                }
+                drafts.remove(p.getUniqueId());
+                GuiMsg.send(plugin, p, "&7aggiunti " + orders.size() + " ordini alla task &f#" + id + "&7.");
+                viewTask(p, id, Integer.MAX_VALUE, () -> {
+                    openList(p, 0, 0);
+                });
+            }, () -> {
+                openPreview(p, 0);
+            });
+            return;
+        }
         plugin.getProfileUi().confirmOver(p, "Salvare la task con " + orders.size() + " ordini?", bg(), () -> {
             if (!guard(p)) {
                 return;
@@ -844,12 +835,11 @@ public final class TaskGui implements Listener {
             StaffTasks.Counts c = StaffTasks.counts(k);
             boolean del = t.canDelete(p, k);
             List<String> lore = folderLore(k, c);
-            lore.add("&7ordini che puoi prendere: &f" + can);
-            lore.add("");
-            lore.add("&eclicca per aprire la cartella");
-            if (del) {
-                lore.add("&cQ: elimina la task");
+            if (can > 0) {
+                lore.add("&7puoi prendere: &f" + can + (can == 1 ? " ordine" : " ordini"));
             }
+            lore.add("");
+            lore.add("&eclicca per aprire" + (del ? "  &8|  &cQ per eliminare" : ""));
             String id = k.id();
             Runnable back = () -> {
                 openList(p, fi, page);
@@ -867,22 +857,51 @@ public final class TaskGui implements Listener {
         });
     }
 
+    /** Nome della cartella: "Task #4" (i dettagli sono nella lore). */
     private String folderName(StaffTasks.Task k) {
-        return "&ftask &e#" + k.id() + " &7- &f" + date(k.createdAt());
+        return "&f&lTask #" + k.id();
     }
 
-    /** Lore della cartella: id, data, motivazione, conteggi (mai nomi di player). */
+    /**
+     * Lore della cartella (uguale in lista, cestino e pulsante della cartella), es.
+     * "creata da DoppiaX il 19/11 14:52" / "motivo: ..." / "" / "ordinarie: 2 (1/2 completate)" / "custom: ..." / "stato: da fare".
+     * Mai nomi dei player degli ordini (solo chi l'ha creata).
+     */
     private List<String> folderLore(StaffTasks.Task k, StaffTasks.Counts c) {
         List<String> lore = new ArrayList<>();
-        lore.add("&7id: &f#" + k.id());
-        lore.add("&7creata il: &f" + date(k.createdAt()));
+        lore.add("&7creata da &f" + clean(k.createdByName()) + " &7il &f" + SHORT.format(Instant.ofEpochMilli(k.createdAt())));
         if (k.reason() != null && !k.reason().isBlank()) {
-            lore.add("&7motivazione: &f" + clean(k.reason()));
+            lore.add("&7motivo: &f" + clean(k.reason()));
         }
-        lore.add("&7ordini: &f" + c.total() + " &8(&f" + c.simple() + "&8 semplici, &f" + c.conditional() + "&8 con condizioni, &d"
-                + c.custom() + "&8 custom)");
-        lore.add("&7completati: &a" + c.done() + "&8/&f" + c.total());
+        lore.add("");
+        int ord = c.simple() + c.conditional();
+        int doneOrd = c.doneSimple() + c.doneConditional();
+        if (ord > 0) {
+            lore.add("&7ordinarie: &f" + ord + " &8(&a" + doneOrd + "&8/&f" + ord + " &7completate&8)");
+        }
+        if (c.custom() > 0) {
+            lore.add("&7custom: &f" + c.custom() + " &8(&a" + c.doneCustom() + "&8/&f" + c.custom() + " &7completate&8)");
+        }
+        if (c.total() == 0) {
+            lore.add("&7nessun ordine");
+        }
+        lore.add("&7stato: " + taskState(k, c));
         return lore;
+    }
+
+    private String taskState(StaffTasks.Task k, StaffTasks.Counts c) {
+        if (k.status() == StaffTasks.Status.ELIMINATA) {
+            return "&celiminata";
+        }
+        if (c.total() > 0 && c.done() >= c.total()) {
+            return "&acompletata";
+        }
+        for (StaffTasks.Order o : safe(k.orders())) {
+            if (o.status() == StaffTasks.Status.APERTA && tasks().chargeOn(k.id(), o.id()) != null) {
+                return "&6in corso";
+            }
+        }
+        return c.done() > 0 ? "&ein parte fatta" : "&eda fare";
     }
 
     /** Cartella di una task salvata: ogni ordine e' un blocco di celle unite. */
@@ -907,19 +926,23 @@ public final class TaskGui implements Listener {
         }
         List<FolderPage> pages = layout(blocks);
         int pg = Math.max(0, Math.min(page, pages.size() - 1));
+        // creatore o admin+ (come canDelete): "+" = aggiungi ordini, click destro / Q = elimina
         boolean del = k.status() != StaffTasks.Status.ELIMINATA && t.canDelete(p, k);
         List<String> btnLore = folderLore(k, StaffTasks.counts(k));
-        btnLore.add("&7creata da: &f" + clean(k.createdByName()));
         if (del) {
             btnLore.add("");
-            btnLore.add("&cclick destro o Q: elimina la task");
+            btnLore.add("&eclicca per aggiungere un ordine");
+            btnLore.add("&cclick destro o Q per eliminare la task");
         }
         Runnable delete = del ? () -> {
             confirmDelete(p, taskId, back, self);
         } : null;
+        Runnable add = del ? () -> {
+            startAdd(p, k);
+        } : null;
         Holder h = folder(p, "task " + k.id(), "task " + k.id(), pages.get(pg), pg, pages.size(), pgn -> {
             viewTask(p, taskId, pgn, back);
-        }, back, "&cindietro", List.of(), pane("&fcartella &e#" + k.id(), btnLore), null, delete, Map.of());
+        }, back, "&cindietro", List.of(), pane(del ? "&a+ aggiungi ordine" : folderName(k), btnLore), add, delete, Map.of());
         if (h != null && delete != null) {
             for (int s : L_BTN) {
                 h.dropActions.put(s, delete);
@@ -1137,7 +1160,7 @@ public final class TaskGui implements Listener {
             Runnable back = () -> {
                 openTrash(p, page);
             };
-            rows.add(new Row(icon("task_elimina", "&ctask #" + k.id() + " &7- &f" + date(k.createdAt()), lore), () -> {
+            rows.add(new Row(icon("task_elimina", "&c&lTask #" + k.id(), lore), () -> {
                 plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bg(), () -> {
                     if (!guard(p)) {
                         return;
@@ -1167,6 +1190,7 @@ public final class TaskGui implements Listener {
     private static final List<Filter> LOG_FILTERS = List.of(
             new Filter("Tutto", ""),
             new Filter("Create", "CREATA"),
+            new Filter("Aggiunte", "AGGIUNTI"),
             new Filter("Prese", "PRESA"),
             new Filter("Azioni", "AZIONE"),
             new Filter("Completate", "COMPLETATA"),
@@ -1191,6 +1215,7 @@ public final class TaskGui implements Listener {
             String color;
             switch (ev) {
                 case "CREATA" -> { iconName = "task_cartella"; color = "&e"; }
+                case "AGGIUNTI" -> { iconName = "task_testo"; color = "&e"; }
                 case "PRESA" -> { iconName = "task_in_carico"; color = "&6"; }
                 case "AZIONE" -> { iconName = "task_prendi"; color = "&b"; }
                 case "COMPLETATA" -> { iconName = "task_fatto"; color = "&a"; }
@@ -1269,37 +1294,58 @@ public final class TaskGui implements Listener {
     // ------------------------------------------------------------------
 
     /**
-     * Mette i blocchi (celle di un ordine) nella griglia 7x3: ogni ordine parte da una riga nuova, se e' piu' lungo di 7 celle
-     * continua sulla riga sotto; se non entra nelle righe rimaste della pagina passa alla pagina dopo.
+     * Mette i blocchi (celle di un ordine) nella griglia 7x3 uno dopo l'altro, separati da UNO slot vuoto. Un ordine che
+     * entra in una riga non viene spezzato (se non ci sta nel resto della riga va a capo); uno piu' lungo di 7 celle parte da
+     * una riga nuova e continua sotto (barra aperta ai bordi). Se le righe finiscono si passa alla pagina dopo.
      */
     private static List<FolderPage> layout(List<List<Row>> blocks) {
         List<FolderPage> pages = new ArrayList<>();
         Map<Integer, Row> cells = new HashMap<>();
         List<Span> spans = new ArrayList<>();
         int row = 0;
+        int col = 0;
         for (List<Row> b : blocks) {
-            int need = Math.max(1, (b.size() + GRID_COLS - 1) / GRID_COLS);
-            if (row > 0 && row + Math.min(need, GRID_ROWS) > GRID_ROWS) {
+            int n = b.size();
+            if (n == 0) {
+                continue;
+            }
+            int need = (n + GRID_COLS - 1) / GRID_COLS;
+            if (col > 0 && (n > GRID_COLS || col + n > GRID_COLS)) {
+                row++;   // non sta nel resto della riga (o va spezzato): riga nuova
+                col = 0;
+            }
+            if (row >= GRID_ROWS || (row > 0 && row + Math.min(need, GRID_ROWS) > GRID_ROWS)) {
                 pages.add(new FolderPage(cells, spans));
                 cells = new HashMap<>();
                 spans = new ArrayList<>();
                 row = 0;
+                col = 0;
             }
             int i = 0;
-            while (i < b.size()) {
+            while (i < n) {
                 if (row >= GRID_ROWS) {   // ordine piu' lungo di una pagina intera: continua sulla pagina dopo
                     pages.add(new FolderPage(cells, spans));
                     cells = new HashMap<>();
                     spans = new ArrayList<>();
                     row = 0;
+                    col = 0;
                 }
-                int len = Math.min(GRID_COLS, b.size() - i);
+                int len = Math.min(GRID_COLS - col, n - i);
                 for (int c = 0; c < len; c++) {
-                    cells.put(10 + row * 9 + c, b.get(i + c));
+                    cells.put(10 + row * 9 + col + c, b.get(i + c));
                 }
-                spans.add(new Span(row, 0, len, i > 0, i + len < b.size()));
+                spans.add(new Span(row, col, len, i > 0, i + len < n));
                 i += len;
-                row++;
+                if (i < n) {
+                    row++;
+                    col = 0;
+                } else {
+                    col += len + 1;   // uno slot vuoto prima del prossimo ordine
+                    if (col >= GRID_COLS) {
+                        row++;
+                        col = 0;
+                    }
+                }
             }
         }
         pages.add(new FolderPage(cells, spans));
@@ -1653,29 +1699,5 @@ public final class TaskGui implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         drafts.remove(event.getPlayer().getUniqueId());
-        chatting.remove(event.getPlayer().getUniqueId());
-    }
-
-    /** Testo finito in chat dopo il limite dell'incudine (frase o motivazione); "annulla" esce. */
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void onChat(AsyncChatEvent event) {
-        Player p = event.getPlayer();
-        ChatWait wait = chatting.remove(p.getUniqueId());
-        if (wait == null) {
-            return;
-        }
-        event.setCancelled(true);
-        String msg = PlainTextComponentSerializer.plainText().serialize(event.message()).trim();
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            if (!p.isOnline()) {
-                return;
-            }
-            if (msg.equalsIgnoreCase("annulla")) {
-                GuiMsg.send(plugin, p, "&7scrittura annullata.");
-                wait.onCancel().run();
-                return;
-            }
-            wait.onText().accept(msg);
-        });
     }
 }

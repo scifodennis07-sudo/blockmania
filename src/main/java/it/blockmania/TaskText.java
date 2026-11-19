@@ -1364,6 +1364,7 @@ public final class TaskText {
             words.add(plain(m.group(1) != null ? m.group(1) : m.group(2)));
         }
         String orderPlayer = null;
+        String[] ctx = new String[2]; // {player della condizione, oggetto della condizione} per "non ce l'ha" & co.
         for (int k = 0; k < marks.size(); k++) {
             int bodyStart = marks.get(k)[1];
             int bodyEnd = k + 1 < marks.size() ? marks.get(k + 1)[0] : chunk.length();
@@ -1385,7 +1386,11 @@ public final class TaskText {
                 cut = nm.start();
             }
             String cond = body.substring(0, cut).trim().replaceAll("(?iu)[\\s,:;]*(allora|->|=>)?[\\s,:;]*$", "").trim();
-            b.condition = cond.isEmpty() ? (otherwise ? "altrimenti" : null) : (otherwise ? "altrimenti " + cond : cond);
+            boolean ifNot = words.get(k).equals("se no") || words.get(k).startsWith("senn");
+            String specific = specific(cond, ifNot, ctx, players);
+            b.condition = specific.isEmpty() ? (otherwise ? "altrimenti" : null)
+                    : (otherwise && !ifNot && !cond.isEmpty() ? "altrimenti " + specific : specific);
+            cond = specific;
             List<String> condPlayers = playersIn(cond, players);
             if (orderPlayer == null && !condPlayers.isEmpty()) {
                 orderPlayer = condPlayers.get(0);
@@ -1417,6 +1422,69 @@ public final class TaskText {
             last.condition = null;
         }
         return o;
+    }
+
+    private static final java.util.regex.Pattern HAS = java.util.regex.Pattern.compile(
+            "(?iu)\\b(?:ha|abbia|aveva|avesse|possiede|possieda)\\s+(?:(?:gia'|già|solo|soltanto|ancora|comprato|preso|"
+                    + "acquistato|ottenuto|raggiunto|sbloccato)\\s+)*(.+)$");
+
+    /**
+     * Condizione specifica (mai vaga): "non ce l'ha" -> "DoppiaX non ha la miniera 5", "ha solo la miniera 3" ->
+     * "DoppiaX ha solo la miniera 3", "ne ha gia' 3" -> "Lucas ha gia' 3 palle ghost", "se no" -> "DoppiaX non ha ...".
+     * ctx = {player, oggetto} dell'ultima condizione: si aggiorna qui.
+     */
+    String specific(String cond, boolean ifNot, String[] ctx, Collection<String> players) {
+        String c = cond == null ? "" : cond.replace('’', '\'').trim();
+        String low = plain(c).replaceAll("\\s+", " ");
+        List<String> ps = playersIn(c, players);
+        String subject = ps.isEmpty() ? ctx[0] : ps.get(0);
+        String object = ctx[1];
+        String out;
+        if (c.isEmpty()) {
+            out = ifNot && subject != null && object != null ? subject + " non ha " + object : "";
+        } else if (low.matches("(non )?(ce )?(l ?' ?|l |lo |la |li |le )(ha|abbia|aveva|possiede)( ancora| gia'| piu')?")) {
+            boolean neg = low.startsWith("non ");
+            out = subject != null && object != null ? subject + (neg ? " non ha " : " ha ") + object
+                    : subject != null ? subject + " " + c : c;
+        } else if (low.matches("(non )?ne (ha|abbia|aveva|possiede) .*") && subject != null) {
+            boolean neg = low.startsWith("non ");
+            String rest = c.replaceFirst("(?iu)^(non\\s+)?ne\\s+(ha|abbia|aveva|possiede)\\s+", "");
+            String noun = nounOf(object);
+            out = subject + (neg ? " non ha " : " ha ") + rest + (noun.isEmpty() ? "" : " " + noun);
+        } else if (ps.isEmpty() && subject != null) {
+            out = subject + " " + c;
+        } else {
+            out = c;
+        }
+        // contesto per la condizione dopo
+        if (!ps.isEmpty()) {
+            ctx[0] = ps.get(0);
+        }
+        java.util.regex.Matcher hm = HAS.matcher(c);
+        boolean pronoun = low.matches(".*\\b(ce l|l ?' ?(ha|abbia|aveva)|ne (ha|abbia|aveva))\\b.*");
+        if (hm.find() && !pronoun) {
+            String obj = hm.group(1).trim();
+            if (!obj.isEmpty() && !plain(obj).matches("(gia'|già|ancora|solo|piu'|niente|nulla)")) {
+                ctx[1] = obj;
+            }
+        }
+        return out.trim();
+    }
+
+    /** "meno di 3 palle ghost" -> "palle ghost" ; "la miniera 5" -> "miniera" ; "piu' di 1000 coin" -> "coin". */
+    private static String nounOf(String object) {
+        if (object == null) {
+            return "";
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\d+(?!.*\\d)").matcher(object);
+        if (m.find()) {
+            String after = object.substring(m.end()).trim();
+            if (!after.isEmpty()) {
+                return after;
+            }
+            return object.substring(0, m.start()).replaceAll("(?iu)\\b(la|il|lo|le|i|gli|l')\\s*", "").trim();
+        }
+        return "";
     }
 
     /** Prima cosa (coin, ball...) nominata nel testo, o null. */

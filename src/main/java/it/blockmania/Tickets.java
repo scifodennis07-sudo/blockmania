@@ -2257,7 +2257,6 @@ public final class Tickets implements Listener {
         } finally {
             switching.remove(id);
         }
-        p.sendMessage(plugin.color("&7Scrivi il messaggio nella barra e clicca sul tasto verde per inviare. L'incudine accetta massimo 50 caratteri: per messaggi piu lunghi usa lo scambio e scrivi in chat."));
     }
 
     private void finishAnvil(Player p, AnvilSession s, String text) {

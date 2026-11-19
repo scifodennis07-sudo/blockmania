@@ -6,7 +6,7 @@
 
     <groupId>it.blockmania</groupId>
     <artifactId>BlockMania</artifactId>
-    <version>1.74.1</version>
+    <version>1.75.0</version>
     <packaging>jar</packaging>
 
     <properties>

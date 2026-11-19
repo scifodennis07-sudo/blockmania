@@ -2,6 +2,8 @@ package it.blockmania;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -12,6 +14,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
@@ -135,6 +138,8 @@ public final class UserProfilePowers implements Listener {
         java.util.function.Consumer<GuiTitle> background;   // sfondo personalizzato (null = profilo)
         String image = IMG_EMPTY;    // immagine mostrata (serve da sfondo per la conferma)
         boolean dead;                // gia' gestita: la chiusura non va interpretata
+        boolean chosen;              // conferma: premuto conferma o annulla (solo allora si puo' chiudere)
+        int reopens;                 // conferma: quante volte e' stata riaperta dopo una chiusura (limite di sicurezza)
         final Map<Integer, Runnable> actions = new HashMap<>();
 
         @Override
@@ -156,12 +161,25 @@ public final class UserProfilePowers implements Listener {
         boolean text;
         String initial = "";
         Consumer<String> onText;
-        /** Testo arrivato al limite dell'incudine (ANVIL_LIMIT caratteri): null = nessun avviso (comportamento di sempre). */
+        /** Testo arrivato al limite dell'incudine: per default il popup "continuare in chat?" (fullToChat). */
         Consumer<String> onFull;
+        /** onFull passato dal chiamante (null = quello di default), per riaprire l'incudine uguale. */
+        Consumer<String> customFull;
     }
 
     /** Caratteri massimi del nome nell'incudine (limite del client). */
     private static final int ANVIL_LIMIT = 50;
+
+    /**
+     * Sfondo del popup "continuare in chat?": l'incudine custom (anvil_vanilla.png) nel font task_anvil del pack con ascent 0
+     * (la chest da 6 righe a schermo parte 28 px piu' in alto dell'incudine); testo scritto nella barra in alto dell'incudine
+     * col set F500/F600 dello stesso font (tiny3 abbassato di 2 px). In x niente tickets.anvil-shift (vale solo nell'incudine).
+     */
+    private static final String ANVIL_BG = "\ue190";
+    private static final String ANVIL_BG_FONT = "minecraft:task_anvil";
+    private static final int ANVIL_BG_REAL = 186;
+    private static final int ANVIL_BG_BAR_CX = 95;
+    private static final int ANVIL_BG_BAR_MAX = 118;
 
     // ------------------------------------------------------------------
     //  API pubblica
@@ -228,7 +246,6 @@ public final class UserProfilePowers implements Listener {
         } finally {
             switching.remove(id);
         }
-        GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi un numero " + range + " nella barra e clicca sul tasto verde.");
     }
 
     /**
@@ -247,7 +264,11 @@ public final class UserProfilePowers implements Listener {
     public void askText(Player staff, String title, String barText, String initial, Consumer<String> onOk, Runnable onCancel,
                         Consumer<String> onFull) {
         AnvilSession s = new AnvilSession();
-        s.onFull = onFull;
+        s.customFull = onFull;
+        // per default (onFull null) anche questa incudine propone di continuare in chat quando arriva a 50 caratteri
+        s.onFull = onFull != null ? onFull : full -> {
+            fullToChat(staff, s, full);
+        };
         s.text = true;
         s.title = title == null ? "testo" : title;
         s.barText = barText == null ? s.title : barText;
@@ -277,7 +298,75 @@ public final class UserProfilePowers implements Listener {
         } finally {
             switching.remove(id);
         }
-        GuiMsg.send(plugin, staff, "&7" + s.title + ": scrivi il testo (max 50 caratteri nell'incudine, per testi lunghi usa lo scambio e scrivi in chat) e clicca sul tasto verde.");
+    }
+
+    /**
+     * Incudine piena (50 caratteri): popup di conferma con l'incudine come sfondo e il testo scritto nella barra.
+     * Conferma = si continua in chat col testo gia' scritto (chatText); annulla = di nuovo l'incudine con quel testo.
+     */
+    private void fullToChat(Player p, AnvilSession s, String written) {
+        confirmOver(p, "L'incudine e' piena (50 caratteri). Vuoi continuare a scrivere in chat?", g -> {
+            g.at(-15, "&f" + ANVIL_BG, ANVIL_BG_FONT, ANVIL_BG_REAL);
+        }, () -> {
+            chatText(p, s, written);
+        }, () -> {
+            askText(p, s.title, s.barText, written, s.onText, s.onCancel, s.customFull);
+        }, g -> {
+            anvilBgText(g, written);
+        });
+    }
+
+    /**
+     * Continua a scrivere in chat (es. testo troppo lungo per l'incudine): chiude la GUI e manda un messaggio cliccabile che
+     * rimette written nella barra della chat; il messaggio finito va a onOk, "annulla" a onCancel.
+     */
+    public void askTextInChat(Player staff, String title, String written, Consumer<String> onOk, Runnable onCancel) {
+        AnvilSession s = new AnvilSession();
+        s.text = true;
+        s.title = title == null ? "testo" : title;
+        s.barText = s.title;
+        s.initial = written == null ? "" : written;
+        s.onText = onOk;
+        s.onCancel = onCancel == null ? () -> { } : onCancel;
+        chatText(staff, s, s.initial);
+    }
+
+    private void chatText(Player p, AnvilSession s, String written) {
+        s.done = true;
+        p.closeInventory();
+        awaiting.put(p.getUniqueId(), s);
+        String w = written == null ? "" : written;
+        Component msg = plugin.color("&6[testo] &e&nclicca qui per riprendere il testo&7, poi continua a scrivere e premi invio; scrivi &fannulla&7 per uscire.");
+        if (!w.isEmpty()) {
+            msg = msg.clickEvent(ClickEvent.suggestCommand(w)).hoverEvent(HoverEvent.showText(plugin.color("&7rimette nella chat il testo scritto")));
+        }
+        p.sendMessage(msg);
+    }
+
+    /** Testo gia' scritto nella barra in alto dell'incudine di sfondo: si vede la fine se non ci sta (a colori pieni). */
+    private void anvilBgText(GuiTitle g, String raw) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        String text = sb.toString().replaceAll(" +", " ").trim();
+        while (tinyAdvance(text) > ANVIL_BG_BAR_MAX && text.length() > 1) {
+            text = text.substring(1).trim();
+        }
+        if (text.isEmpty()) {
+            return;
+        }
+        int st = ANVIL_BG_BAR_CX - Math.max(0, tinyAdvance(text) - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), ANVIL_BG_FONT, wa);
+            g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), ANVIL_BG_FONT, wa);
+            off += wa + 4;
+        }
     }
 
     /** Slot dei bottoni del pannello conferma (glifo popup_confirm U+E207: riga 3). */
@@ -355,8 +444,20 @@ public final class UserProfilePowers implements Listener {
         yes.add("");
         yes.add("&eclicca per confermare");
         List<String> no = List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare");
-        Runnable doYes = () -> later(onYes);
-        Runnable doNo = () -> later(onNo);
+        Runnable doYes = () -> {
+            if (h.chosen) {
+                return;   // doppio click: una sola scelta
+            }
+            h.chosen = true;
+            later(onYes);
+        };
+        Runnable doNo = () -> {
+            if (h.chosen) {
+                return;   // doppio click: una sola scelta
+            }
+            h.chosen = true;
+            later(onNo);
+        };
         for (int s : CONFIRM_YES) {
             put(h, s, pane("&aconferma", yes), doYes);
         }
@@ -919,12 +1020,8 @@ public final class UserProfilePowers implements Listener {
 
     /** Chiude l'incudine e aspetta il prossimo messaggio in chat del player. */
     private void anvilToChat(Player p, AnvilSession s) {
-        s.done = true;
-        p.closeInventory();
-        awaiting.put(p.getUniqueId(), s);
-        String hint = s.text ? "il testo (max 256 caratteri)" : "un numero " + rangeText(s.min, s.max);
-        p.sendMessage(plugin.color("&6[profilo] &fScrivi qui in chat " + hint + ", oppure scrivi &eannulla&f per annullare."));
-        GuiMsg.send(plugin, p, "&7Scrivi in chat " + hint + " oppure scrivi annulla.");
+        String cur = s.view.getRenameText();
+        chatText(p, s, cur == null ? s.initial : cur);
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -952,7 +1049,6 @@ public final class UserProfilePowers implements Listener {
                 if (msg.length() > 256) {
                     err(p, "Il testo puo' avere al massimo 256 caratteri.");
                     awaiting.put(id, s);
-                    p.sendMessage(plugin.color("&6[profilo] &fScrivi di nuovo in chat il testo, oppure scrivi &eannulla&f."));
                     return;
                 }
                 s.onText.accept(msg);
@@ -962,7 +1058,6 @@ public final class UserProfilePowers implements Listener {
             if (v == null || v < s.min || v > s.max) {
                 err(p, "Serve un numero " + rangeText(s.min, s.max) + ".");
                 awaiting.put(id, s);
-                p.sendMessage(plugin.color("&6[profilo] &fScrivi di nuovo in chat un numero " + rangeText(s.min, s.max) + ", oppure scrivi &eannulla&f."));
                 return;
             }
             s.onOk.accept(v);
@@ -996,6 +1091,17 @@ public final class UserProfilePowers implements Listener {
             return;
         }
         UUID id = p.getUniqueId();
+        // popup di conferma chiuso senza conferma/annulla (ESC, tasto inventario mentre si scrive...): si riapre al tick
+        // dopo, solo se non si e' aperta un'altra GUI e il player e' ancora online
+        if (event.getInventory().getHolder() instanceof Holder ch && "confirm".equals(ch.kind) && !ch.chosen
+                && !switching.contains(id) && ch.reopens < 40) {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (p.isOnline() && !ch.chosen && p.getOpenInventory().getTopInventory().getType() == InventoryType.CRAFTING) {
+                    ch.reopens++;
+                    open(p, ch);
+                }
+            });
+        }
         AnvilSession s = anvils.get(id);
         if (s != null && event.getView().getTopInventory() == s.view.getTopInventory()) {
             event.getView().setItem(0, null);

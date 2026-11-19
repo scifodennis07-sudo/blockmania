@@ -85,7 +85,7 @@ public final class StaffTasks implements Listener {
                          int doneCustom) {
     }
 
-    /** event: CREATA PRESA AZIONE COMPLETATA ANNULLATA ELIMINATA RIPRISTINATA ; orderId null per gli eventi della task. */
+    /** event: CREATA AGGIUNTI PRESA AZIONE COMPLETATA ANNULLATA ELIMINATA RIPRISTINATA ; orderId null per gli eventi della task. */
     public record LogEntry(long ts, String taskId, String orderId, String event, UUID by, String byName, String detail) {
     }
 
@@ -802,19 +802,7 @@ public final class StaffTasks implements Listener {
             List<Order> clean = new ArrayList<>();
             int n = 1;
             for (Order o : orders) {
-                List<Branch> br = new ArrayList<>();
-                for (Branch b : o.branches()) {
-                    List<Action> acts = new ArrayList<>();
-                    for (Action a : b.actions()) {
-                        Action x = newAction(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(),
-                                a.target() == null ? a.targetName() : playerName(a.target()));
-                        acts.add(new Action(x.verb(), x.what(), x.spec(), x.amount(), x.ruleCode(), x.target(), x.targetName(),
-                                userId(x.target()), false, null, 0L, ""));
-                    }
-                    br.add(newBranch(b.condition(), acts, b.nothing()));
-                }
-                clean.add(new Order(String.valueOf(n++), o.text() == null ? "" : o.text().trim(), List.copyOf(br), Status.APERTA,
-                        null, "", 0L, -1));
+                clean.add(cleanOrder(o, String.valueOf(n++)));
             }
             t = new Task(newTaskId(), by.getUniqueId(), by.getName(), System.currentTimeMillis(), Status.APERTA, why,
                     List.copyOf(clean));
@@ -825,6 +813,68 @@ public final class StaffTasks implements Listener {
         movement(by.getUniqueId(), "Ha creato la task staff #" + t.id() + " (" + t.orders().size() + " ordini): " + why);
         log("task #" + t.id() + " creata da " + by.getName() + ": " + why);
         return t;
+    }
+
+    /**
+     * Aggiunge ordini a una task esistente (creatore o admin+, non nel cestino). Gli id continuano (#task ordine 3, 4...);
+     * una task completata torna aperta. null = ok, altrimenti il motivo.
+     */
+    public String addOrders(Player by, String taskId, List<Order> orders) {
+        Task t = get(taskId);
+        if (t == null) {
+            return "task non trovata";
+        }
+        if (t.status() == Status.ELIMINATA) {
+            return "la task e' nel cestino";
+        }
+        if (!canDelete(by, t)) {
+            return "solo chi ha creato la task o un admin puo' aggiungere ordini";
+        }
+        if (orders == null || orders.isEmpty()) {
+            return "nessun ordine da aggiungere";
+        }
+        for (Order o : orders) {
+            String err = whyInvalid(by, o);
+            if (err != null) {
+                return err;
+            }
+        }
+        Task done;
+        synchronized (this) {
+            Task cur = tasks.get(t.id());
+            long max = 0;
+            for (Order o : cur.orders()) {
+                max = Math.max(max, num(o.id()));
+            }
+            List<Order> all = new ArrayList<>(cur.orders());
+            for (Order o : orders) {
+                all.add(cleanOrder(o, String.valueOf(++max)));
+            }
+            done = new Task(cur.id(), cur.createdBy(), cur.createdByName(), cur.createdAt(),
+                    statusOf(all), cur.reason(), List.copyOf(all));
+            tasks.put(done.id(), done);
+            addLog(done.id(), null, "AGGIUNTI", by, orders.size() + (orders.size() == 1 ? " ordine aggiunto" : " ordini aggiunti"));
+            save();
+        }
+        movement(by.getUniqueId(), "Ha aggiunto " + orders.size() + " ordini alla task staff #" + done.id());
+        log("task #" + done.id() + ": " + orders.size() + " ordini aggiunti da " + by.getName());
+        return null;
+    }
+
+    /** Ordine pulito con l'id definitivo (azioni non fatte, nomi aggiornati, id utente nascosto). Dentro synchronized. */
+    private Order cleanOrder(Order o, String id) {
+        List<Branch> br = new ArrayList<>();
+        for (Branch b : o.branches()) {
+            List<Action> acts = new ArrayList<>();
+            for (Action a : b.actions()) {
+                Action x = newAction(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(),
+                        a.target() == null ? a.targetName() : playerName(a.target()));
+                acts.add(new Action(x.verb(), x.what(), x.spec(), x.amount(), x.ruleCode(), x.target(), x.targetName(),
+                        userId(x.target()), false, null, 0L, ""));
+            }
+            br.add(newBranch(b.condition(), acts, b.nothing()));
+        }
+        return new Order(id, o.text() == null ? "" : o.text().trim(), List.copyOf(br), Status.APERTA, null, "", 0L, -1);
     }
 
     /** Perche' l'ordine non si puo' salvare (per l'anteprima), o null se va bene. */
@@ -929,7 +979,7 @@ public final class StaffTasks implements Listener {
         }
         movement(p.getUniqueId(), "Ha preso in carico l'ordine " + o.id() + " della task staff #" + t.id() + ": " + describe(b));
         log("task #" + t.id() + " ordine " + o.id() + " preso da " + p.getName() + " (ramo " + branch + ")");
-        GuiMsg.send(plugin, p, "&aHai preso in carico l'ordine: &7" + describe(b) + " &8(5 minuti)");
+        GuiMsg.send(plugin, p, "&aincarico preso");
         showBar(p);
         return null;
     }
@@ -984,7 +1034,7 @@ public final class StaffTasks implements Listener {
         hideBar(staff);
         Player p = Bukkit.getPlayer(staff);
         if (p != null) {
-            GuiMsg.send(plugin, p, "&cIncarico annullato: &7" + why);
+            GuiMsg.send(plugin, p, "&cincarico annullato: &7" + why);
         }
         movement(staff, "Incarico della task staff #" + c.taskId() + " annullato: " + why);
         log("incarico di " + playerName(staff) + " (task #" + c.taskId() + " ordine " + c.orderId() + ") annullato: " + why);
@@ -1016,9 +1066,7 @@ public final class StaffTasks implements Listener {
         if (staff.isOp() || isAdmin(staff)) {
             return true;
         }
-        GuiMsg.send(plugin, staff, chargeOf(staff.getUniqueId()) == null
-                ? "&cnon hai questa azione in carico: prendi un ordine dalle task (/adminmania task)"
-                : "&cnon hai questa azione in carico &7(da fare: " + describe(nextAction(chargeOf(staff.getUniqueId()))) + ")");
+        GuiMsg.send(plugin, staff, "&cnon hai questa azione in carico");
         plugin.playConfiguredSound(staff.getLocation(), "message-sounds.error");
         return false;
     }
@@ -1123,7 +1171,7 @@ public final class StaffTasks implements Listener {
             save();
         }
         hideBar(by.getUniqueId());
-        GuiMsg.send(plugin, by, "&aOrdine completato: &7" + detail);
+        GuiMsg.send(plugin, by, "&aordine completato");
         plugin.playConfiguredSound(by.getLocation(), "message-sounds.success");
         AdminCommand ac = plugin.getAdminCommand();
         if (ac != null) {
