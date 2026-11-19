@@ -516,7 +516,7 @@ public final class TaskGui implements Listener {
             tl.add("&eclick sinistro: riscrivi questo ordine");
             tl.add("&eclick destro: toglilo");
             String color = u ? "&e" : o.type() == StaffTasks.OrderType.CUSTOM ? "&d" : "&a";
-            cells.add(new Row(icon(u ? "task_dubbio" : o.type() == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo",
+            cells.add(new Row(icon(o.type() == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo",   // foglio (viola se custom): il "?" solo sui rami/azioni incerti
                     color + "ordine " + (oi + 1), tl), () -> {
                 Draft cur = drafts.get(p.getUniqueId());
                 if (cur != null && orderIdx < cur.orders.size()) {
@@ -959,7 +959,7 @@ public final class TaskGui implements Listener {
                 confirmRemoveOrder(p, k.id(), o.id(), oi + 1, self);
             };
         }
-        String textIcon = done ? "task_fatto" : type == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo";
+        String textIcon = type == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo";   // sempre un foglio (viola se custom)
         cells.add(new Row(icon(textIcon, (done ? "&a" : "&f") + "ordine " + (oi + 1), tl), textClick, removeOrder));
 
         List<StaffTasks.Branch> branches = safe(o.branches());
