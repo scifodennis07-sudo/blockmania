@@ -886,11 +886,11 @@ public final class UserProfileGui implements Listener {
             if (right) {
                 openHistory(p, target, kind);
             } else {
-                sanctionMenu(p, target, kind);
+                sanctionMenu(p, target, kind, page);
             }
         } else if (action.equals("stamina")) {
             if (!right) {
-                staminaMenu(p, target);
+                staminaMenu(p, target, page);
             }
         } else if (action.startsWith("item:")) {
             PlayerCounters.Item it = PlayerCounters.Item.valueOf(action.substring(5));
@@ -1007,7 +1007,15 @@ public final class UserProfileGui implements Listener {
     //  Stamina
     // ------------------------------------------------------------------
 
-    private void staminaMenu(Player p, UUID target) {
+    /**
+     * Sfondo dei popup comandi aperti dalla pagina indicata: null in pagina 0 (UserProfilePowers disegna il profilo
+     * principale scurito), altrimenti la pagina 2/3 scurita (stesso sfondo dei popup di pageAction).
+     */
+    private java.util.function.Consumer<GuiTitle> popupBg(UUID target, int page) {
+        return page <= 0 ? null : g -> drawDimmedBackground(g, target, page);
+    }
+
+    private void staminaMenu(Player p, UUID target, int page) {
         if (!authorize(p, target, "profile", "edit", 0)) {
             return;
         }
@@ -1015,7 +1023,7 @@ public final class UserProfileGui implements Listener {
         List<String> cmds = Bukkit.getPlayer(target) == null ? List.of("set", "full", "reset") : List.of("set", "full", "infinite", "reset");
         plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> staminaPick(p, target, cmd)),
-                () -> back(p, target), false, null);
+                () -> back(p, target), false, null, popupBg(target, page));
     }
 
     private void staminaPick(Player p, UUID target, String cmd) {
@@ -1110,7 +1118,7 @@ public final class UserProfileGui implements Listener {
         plugin.getProfileHistory().open(p, target, kind, 0, () -> back(p, target));
     }
 
-    private void sanctionMenu(Player p, UUID target, SanctionManager.Kind kind) {
+    private void sanctionMenu(Player p, UUID target, SanctionManager.Kind kind, int page) {
         if (!authorize(p, target, "sanctions", "see", 0)) {
             return;
         }
@@ -1118,11 +1126,12 @@ public final class UserProfileGui implements Listener {
         List<String> cmds = kind == SanctionManager.Kind.WARN ? List.of("add", "remove", "reset") : List.of("add", "remove", "reduce");
         String label = kind.name().toLowerCase(java.util.Locale.ROOT) + " di " + nameOf(target);
         plugin.getProfileUi().openCommands(p, label, cmds,
-                cmd -> Bukkit.getScheduler().runTask(plugin, () -> sanctionPick(p, target, kind, cmd)),
-                () -> back(p, target), true, () -> Bukkit.getScheduler().runTask(plugin, () -> openHistory(p, target, kind)));
+                cmd -> Bukkit.getScheduler().runTask(plugin, () -> sanctionPick(p, target, kind, cmd, page)),
+                () -> back(p, target), true, () -> Bukkit.getScheduler().runTask(plugin, () -> openHistory(p, target, kind)),
+                popupBg(target, page));
     }
 
-    private void sanctionPick(Player p, UUID target, SanctionManager.Kind kind, String cmd) {
+    private void sanctionPick(Player p, UUID target, SanctionManager.Kind kind, String cmd, int page) {
         if (!p.isOnline()) {
             return;
         }
@@ -1135,7 +1144,7 @@ public final class UserProfileGui implements Listener {
         UserProfilePowers ui = plugin.getProfileUi();
         Runnable cancel = () -> back(p, target);
         switch (cmd) {
-            case "add" -> askRuleCode(p, target, kind);
+            case "add" -> askRuleCode(p, target, kind, page);
             case "reduce" -> {
                 long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
                 ui.askNumber(p, "minuti da togliere", "RIDUCI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
@@ -1147,7 +1156,7 @@ public final class UserProfileGui implements Listener {
     }
 
     /** Flusso "add" con regola: codice -> messaggio staff -> conferma -> SanctionManager.applyRule. */
-    private void askRuleCode(Player p, UUID target, SanctionManager.Kind kind) {
+    private void askRuleCode(Player p, UUID target, SanctionManager.Kind kind, int page) {
         UserProfilePowers ui = plugin.getProfileUi();
         Runnable cancel = () -> back(p, target);
         ui.askText(p, "codice regola", "CODICE REGOLA", "", code -> Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1157,15 +1166,17 @@ public final class UserProfileGui implements Listener {
             Rules.Rule rule = plugin.getRules().get(code == null ? "" : code.trim());
             if (rule == null || rule.type() == Rules.Type.REGOLAMENTO || !rule.type().name().equals(kind.name())) {
                 GuiMsg.send(plugin, p, "&cregola inesistente o di altro tipo");
-                sanctionMenu(p, target, kind); // torna al popup
+                sanctionMenu(p, target, kind, page); // torna al popup
                 return;
             }
             ui.askText(p, "messaggio per il player", "MESSAGGIO STAFF", "null", msg -> Bukkit.getScheduler().runTask(plugin, () -> {
                 if (!p.isOnline()) {
                     return;
                 }
-                ui.confirm(p, "Dare un " + kind.name().toLowerCase(java.util.Locale.ROOT) + " a " + nameOf(target) + " con la regola " + rule.code() + "?",
-                        () -> Bukkit.getScheduler().runTask(plugin, () -> doRuleSanction(p, target, kind, rule, msg)), cancel);
+                String text = "Dare un " + kind.name().toLowerCase(java.util.Locale.ROOT) + " a " + nameOf(target) + " con la regola " + rule.code() + "?";
+                Runnable yes = () -> Bukkit.getScheduler().runTask(plugin, () -> doRuleSanction(p, target, kind, rule, msg));
+                // dopo le incudini il popup comandi non e' piu' aperto: sfondo = la pagina da cui si e' partiti
+                ui.confirm(p, text, popupBg(target, page), yes, cancel);
             }), cancel);
         }), cancel);
     }

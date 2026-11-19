@@ -255,8 +255,8 @@ public final class RulesGui implements Listener {
     private net.kyori.adventure.text.Component title(Session s, int pages, List<Rules.Rule> all) {
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + IMG_BASE, FONT_RULES, IMG_ADV);
-        navText(g, s.page + 1, pages);
-        drawRuleTags(g, s, all);
+        navText(g, s.page + 1, pages, IMG);
+        drawRuleTags(g, s, all, IMG);
         UserProfilePowers.topTitle(plugin, g, titleWord() + " " + filterName(s.filter));
         return g.build();
     }
@@ -290,7 +290,7 @@ public final class RulesGui implements Listener {
     }
 
     /** Sfondo + cifre di ogni regola della pagina, cella per cella (stessa x dei cubi noteblock di ItemsGui). */
-    private void drawRuleTags(GuiTitle g, Session s, List<Rules.Rule> all) {
+    private void drawRuleTags(GuiTitle g, Session s, List<Rules.Rule> all, int img) {
         List<Rules.Rule> page = pageRules(s, all);
         for (int i = 0; i < page.size(); i++) {
             int slot = GRID_START + i;
@@ -299,7 +299,7 @@ public final class RulesGui implements Listener {
                 continue;
             }
             String code = page.get(i).code();
-            int cellX = RULE_CELL_X0 + RULE_CELL_STEP * (slot % 9) + IMG;
+            int cellX = RULE_CELL_X0 + RULE_CELL_STEP * (slot % 9) + img;
             g.atComponent(cellX, ruleGlyph((char) (RULE_BG_BASE + tagColor(code)), row), RULE_BG_ADV);
             int width = -1;
             for (char ch : code.toCharArray()) {
@@ -319,7 +319,7 @@ public final class RulesGui implements Listener {
     }
 
     /** Numero pagina nel riquadro frecce (stessi glifi dei popup, font e centro configurabili). */
-    private void navText(GuiTitle g, int page, int pages) {
+    private void navText(GuiTitle g, int page, int pages, int img) {
         char nav = cfgChar("nav-base", DEF_NAV_BASE);
         char navSh = cfgChar("nav-shadow", DEF_NAV_SHADOW);
         String plain = page + "/" + pages;
@@ -334,8 +334,8 @@ public final class RulesGui implements Listener {
         int cx = plugin.getConfig().getInt("rules-gui.nav-x", NAV_CX);
         int start = cx - (adv - 1) / 2;
         String font = cfg("nav-font", DEF_NAV_FONT);
-        g.at(start + 1 + IMG, GuiTitle.shadowCode(plugin) + sh, font, adv);
-        g.at(start + IMG, "&f" + n, font, adv);
+        g.at(start + 1 + img, GuiTitle.shadowCode(plugin) + sh, font, adv);
+        g.at(start + img, "&f" + n, font, adv);
     }
 
     private ItemStack pane(String name, List<String> lore) {
@@ -479,70 +479,75 @@ public final class RulesGui implements Listener {
     // ------------------------------------------------------------------
 
     private void reopen(Player p, Rules.Type filter) {
-        Bukkit.getScheduler().runTask(plugin, () -> open(p, filter, 0));
+        reopen(p, filter, 0);
     }
 
-    private void startCreate(Player p, Rules.Type currentFilter) {
+    /** Riapre la lista sul filtro e sulla pagina indicati (quella da cui e' partita la creazione). */
+    private void reopen(Player p, Rules.Type filter, int page) {
+        Bukkit.getScheduler().runTask(plugin, () -> open(p, filter, page));
+    }
+
+    private void startCreate(Player p, Rules.Type currentFilter, int page) {
         if (!authorize(p, "edit")) {
             return;
         }
-        Runnable cancel = () -> reopen(p, currentFilter);
+        Runnable cancel = () -> reopen(p, currentFilter, page);
         ui.askText(p, "codice regola (es. 1.2)", "CODICE REGOLA", "", code -> {
             String c = code == null ? "" : code.trim();
             if (!Rules.validCode(c)) {
                 GuiMsg.send(plugin, p, "&ccodice non valido: usa numero.numero, per esempio 1.2");
-                reopen(p, currentFilter);
+                reopen(p, currentFilter, page);
                 return;
             }
             if (rules.get(c) != null) {
                 GuiMsg.send(plugin, p, "&cesiste gia' una regola con il codice " + c);
-                reopen(p, currentFilter);
+                reopen(p, currentFilter, page);
                 return;
             }
-            Bukkit.getScheduler().runTask(plugin, () -> askTitle(p, currentFilter, c));
+            Bukkit.getScheduler().runTask(plugin, () -> askTitle(p, currentFilter, page, c));
         }, cancel);
     }
 
-    private void askTitle(Player p, Rules.Type currentFilter, String code) {
-        Runnable cancel = () -> reopen(p, currentFilter);
+    private void askTitle(Player p, Rules.Type currentFilter, int page, String code) {
+        Runnable cancel = () -> reopen(p, currentFilter, page);
         ui.askText(p, "titolo della regola", "TITOLO", "", tit -> {
             String title = tit == null ? "" : tit.trim();
             if (title.isEmpty()) {
                 GuiMsg.send(plugin, p, "&cil titolo della regola non puo' essere vuoto");
-                reopen(p, currentFilter);
+                reopen(p, currentFilter, page);
                 return;
             }
-            Bukkit.getScheduler().runTask(plugin, () -> askContent(p, currentFilter, code, title));
+            Bukkit.getScheduler().runTask(plugin, () -> askContent(p, currentFilter, page, code, title));
         }, cancel);
     }
 
-    private void askContent(Player p, Rules.Type currentFilter, String code, String title) {
-        Runnable cancel = () -> reopen(p, currentFilter);
+    private void askContent(Player p, Rules.Type currentFilter, int page, String code, String title) {
+        Runnable cancel = () -> reopen(p, currentFilter, page);
         ui.askText(p, "contenuto della regola", "CONTENUTO", "", txt -> {
             String text = txt == null ? "" : txt.trim();
             if (text.isEmpty()) {
                 GuiMsg.send(plugin, p, "&cil contenuto della regola non puo' essere vuoto");
-                reopen(p, currentFilter);
+                reopen(p, currentFilter, page);
                 return;
             }
-            Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, code, title, text));
+            Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, page, code, title, text));
         }, cancel);
     }
 
-    private void askType(Player p, Rules.Type currentFilter, String code, String title, String text) {
+    private void askType(Player p, Rules.Type currentFilter, int page, String code, String title, String text) {
         // stessi tasti (e immagini) per player e staff: per lo staff ban = depex, mute = sospensione
         ui.openCommands(p, rules.isStaff() ? "tipo regola staff" : "tipo regola", List.of("ban", "warn", "mute", "regolamento"), cmd -> {
             Rules.Type t = rules.typeOf(cmd);
             if (t == null) {
-                reopen(p, currentFilter);
+                reopen(p, currentFilter, page);
                 return;
             }
             if (rules.needsTime(t)) {
-                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, title, text, t));
+                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, page, code, title, text, t));
             } else {
                 finishCreate(p, code, title, text, t, rules.time(t, ""));
             }
-        }, () -> reopen(p, currentFilter), false, null, g -> drawDimmedBackground(g));
+        }, () -> reopen(p, currentFilter, page), false, null, g -> drawDimmedBackground(g, currentFilter, page));
     }
 
     /** Sfondo della lista (regole.png) a colori pieni, advance reale 186: lo scurimento lo applica chi lo usa (MinesGui.tint). */
@@ -550,18 +555,33 @@ public final class RulesGui implements Listener {
         g.at(-15, "&f" + IMG_BASE, FONT_RULES, 186);
     }
 
-    private void askTime(Player p, Rules.Type currentFilter, String code, String title, String text, Rules.Type t) {
+    /**
+     * Come sopra, ma con la pagina della lista da cui si e' partiti: numero pagina e targhette delle regole di quel filtro
+     * e pagina (testi a IMG + 7, perche' qui l'avanzamento dell'immagine e' quello reale).
+     */
+    public void drawDimmedBackground(GuiTitle g, Rules.Type filter, int page) {
+        drawDimmedBackground(g);
+        Session s = new Session();
+        s.filter = filter;
+        List<Rules.Rule> all = list(s);
+        int pages = pageCount(all.size());
+        s.page = Math.max(0, Math.min(page, pages - 1));
+        navText(g, s.page + 1, pages, IMG + 7);
+        drawRuleTags(g, s, all, IMG + 7);
+    }
+
+    private void askTime(Player p, Rules.Type currentFilter, int page, String code, String title, String text, Rules.Type t) {
         String hint = rules.timeHint(t);
         ui.askText(p, "scrivi il tempo: 10s 10m 10h 10d, anche somme come 10h+23m+16s; " + hint, "TEMPO", "", in -> {
             String v = in == null ? "" : in.trim();
             String err = rules.timeError(t, v);
             if (err != null) {
                 GuiMsg.send(plugin, p, "&c" + err);
-                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, code, title, text, t));
+                Bukkit.getScheduler().runTask(plugin, () -> askTime(p, currentFilter, page, code, title, text, t));
                 return;
             }
             finishCreate(p, code, title, text, t, rules.time(t, v));
-        }, () -> Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, code, title, text)));
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> askType(p, currentFilter, page, code, title, text)));
     }
 
     private void finishCreate(Player p, String code, String title, String text, Rules.Type t, long durationMs) {
@@ -610,7 +630,8 @@ public final class RulesGui implements Listener {
                 plugin.guiClick(p);
                 if (event.getClick().isRightClick()) {
                     final Rules.Type cur = s.filter;
-                    Bukkit.getScheduler().runTask(plugin, () -> startCreate(p, cur));
+                    final int curPage = s.page;
+                    Bukkit.getScheduler().runTask(plugin, () -> startCreate(p, cur, curPage));
                 } else {
                     s.filter = nextFilter(s.filter);
                     s.page = 0;

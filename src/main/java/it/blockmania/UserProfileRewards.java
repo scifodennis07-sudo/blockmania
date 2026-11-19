@@ -301,6 +301,16 @@ public final class UserProfileRewards implements Listener {
         }
     }
 
+    /**
+     * Sfondo (a colori pieni, lo scurisce chi lo usa) della GUI ricompense da cui si arriva: stessa vista e pagina.
+     * Per i popup comandi (livelli, giornaliera) al posto del profilo che UserProfilePowers disegnerebbe con null.
+     */
+    private java.util.function.Consumer<GuiTitle> rewardsBg(Player t, Session s) {
+        final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
+                s.kind.equals("main") ? s.mainPage : s.page, images());
+        return g -> g.atComponent(0, v.title(), v.cursor());
+    }
+
     /** Conferma che lascia dietro, scurita, la GUI ricompense da cui si arriva (stessa pagina, stesso titolo). */
     private void confirmDim(Player staff, Session s, String text, Runnable onYes) {
         Player t = targetOf(staff, s);
@@ -328,9 +338,13 @@ public final class UserProfileRewards implements Listener {
 
     private void levelMenu(Player staff, Session s, int level) {
         final String type = s.type;
+        Player t = targetOf(staff, s);
+        if (t == null) {
+            return;
+        }
         ui.openCommands(staff, typeLabel(type), List.of("give", "remove", "set", "full", "reset"),
                 cmd -> later(() -> runLevel(staff, s, type, cmd)),
-                () -> later(() -> show(staff, s)), false, null);
+                () -> later(() -> show(staff, s)), false, null, rewardsBg(t, s));
     }
 
     private void runLevel(Player staff, Session s, String type, String cmd) {
@@ -349,8 +363,9 @@ public final class UserProfileRewards implements Listener {
             case "give" -> applyLevel(staff, s, type, Math.min(max, now + 1));
             case "remove" -> applyLevel(staff, s, type, Math.max(0, now - 1));
             case "full" -> applyLevel(staff, s, type, max);
-            case "reset" -> confirmDim(staff, s, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
-                    () -> applyLevel(staff, s, type, 0));
+            // dal popup comandi: sfondo = ricompense + popup comandi scuriti (confirm li prende dal popup aperto)
+            case "reset" -> ui.confirm(staff, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
+                    rewardsBg(t, s), () -> applyLevel(staff, s, type, 0), () -> later(() -> show(staff, s)));
             case "set" -> ui.askNumber(staff, "setta livello " + Rewards.italianType(type),
                     "SETTA " + label + " " + now + "/" + max, 0, max,
                     v -> later(() -> applyLevel(staff, s, type, (int) v)),
@@ -383,9 +398,13 @@ public final class UserProfileRewards implements Listener {
     // ------------------------------------------------------------------
 
     private void dailyMenu(Player staff, Session s) {
+        Player t = targetOf(staff, s);
+        if (t == null) {
+            return;
+        }
         ui.openCommands(staff, "GIORNALIERA", List.of("give", "remove", "set", "reset"),
                 cmd -> later(() -> runDaily(staff, s, cmd)),
-                () -> later(() -> show(staff, s)), false, null);
+                () -> later(() -> show(staff, s)), false, null, rewardsBg(t, s));
     }
 
     private void runDaily(Player staff, Session s, String cmd) {
@@ -404,8 +423,9 @@ public final class UserProfileRewards implements Listener {
             case "remove" -> setDays(staff, s, Math.max(0, now - 1));
             case "set" -> ui.askNumber(staff, "setta giorni", "SETTA GIORNI " + now, 0, 100000,
                     v -> later(() -> setDays(staff, s, (int) v)), () -> later(() -> show(staff, s)));
-            case "reset" -> confirmDim(staff, s, "Azzerare la giornaliera di " + t.getName() + "?",
-                    () -> resetDaily(staff, s));
+            // dal popup comandi: sfondo = ricompense + popup comandi scuriti (confirm li prende dal popup aperto)
+            case "reset" -> ui.confirm(staff, "Azzerare la giornaliera di " + t.getName() + "?",
+                    rewardsBg(t, s), () -> resetDaily(staff, s), () -> later(() -> show(staff, s)));
             default -> later(() -> show(staff, s));
         }
     }

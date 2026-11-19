@@ -560,6 +560,11 @@ public final class RuleDetailGui implements Listener {
         drawBackground(g, r, 0);
     }
 
+    /** Come sopra, con le bolle della chat scorse come nel dettaglio da cui si apre il popup (scroll limitato al massimo). */
+    public void drawDimmedBackground(GuiTitle g, Rules.Rule r, int scroll) {
+        drawBackground(g, r, Math.max(0, Math.min(scroll, maxScroll(layout(r)))));
+    }
+
     private void drawBackground(GuiTitle g, Rules.Rule r, int scroll) {
         scene(g, r, scroll, true);
         strip(g, r, IMG + 7);
@@ -813,7 +818,7 @@ public final class RuleDetailGui implements Listener {
             }
             openNoAuth(p, cur.code(), onBack, scroll);
         });
-        popups.editMenu(p, r, after, after);
+        popups.editMenu(p, r, scroll, after, after);
     }
 
     private void history(Session s) {
@@ -822,7 +827,7 @@ public final class RuleDetailGui implements Listener {
         if (popups == null || r == null) {
             return;
         }
-        popups.historyList(s.staff, r, reopen(s.staff, s.code, s.onBack, s.scroll));
+        popups.historyList(s.staff, r, s.scroll, reopen(s.staff, s.code, s.onBack, s.scroll));
     }
 
     private void hits(Session s) {
@@ -831,7 +836,7 @@ public final class RuleDetailGui implements Listener {
         if (popups == null || r == null) {
             return;
         }
-        popups.hitsList(s.staff, r, reopen(s.staff, s.code, s.onBack, s.scroll));
+        popups.hitsList(s.staff, r, s.scroll, reopen(s.staff, s.code, s.onBack, s.scroll));
     }
 
     // ------------------------------------------------------------------

@@ -2449,13 +2449,14 @@ public final class Tickets implements Listener {
             if (li >= 0 && li < h.links.size()) {
                 String url = h.links.get(li);
                 int pg = h.page;
+                int fl = h.filter;   // annulla: stessa lista di link (pagina e filtro) da cui si e' aperto il dialog
                 plugin.getLogger().info("[Tickets] openlink " + li + " -> " + url);
                 // chiusura GUI e apertura del Dialog nello STESSO tick (i due pacchetti arrivano insieme al client: niente
                 // scatto col mondo visibile in mezzo). "annulla" riporta alla lista dei link
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     p.closeInventory();
                     TicketDialog.open(p, List.of(new TicketDialog.Link(url.replaceFirst("^https?://", ""), url)),
-                            () -> openLinks(p, t, pg), isStaff(p));
+                            () -> openLinks(p, t, pg, fl), isStaff(p));
                 });
             }
         } else if (action.equals("write")) {
@@ -2479,10 +2480,12 @@ public final class Tickets implements Listener {
         } else if (action.equals("tag")) {
             openTag(p, t, 0);
         } else if (action.equals("chat")) {
-            openChat(p, t.id, 0);
+            // indietro dai popup sopra la chat (link, tag, sezione): la chat allo scroll disegnato sotto il popup
+            openChat(p, t.id, chatScroll.getOrDefault(id, 0));
         } else if (action.startsWith("tagpick:")) {
             UUID target = UUID.fromString(action.substring(8));
-            askText(p, "messaggio per lo staffer", "", txt -> doTag(p, t, target, txt), () -> openChat(p, t.id, 0));
+            int back = chatScroll.getOrDefault(id, 0);
+            askText(p, "messaggio per lo staffer", "", txt -> doTag(p, t, target, txt), () -> openChat(p, t.id, back));
         } else if (action.startsWith("star:")) {
             if (!t.open && t.rating == 0 && t.owner.equals(id)) {
                 stars.put(id, Integer.parseInt(action.substring(5)) + 1);

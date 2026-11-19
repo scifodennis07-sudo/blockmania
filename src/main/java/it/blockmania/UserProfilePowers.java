@@ -379,6 +379,14 @@ public final class UserProfilePowers implements Listener {
      * Le GUI di altre classi (miniere, potenziamenti, ricompense, cronologia) devono usare confirmOver.
      */
     public void confirm(Player staff, String text, Runnable onYes, Runnable onNo) {
+        confirm(staff, text, null, onYes, onNo);
+    }
+
+    /**
+     * Come sopra, ma se il popup comandi NON e' aperto (es. conferma dopo un'incudine) lo sfondo e' fallback (a colori
+     * pieni, advance reale 186: lo scurisce confirmOver) invece del profilo principale; fallback null = profilo principale.
+     */
+    public void confirm(Player staff, String text, Consumer<GuiTitle> fallback, Runnable onYes, Runnable onNo) {
         String cur = "";
         Consumer<GuiTitle> bg0 = null;
         boolean cmds = false;
@@ -395,6 +403,8 @@ public final class UserProfilePowers implements Listener {
             // advance reale (186) per tutte le immagini: il cursore lo sistema confirmOver
             if (overCmds && bg != null) {
                 bg.accept(c);
+            } else if (!overCmds && fallback != null) {
+                fallback.accept(c);
             } else {
                 c.at(-15, (overCmds ? DIM : "&f") + IMG_MAIN, FONT_UP, 186);
             }

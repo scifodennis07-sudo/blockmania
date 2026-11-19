@@ -1262,6 +1262,17 @@ public final class StaffProfileGui implements Listener {
         };
     }
 
+    /**
+     * Sfondo delle conferme aperte da un popup lista della pagina 2 (elenco warn/depex/sospensioni, tutor): pagina 2 +
+     * pannello del popup, a colori pieni (li scurisce confirmOver), come UserProfilePowers.confirm sopra il popup comandi.
+     */
+    private Consumer<GuiTitle> bgPopup(UUID target, boolean reset) {
+        return g -> {
+            drawDimmedBackground(g, target, 1);
+            g.at(-15, "&f" + (reset ? P_IMG_RESET : P_IMG_INFO), reset ? P_FONT_RESET : P_FONT_INFO, P_ADV + 7);
+        };
+    }
+
     /** Riapre la pagina 2 al tick dopo. */
     private void back2(Player p, UUID target) {
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1456,7 +1467,7 @@ public final class StaffProfileGui implements Listener {
         if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
             return;
         }
-        plugin.getProfileUi().confirmOver(p, "Resettare tutti i " + kindPlural(kind) + " di " + nameOf(target) + "?", bg2(target), () -> {
+        plugin.getProfileUi().confirmOver(p, "Resettare tutti i " + kindPlural(kind) + " di " + nameOf(target) + "?", bgPopup(target, true), () -> {
             if (!p.isOnline()) {
                 return;
             }
@@ -1477,7 +1488,7 @@ public final class StaffProfileGui implements Listener {
         if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
             return;
         }
-        plugin.getProfileUi().confirmOver(p, "Eliminare questa voce (" + kindLabel(kind) + ")?", bg2(target), () -> {
+        plugin.getProfileUi().confirmOver(p, "Eliminare questa voce (" + kindLabel(kind) + ")?", bgPopup(target, true), () -> {
             if (!p.isOnline()) {
                 return;
             }
@@ -1561,7 +1572,7 @@ public final class StaffProfileGui implements Listener {
         }
         String text = tutor == null ? "Togliere il tutor a " + nameOf(target) + "?"
                 : "Assegnare " + nameOf(tutor) + " come tutor di " + nameOf(target) + "?";
-        plugin.getProfileUi().confirmOver(p, text, bg2(target), () -> {
+        plugin.getProfileUi().confirmOver(p, text, bgPopup(target, false), () -> {
             if (!p.isOnline()) {
                 return;
             }

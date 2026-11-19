@@ -419,7 +419,7 @@ public final class UserProfileUpgrades implements Listener {
     private void askLevelCommand(Player staff, Holder h, String id) {
         Runnable back = () -> reopen(staff, h);
         ui.openCommands(staff, labelOf(id), List.of("give", "remove", "set", "full", "reset"),
-                cmd -> pick(staff, h, id, cmd), back, false, null);
+                cmd -> pick(staff, h, id, cmd), back, false, null, this::drawBackdrop);
     }
 
     private void pick(Player staff, Holder h, String id, String cmd) {
@@ -462,11 +462,12 @@ public final class UserProfileUpgrades implements Listener {
                         apply(staff, h, id, (int) Math.min(max, v), "set");
                         back.run();
                     }, back);
-            case "full" -> ui.confirmOver(staff, "Portare al massimo " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
+            // dal popup comandi: sfondo = potenziamenti + popup comandi scuriti (confirm li prende dal popup aperto)
+            case "full" -> ui.confirm(staff, "Portare al massimo " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
                 apply(staff, h, id, max, "full");
                 back.run();
             }, back);
-            case "reset" -> ui.confirmOver(staff, "Azzerare " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
+            case "reset" -> ui.confirm(staff, "Azzerare " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
                 apply(staff, h, id, 0, "reset");
                 back.run();
             }, back);

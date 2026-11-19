@@ -124,6 +124,8 @@ public final class TaskGui implements Listener {
         final Map<Integer, Runnable> actions = new HashMap<>();
         final Map<Integer, Runnable> rightActions = new HashMap<>();   // click destro (se manca vale actions)
         final Map<Integer, Runnable> dropActions = new HashMap<>();    // tasto Q: solo dove previsto
+        /** Sfondo (colori pieni, advance reale) dei popup aperti da questo pannello: schermata task + pannello. null = solo la schermata task. */
+        Consumer<GuiTitle> under;
 
         @Override
         public Inventory getInventory() {
@@ -340,6 +342,17 @@ public final class TaskGui implements Listener {
         return g -> {
             background(g);
         };
+    }
+
+    /**
+     * Sfondo di un popup (conferma, scelta) aperto dalla GUI task che il player ha davanti adesso: la schermata task, oppure
+     * schermata task + pannello (cartella, anteprima, lista, cestino) se si parte da un pannello.
+     */
+    private Consumer<GuiTitle> bgHere(Player p) {
+        if (p.getOpenInventory().getTopInventory().getHolder() instanceof Holder h && h.under != null) {
+            return h.under;
+        }
+        return bg();
     }
 
     // ------------------------------------------------------------------
@@ -682,7 +695,7 @@ public final class TaskGui implements Listener {
                     "&7parte da chiarire: &f" + fieldLabel(pa.field()),
                     "&7scritto: &8" + clean(pa.sourceText()))));
         }
-        choose(p, "intendevi", opts, 0, key -> {
+        choose(p, "intendevi", opts, 0, bgHere(p), key -> {
             int ci = Integer.parseInt(key);
             if (ci < alts.size()) {
                 apply(p, o, oi, bi, ai, pa, alts.get(ci));
@@ -735,7 +748,7 @@ public final class TaskGui implements Listener {
             }
             orders.add(ord);
         }
-        plugin.getProfileUi().confirmOver(p, "Salvare la task con " + orders.size() + (orders.size() == 1 ? " ordine?" : " ordini?"), bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Salvare la task con " + orders.size() + (orders.size() == 1 ? " ordine?" : " ordini?"), bgHere(p), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1075,7 +1088,7 @@ public final class TaskGui implements Listener {
         }
         StaffTasks.Action next = tasks().nextAction(c);
         String what = next == null ? "ordine custom da segnare come fatto" : StaffTasks.describe(next);
-        plugin.getProfileUi().confirmOver(p, "Hai gia' un incarico: " + what + ". Non puoi prenderne altri!", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Hai gia' un incarico: " + what + ". Non puoi prenderne altri!", bgHere(p), () -> {
             StaffTasks.Charge now = tasks().chargeOf(p.getUniqueId());
             if (now != null) {
                 tasks().release(p.getUniqueId(), "disincaricato");
@@ -1100,7 +1113,7 @@ public final class TaskGui implements Listener {
                 ? "Confermi che nell'ordine " + number + " della task #" + k.id() + " non va fatto niente?"
                 : "Vuoi prendere in carico " + (cond ? "il ramo " + (branch + 1) + " dell'ordine " : "l'ordine ") + number
                 + " della task #" + k.id() + "?";
-        plugin.getProfileUi().confirmOver(p, desc, bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, desc, bgHere(p), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1123,7 +1136,7 @@ public final class TaskGui implements Listener {
     }
 
     private void finishCustom(Player p, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "Segnare come fatto l'ordine che hai in carico?", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Segnare come fatto l'ordine che hai in carico?", bgHere(p), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1138,7 +1151,7 @@ public final class TaskGui implements Listener {
     }
 
     private void confirmRemoveOrder(Player p, String taskId, String orderId, int number, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "Togliere l'ordine " + number + " dalla task #" + taskId + "?", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Togliere l'ordine " + number + " dalla task #" + taskId + "?", bgHere(p), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1153,7 +1166,7 @@ public final class TaskGui implements Listener {
     }
 
     private void confirmDelete(Player p, String taskId, Runnable afterDelete, Runnable onNo) {
-        plugin.getProfileUi().confirmOver(p, "Eliminare la task #" + taskId + "? Va nel cestino.", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Eliminare la task #" + taskId + "? Va nel cestino.", bgHere(p), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1191,7 +1204,7 @@ public final class TaskGui implements Listener {
                 openTrash(p, page);
             };
             rows.add(new Row(icon("task_elimina", "&c&lTask #" + k.id(), lore), () -> {
-                plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bg(), () -> {
+                plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bgHere(p), () -> {
                     if (!guard(p)) {
                         return;
                     }
@@ -1394,12 +1407,20 @@ public final class TaskGui implements Listener {
         UserProfilePowers.drawDimmed(plugin, g, bg());
         g.at(-15, "&f" + F_IMAGE, F_FONT, F_ADV);
         for (Span s : fp.spans()) {
-            drawSpan(g, s);
+            drawSpan(g, s, L_IMG);
         }
         smallText(g, barText, L_BAR_FONT, L_BAR_CX, L_BAR_MAX);
         navText(g, pg + 1, pages);
         UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
+        // sfondo dei popup aperti dalla cartella/anteprima: schermata task + cartella con le barre (advance reale, testi esclusi)
+        h.under = u -> {
+            background(u);
+            u.at(-15, "&f" + F_IMAGE, F_FONT, F_ADV + 7);
+            for (Span s : fp.spans()) {
+                drawSpan(u, s, L_IMG + 7);
+            }
+        };
 
         put(h, L_X, pane(backName, backLore), onBack);
         put(h, L_BTN, button, btnLeft);
@@ -1437,7 +1458,7 @@ public final class TaskGui implements Listener {
      * (l=0 inizio, m=1 centro/continua, r=2 fine), avanzamento reale 51 + 18*col. Disegnati come le overlay a pagina intera:
      * a -22 con l'avanzamento REALE (come StaffProfileGui.overlay), cosi' il cursore resta coerente per i testi dopo.
      */
-    private void drawSpan(GuiTitle g, Span s) {
+    private void drawSpan(GuiTitle g, Span s, int x) {
         for (int i = 0; i < s.len(); i++) {
             int col = s.col() + i;
             int piece;
@@ -1449,7 +1470,7 @@ public final class TaskGui implements Listener {
                 piece = ROW_M;
             }
             char ch = (char) (ROW_BASE + s.row() * 21 + col * 3 + piece);
-            g.at(L_IMG, "&f" + ch, ROW_FONT, 51 + 18 * col);
+            g.at(x, "&f" + ch, ROW_FONT, 51 + 18 * col);
         }
     }
 
@@ -1457,7 +1478,8 @@ public final class TaskGui implements Listener {
     //  Popup scelta con frecce (come RoleGui, immagine con la barra)
     // ------------------------------------------------------------------
 
-    private void choose(Player p, String title, List<Opt> opts, int index, Consumer<String> onPick, Runnable onBack) {
+    /** under = sfondo (colori pieni) da scurire: quello del pannello da cui si apre, fisso anche quando si scorre con le frecce. */
+    private void choose(Player p, String title, List<Opt> opts, int index, Consumer<GuiTitle> under, Consumer<String> onPick, Runnable onBack) {
         int n = opts.size();
         if (n == 0) {
             onBack.run();
@@ -1467,7 +1489,7 @@ public final class TaskGui implements Listener {
         Opt cur = opts.get(idx);
         Holder h = new Holder();
         GuiTitle g = new GuiTitle(plugin);
-        UserProfilePowers.drawDimmed(plugin, g, bg());
+        UserProfilePowers.drawDimmed(plugin, g, under);
         g.at(-15, "&f" + CH_IMAGE, CH_FONT, CH_ADV);
         smallText(g, cur.label().toUpperCase(Locale.ROOT), CH_BAR_FONT, CH_BAR_CX, CH_BAR_MAX);
         smallText(g, "intendevi".equals(title) ? "Cosa intendevi? Scegli con le frecce." : "Scegli con le frecce.",
@@ -1483,10 +1505,10 @@ public final class TaskGui implements Listener {
         barLore.add("");
         barLore.add("&eusa le frecce per cambiare");
         put(h, CH_PREV, pane("&7precedente", List.of("&eclicca per scorrere")), () -> {
-            choose(p, title, opts, idx - 1, onPick, onBack);
+            choose(p, title, opts, idx - 1, under, onPick, onBack);
         });
         put(h, CH_NEXT, pane("&7successivo", List.of("&eclicca per scorrere")), () -> {
-            choose(p, title, opts, idx + 1, onPick, onBack);
+            choose(p, title, opts, idx + 1, under, onPick, onBack);
         });
         put(h, CH_BAR, pane("&f" + cur.label(), barLore), null);
         String key = cur.key();
@@ -1527,6 +1549,11 @@ public final class TaskGui implements Listener {
         navText(g, pg + 1, pages);
         UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
+        // sfondo dei popup aperti dalla lista/cestino: schermata task + pannello lista (advance reale, testi esclusi)
+        h.under = u -> {
+            background(u);
+            u.at(-15, "&f" + L_IMAGE, L_FONT, L_ADV + 7);
+        };
 
         put(h, L_X, pane("&cindietro", List.of()), onBack);
         put(h, L_BTN, pane("&bfiltra per", fl), cycle);

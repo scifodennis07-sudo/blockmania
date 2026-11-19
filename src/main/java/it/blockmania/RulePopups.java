@@ -206,6 +206,11 @@ public final class RulePopups implements Listener {
 
     /** Cronologia modifiche della regola, dalla piu' recente. */
     public void historyList(Player staff, Rules.Rule r, Runnable onBack) {
+        historyList(staff, r, 0, onBack);
+    }
+
+    /** Come sopra; scroll = bolle della chat del dettaglio da cui si apre (lo sfondo e' quel dettaglio, scurito). */
+    public void historyList(Player staff, Rules.Rule r, int scroll, Runnable onBack) {
         List<ItemStack> list = new ArrayList<>();
         List<UUID> faces = new ArrayList<>();
         List<Rules.Change> hist = rules.history(r.code());
@@ -225,11 +230,16 @@ public final class RulePopups implements Listener {
             }
         }
         openList(staff, "cronologia " + r.code(), list, faces, onBack,
-                g -> detail().drawDimmedBackground(g, r));
+                g -> detail().drawDimmedBackground(g, r, scroll));
     }
 
     /** Player sanzionati con questa regola, dal piu' recente. */
     public void hitsList(Player staff, Rules.Rule r, Runnable onBack) {
+        hitsList(staff, r, 0, onBack);
+    }
+
+    /** Come sopra; scroll = bolle della chat del dettaglio da cui si apre (lo sfondo e' quel dettaglio, scurito). */
+    public void hitsList(Player staff, Rules.Rule r, int scroll, Runnable onBack) {
         List<ItemStack> list = new ArrayList<>();
         List<UUID> faces = new ArrayList<>();
         List<Rules.Hit> hits = rules.hits(r.code());
@@ -245,7 +255,7 @@ public final class RulePopups implements Listener {
             }
         }
         openList(staff, "sanzionati " + r.code(), list, faces, onBack,
-                g -> detail().drawDimmedBackground(g, r));
+                g -> detail().drawDimmedBackground(g, r, scroll));
     }
 
     /** UUID noto, altrimenti dal nome solo se in cache (nessun lookup di rete sul main thread); null se sconosciuto. */
@@ -305,6 +315,11 @@ public final class RulePopups implements Listener {
 
     /** Popup "cosa modifichi": codice, titolo, descrizione, sanzione. Dopo ogni modifica onDone; annulla = onBack. */
     public void editMenu(Player staff, Rules.Rule r, Runnable onBack, Runnable onDone) {
+        editMenu(staff, r, 0, onBack, onDone);
+    }
+
+    /** Come sopra; scroll = bolle della chat del dettaglio da cui si apre (sfondo di tutti i popup della modifica). */
+    public void editMenu(Player staff, Rules.Rule r, int scroll, Runnable onBack, Runnable onDone) {
         final String code = r.code();
         ui.openCommands(staff, "modifica " + code, List.of("code", "title", "text", "type"), cmd -> {
             Rules.Rule cur = rules.get(code);
@@ -316,35 +331,35 @@ public final class RulePopups implements Listener {
                 return;
             }
             switch (cmd) {
-                case "code" -> askField(staff, cur, "codice della regola", "CODICE", cur.code(), onBack, onDone,
+                case "code" -> askField(staff, cur, scroll, "codice della regola", "CODICE", cur.code(), onBack, onDone,
                         (v) -> rules.editCode(code, v, staff));
-                case "title" -> askField(staff, cur, "titolo della regola", "TITOLO", cur.title(), onBack, onDone,
+                case "title" -> askField(staff, cur, scroll, "titolo della regola", "TITOLO", cur.title(), onBack, onDone,
                         (v) -> rules.editTitle(code, v, staff));
-                case "text" -> askField(staff, cur, "descrizione della regola", "DESCRIZIONE", cur.text(), onBack, onDone,
+                case "text" -> askField(staff, cur, scroll, "descrizione della regola", "DESCRIZIONE", cur.text(), onBack, onDone,
                         (v) -> rules.editText(code, v, staff));
-                case "type" -> askType(staff, cur, onBack, onDone);
+                case "type" -> askType(staff, cur, scroll, onBack, onDone);
                 default -> onBack.run();
             }
-        }, onBack, false, null, g -> detail().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
+        }, onBack, false, null, g -> detail().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r, scroll));
     }
 
     private interface Edit {
         String apply(String value);
     }
 
-    private void askField(Player staff, Rules.Rule r, String title, String bar, String initial,
+    private void askField(Player staff, Rules.Rule r, int scroll, String title, String bar, String initial,
                           Runnable onBack, Runnable onDone, Edit edit) {
         ui.askText(staff, title, bar, initial, in -> {
             String v = in == null ? "" : in.trim();
             if (v.isEmpty()) {
                 GuiMsg.send(plugin, staff, "&cScrivi qualcosa: il valore non puo' essere vuoto.");
-                Bukkit.getScheduler().runTask(plugin, () -> askField(staff, r, title, bar, initial, onBack, onDone, edit));
+                Bukkit.getScheduler().runTask(plugin, () -> askField(staff, r, scroll, title, bar, initial, onBack, onDone, edit));
                 return;
             }
             Rules.Rule bgRule = rules.get(r.code()) != null ? rules.get(r.code()) : r;
-            Runnable backToMenu = () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, bgRule, onBack, onDone));
+            Runnable backToMenu = () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, bgRule, scroll, onBack, onDone));
             ui.confirmOver(staff, "Salvare: " + (v.length() > 40 ? v.substring(0, 40) + "..." : v) + "?",
-                    g -> detail().drawDimmedBackground(g, bgRule), () -> {
+                    g -> detail().drawDimmedBackground(g, bgRule, scroll), () -> {
                 String err = edit.apply(v);
                 if (err != null) {
                     GuiMsg.send(plugin, staff, "&c" + err);
@@ -355,10 +370,10 @@ public final class RulePopups implements Listener {
                     onDone.run();
                 }
             }, backToMenu);
-        }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(r.code()) != null ? rules.get(r.code()) : r, onBack, onDone)));
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(r.code()) != null ? rules.get(r.code()) : r, scroll, onBack, onDone)));
     }
 
-    private void askType(Player staff, Rules.Rule r, Runnable onBack, Runnable onDone) {
+    private void askType(Player staff, Rules.Rule r, int scroll, Runnable onBack, Runnable onDone) {
         final String code = r.code();
         // stessi tasti (e immagini) per player e staff: per lo staff ban = depex, mute = sospensione
         ui.openCommands(staff, (rules.isStaff() ? "modifica sanzione staff " : "modifica sanzione ") + code,
@@ -369,21 +384,21 @@ public final class RulePopups implements Listener {
                 return;
             }
             if (rules.needsTime(t)) {
-                askMinutes(staff, code, t, onBack, onDone);
+                askMinutes(staff, code, t, scroll, onBack, onDone);
             } else {
                 applyType(staff, code, t, rules.time(t, ""), onDone);
             }
-        }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(code) != null ? rules.get(code) : r, onBack, onDone)),
-                false, null, g -> detail().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r));
+        }, () -> Bukkit.getScheduler().runTask(plugin, () -> editMenu(staff, rules.get(code) != null ? rules.get(code) : r, scroll, onBack, onDone)),
+                false, null, g -> detail().drawDimmedBackground(g, rules.get(code) != null ? rules.get(code) : r, scroll));
     }
 
-    private void askMinutes(Player staff, String code, Rules.Type t, Runnable onBack, Runnable onDone) {
+    private void askMinutes(Player staff, String code, Rules.Type t, int scroll, Runnable onBack, Runnable onDone) {
         String hint = rules.timeHint(t);
         ui.askText(staff, "scrivi il tempo: 10s 10m 10h 10d, anche somme come 10h+23m+16s; " + hint, "TEMPO", "", in -> {
             String err = rules.timeError(t, in);
             if (err != null) {
                 GuiMsg.send(plugin, staff, "&c" + err);
-                Bukkit.getScheduler().runTask(plugin, () -> askMinutes(staff, code, t, onBack, onDone));
+                Bukkit.getScheduler().runTask(plugin, () -> askMinutes(staff, code, t, scroll, onBack, onDone));
                 return;
             }
             applyType(staff, code, t, rules.time(t, in), onDone);
@@ -392,7 +407,7 @@ public final class RulePopups implements Listener {
             if (cur == null) {
                 onBack.run();
             } else {
-                askType(staff, cur, onBack, onDone);
+                askType(staff, cur, scroll, onBack, onDone);
             }
         }));
     }
