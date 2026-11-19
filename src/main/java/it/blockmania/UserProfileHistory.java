@@ -416,7 +416,7 @@ public final class UserProfileHistory implements Listener {
             final SanctionManager.Kind kind = s.kind;
             final int page = s.page;
             final Runnable back = s.onBack;
-            Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Resettare tutto: " + kindName(kind) + "?", c -> drawBg(c), () -> {
+            Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Azzerare tutta la cronologia: " + kindName(kind) + "?", c -> drawBg(c), () -> {
                 switch (kind) {
                     case BAN -> sm.resetBan(target, p.getUniqueId());
                     case MUTE -> sm.resetMute(target, p.getUniqueId());

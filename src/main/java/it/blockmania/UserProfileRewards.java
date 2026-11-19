@@ -461,7 +461,7 @@ public final class UserProfileRewards implements Listener {
             }
             case "daily" -> confirmDim(staff, s, "Azzerare la giornaliera di " + t.getName() + "?",
                     () -> resetDaily(staff, s));
-            default -> confirmDim(staff, s, "Azzerare TUTTE le ricompense di " + t.getName() + "?", () -> {
+            default -> confirmDim(staff, s, "Azzerare tutte le ricompense di " + t.getName() + "?", () -> {
                 Player tt = targetOf(staff, s);
                 if (tt == null) {
                     return;

@@ -305,7 +305,7 @@ public final class UserProfilePowers implements Listener {
      * Conferma = si continua in chat col testo gia' scritto (chatText); annulla = di nuovo l'incudine con quel testo.
      */
     private void fullToChat(Player p, AnvilSession s, String written) {
-        confirmOver(p, "incudine piena: vuoi continuare a scrivere in chat", g -> {
+        confirmOver(p, "L'incudine e' piena! Vuoi continuare a scrivere in chat?", g -> {
             g.at(-15, "&f" + ANVIL_BG, ANVIL_BG_FONT, ANVIL_BG_REAL);
         }, () -> {
             chatText(p, s, written);
@@ -347,7 +347,7 @@ public final class UserProfilePowers implements Listener {
     private void anvilBgText(GuiTitle g, String raw) {
         StringBuilder sb = new StringBuilder();
         for (char ch : (raw == null ? "" : raw).toCharArray()) {
-            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+            sb.append(ch < 128 && (Character.isLetterOrDigit(ch) || PUNCT.indexOf(ch) >= 0) ? ch : ' ');
         }
         String text = sb.toString().replaceAll(" +", " ").trim();
         while (tinyAdvance(text) > ANVIL_BG_BAR_MAX && text.length() > 1) {
@@ -507,8 +507,8 @@ public final class UserProfilePowers implements Listener {
      */
     static void drawDescription(BlockMania plugin, GuiTitle g, String raw) {
         String plain = java.text.Normalizer.normalize(raw == null ? "" : raw, java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");   // e' / piu' -> e / piu (il font tiny ha solo lettere e numeri)
-        String clean = tinySafe(plain).toUpperCase(java.util.Locale.ROOT).replaceAll(" +", " ").trim();
+                .replaceAll("\\p{M}", "");   // e' / piu' -> e / piu (lettere accentate non ci sono nel font tiny)
+        String clean = tinySafePunct(plain);   // come scritto (maiuscole/minuscole e punteggiatura)
         if (clean.isEmpty()) {
             return;
         }
@@ -534,7 +534,7 @@ public final class UserProfilePowers implements Listener {
             while (tinyAdvance(last) > DESC_MAX - 12 && last.length() > 1) {
                 last = last.substring(0, last.length() - 1).trim();
             }
-            cut.set(2, last + " ..");
+            cut.set(2, last + "...");
             lines = cut;
         }
         int[] ys = DESC_ROWS[lines.size() - 1];
@@ -545,7 +545,7 @@ public final class UserProfilePowers implements Listener {
 
     /** Testo di un pulsante (pannello U+E209), centrato sul pulsante. */
     private static void drawLabel(BlockMania plugin, GuiTitle g, String raw, int cx) {
-        centered(plugin, g, tinySafe(raw).toUpperCase(java.util.Locale.ROOT).trim(), cx, LABEL_MAX, "minecraft:tiny_y92");
+        centered(plugin, g, tinySafePunct(raw).toUpperCase(java.util.Locale.ROOT).trim(), cx, LABEL_MAX, "minecraft:tiny_y92");
     }
 
     /** Una riga di testo piccolo centrata su cx (pixel immagine), ombra 1 px a destra come topTitle. */
@@ -772,10 +772,19 @@ public final class UserProfilePowers implements Listener {
     //  Testi piccoli (copiati da Tickets)
     // ------------------------------------------------------------------
 
+    /**
+     * Punteggiatura del font tiny (TINY_PUNCT.md di Sara): stessa regola delle lettere (base del set + codice ASCII),
+     * avanzamento = larghezza + 1. C'e' nei font tiny2/tiny3/tiny5/task_anvil/tiny_y*, NON nel set F100 di topTitle
+     * (font default): li' si usa ancora tinySafe, che la toglie.
+     */
+    private static final String PUNCT = "!?,.:'-/%()#+";
+    private static final int[] PUNCT_ADV = {2, 5, 3, 2, 2, 2, 4, 4, 6, 3, 3, 6, 4};
+
     private static int tinyAdvance(String text) {
         int total = 0;
         for (char ch : text.toCharArray()) {
-            total += ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
+            int pi = PUNCT.indexOf(ch);
+            total += pi >= 0 ? PUNCT_ADV[pi] : ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
         }
         return total;
     }
@@ -783,9 +792,18 @@ public final class UserProfilePowers implements Listener {
     private static String tinyLetters(String text, char base) {
         StringBuilder sb = new StringBuilder();
         for (char ch : text.toCharArray()) {
-            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? (char) (base + ch) : ' ');
+            sb.append(ch < 128 && (Character.isLetterOrDigit(ch) || PUNCT.indexOf(ch) >= 0) ? (char) (base + ch) : ' ');
         }
         return sb.toString();
+    }
+
+    /** Come tinySafe ma tiene la punteggiatura del font tiny (per descrizioni, pulsanti e barre in tiny3/task_anvil). */
+    private static String tinySafePunct(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : s.toCharArray()) {
+            sb.append(ch < 128 && (Character.isLetterOrDigit(ch) || PUNCT.indexOf(ch) >= 0) ? ch : ' ');
+        }
+        return sb.toString().replaceAll(" +", " ").trim();
     }
 
     private static String tinySafe(String s) {

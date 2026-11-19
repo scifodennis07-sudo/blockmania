@@ -1031,8 +1031,8 @@ public final class UserProfileGui implements Listener {
         if (cmd.equals("set")) {
             ui.askNumber(p, "stamina %", "SETTA STAMINA 0 100", 0, 100, v -> applyStamina(p, target, "set", (int) v), cancel);
         } else {
-            ui.confirm(p, (cmd.equals("full") ? "riempire la stamina di " : cmd.equals("infinite") ? "rendere infinita la stamina di "
-                    : "svuotare la stamina di ") + nameOf(target), () -> applyStamina(p, target, cmd, 0), cancel);
+            ui.confirm(p, (cmd.equals("full") ? "Riempire la stamina di " : cmd.equals("infinite") ? "Rendere infinita la stamina di "
+                    : "Svuotare la stamina di ") + nameOf(target) + "?", () -> applyStamina(p, target, cmd, 0), cancel);
         }
     }
 
@@ -1140,8 +1140,8 @@ public final class UserProfileGui implements Listener {
                 long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
                 ui.askNumber(p, "minuti da togliere", "RIDUCI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
             }
-            case "remove", "reset" -> ui.confirm(p, (cmd.equals("remove") ? "togliere il " + k + " a " : "azzerare i " + k + " di ")
-                    + nameOf(target), () -> doSanction(p, target, kind, cmd, 0), cancel);
+            case "remove", "reset" -> ui.confirm(p, (cmd.equals("remove") ? "Togliere il " + k + " a " : "Azzerare i " + k + " di ")
+                    + nameOf(target) + "?", () -> doSanction(p, target, kind, cmd, 0), cancel);
             default -> back(p, target);
         }
     }
@@ -1164,7 +1164,7 @@ public final class UserProfileGui implements Listener {
                 if (!p.isOnline()) {
                     return;
                 }
-                ui.confirm(p, kind.name().toLowerCase(java.util.Locale.ROOT) + " a " + nameOf(target) + " con la regola " + rule.code(),
+                ui.confirm(p, "Dare un " + kind.name().toLowerCase(java.util.Locale.ROOT) + " a " + nameOf(target) + " con la regola " + rule.code() + "?",
                         () -> Bukkit.getScheduler().runTask(plugin, () -> doRuleSanction(p, target, kind, rule, msg)), cancel);
             }), cancel);
         }), cancel);
@@ -1334,8 +1334,8 @@ public final class UserProfileGui implements Listener {
                 ui.askNumber(p, cmd + " " + labelOf(it), bar, lo, Math.max(lo, hi),
                         v -> applyItem(p, target, it, cmd, (int) Math.min(Integer.MAX_VALUE, v)), cancel);
             }
-            case "full", "reset" -> ui.confirm(p, (cmd.equals("full") ? "portare al massimo " : "azzerare ") + labelOf(it).toLowerCase(java.util.Locale.ROOT)
-                    + " di " + nameOf(target), () -> applyItem(p, target, it, cmd, 0), cancel);
+            case "full", "reset" -> ui.confirm(p, (cmd.equals("full") ? "Portare al massimo " : "Azzerare ") + labelOf(it).toLowerCase(java.util.Locale.ROOT)
+                    + " di " + nameOf(target) + "?", () -> applyItem(p, target, it, cmd, 0), cancel);
             default -> back(p, target);
         }
     }

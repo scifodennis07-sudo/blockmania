@@ -758,7 +758,7 @@ public final class RuleDetailGui implements Listener {
         if (r == null) {
             return;
         }
-        ui.confirmOver(p, "Elimina la regola " + code, c -> drawBackground(c, r, scroll), () -> {
+        ui.confirmOver(p, "Eliminare la regola " + code + "?", c -> drawBackground(c, r, scroll), () -> {
             if (!authorize(p, "edit")) {
                 reopen(p, code, onBack, scroll).run();
                 return;

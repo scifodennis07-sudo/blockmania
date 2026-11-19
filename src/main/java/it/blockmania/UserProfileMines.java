@@ -483,7 +483,7 @@ public final class UserProfileMines implements Listener {
                     render(staff, target, holder.page + 1, holder.onBack, false);
                 }
             }
-            case "reset" -> ask(staff, target, holder, "Togliere TUTTE le miniere a " + target.getName() + "?", () -> {
+            case "reset" -> ask(staff, target, holder, "Togliere tutte le miniere a " + target.getName() + "?", () -> {
                 Player t = Bukkit.getPlayer(holder.target);
                 if (t == null) {
                     msg(staff, "&cIl giocatore non e' piu' online.");

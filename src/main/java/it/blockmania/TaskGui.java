@@ -735,7 +735,7 @@ public final class TaskGui implements Listener {
             }
             orders.add(ord);
         }
-        plugin.getProfileUi().confirmOver(p, "salvare la task con " + orders.size() + (orders.size() == 1 ? " ordine" : " ordini"), bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Salvare la task con " + orders.size() + (orders.size() == 1 ? " ordine?" : " ordini?"), bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1075,7 +1075,7 @@ public final class TaskGui implements Listener {
         }
         StaffTasks.Action next = tasks().nextAction(c);
         String what = next == null ? "ordine custom da segnare come fatto" : StaffTasks.describe(next);
-        plugin.getProfileUi().confirmOver(p, "hai gia un incarico " + what + " non puoi prenderne altri", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Hai gia' un incarico: " + what + ". Non puoi prenderne altri!", bg(), () -> {
             StaffTasks.Charge now = tasks().chargeOf(p.getUniqueId());
             if (now != null) {
                 tasks().release(p.getUniqueId(), "disincaricato");
@@ -1097,9 +1097,9 @@ public final class TaskGui implements Listener {
         boolean cond = StaffTasks.type(o) == StaffTasks.OrderType.CONDIZIONALE;
         StaffTasks.Branch b = branch >= 0 && branch < safe(o.branches()).size() ? o.branches().get(branch) : null;
         String desc = b != null && b.nothing()
-                ? "nell ordine " + number + " della task " + k.id() + " non va fatto niente"
-                : "vuoi prendere in carico " + (cond ? "il ramo " + (branch + 1) + " dell ordine " : "l ordine ") + number
-                + " della task " + k.id();
+                ? "Confermi che nell'ordine " + number + " della task #" + k.id() + " non va fatto niente?"
+                : "Vuoi prendere in carico " + (cond ? "il ramo " + (branch + 1) + " dell'ordine " : "l'ordine ") + number
+                + " della task #" + k.id() + "?";
         plugin.getProfileUi().confirmOver(p, desc, bg(), () -> {
             if (!guard(p)) {
                 return;
@@ -1123,7 +1123,7 @@ public final class TaskGui implements Listener {
     }
 
     private void finishCustom(Player p, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "segnare come fatto l ordine che hai in carico", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Segnare come fatto l'ordine che hai in carico?", bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1138,7 +1138,7 @@ public final class TaskGui implements Listener {
     }
 
     private void confirmRemoveOrder(Player p, String taskId, String orderId, int number, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "togliere l ordine " + number + " dalla task " + taskId, bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Togliere l'ordine " + number + " dalla task #" + taskId + "?", bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1153,7 +1153,7 @@ public final class TaskGui implements Listener {
     }
 
     private void confirmDelete(Player p, String taskId, Runnable afterDelete, Runnable onNo) {
-        plugin.getProfileUi().confirmOver(p, "eliminare la task " + taskId + " va nel cestino", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "Eliminare la task #" + taskId + "? Va nel cestino.", bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1191,7 +1191,7 @@ public final class TaskGui implements Listener {
                 openTrash(p, page);
             };
             rows.add(new Row(icon("task_elimina", "&c&lTask #" + k.id(), lore), () -> {
-                plugin.getProfileUi().confirmOver(p, "ripristinare la task " + id, bg(), () -> {
+                plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bg(), () -> {
                     if (!guard(p)) {
                         return;
                     }
@@ -1470,7 +1470,7 @@ public final class TaskGui implements Listener {
         UserProfilePowers.drawDimmed(plugin, g, bg());
         g.at(-15, "&f" + CH_IMAGE, CH_FONT, CH_ADV);
         smallText(g, cur.label().toUpperCase(Locale.ROOT), CH_BAR_FONT, CH_BAR_CX, CH_BAR_MAX);
-        smallText(g, ("intendevi".equals(title) ? "scegli cosa intendevi" : "scegli con le frecce").toUpperCase(Locale.ROOT),
+        smallText(g, "intendevi".equals(title) ? "Cosa intendevi? Scegli con le frecce." : "Scegli con le frecce.",
                 CH_DESC_FONT, CH_BAR_CX, CH_DESC_MAX);
         UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
@@ -1562,18 +1562,27 @@ public final class TaskGui implements Listener {
         return 10 + (i / 7) * 9 + (i % 7);
     }
 
+    /** Punteggiatura del font tiny (TINY_PUNCT.md): c'e' in tiny2/tiny3/tiny_y*, avanzamento = larghezza + 1. */
+    private static final String PUNCT = "!?,.:'-/%()#+";
+    private static final int[] PUNCT_ADV = {2, 5, 3, 2, 2, 2, 4, 4, 6, 3, 3, 6, 4};
+
     private static int tinyAdvance(String text) {
         int total = 0;
         for (char ch : text.toCharArray()) {
-            total += ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
+            int pi = PUNCT.indexOf(ch);
+            total += pi >= 0 ? PUNCT_ADV[pi] : ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
         }
         return total;
+    }
+
+    private static boolean tinyChar(char ch) {
+        return ch < 128 && (Character.isLetterOrDigit(ch) || PUNCT.indexOf(ch) >= 0);
     }
 
     private static String letters(String text, char base) {
         StringBuilder sb = new StringBuilder();
         for (char ch : text.toCharArray()) {
-            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? (char) (base + ch) : ' ');
+            sb.append(tinyChar(ch) ? (char) (base + ch) : ' ');
         }
         return sb.toString();
     }
@@ -1582,7 +1591,7 @@ public final class TaskGui implements Listener {
     private void smallText(GuiTitle g, String raw, String font, int cx, int max) {
         StringBuilder safe = new StringBuilder();
         for (char ch : (raw == null ? "" : raw).toCharArray()) {
-            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+            safe.append(tinyChar(ch) ? ch : ' ');
         }
         String text = safe.toString().replaceAll(" +", " ").trim();
         while (tinyAdvance(text) > max && text.length() > 1) {
