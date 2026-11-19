@@ -539,7 +539,7 @@ public final class UserProfilePowers implements Listener {
         }
         int[] ys = DESC_ROWS[lines.size() - 1];
         for (int i = 0; i < lines.size(); i++) {
-            centered(plugin, g, lines.get(i), DESC_CX, DESC_MAX, "minecraft:tiny_y" + ys[i]);
+            centered(plugin, g, lines.get(i), DESC_CX, DESC_MAX, "minecraft:tiny_y" + ys[i], true);
         }
     }
 
@@ -550,6 +550,11 @@ public final class UserProfilePowers implements Listener {
 
     /** Una riga di testo piccolo centrata su cx (pixel immagine), ombra 1 px a destra come topTitle. */
     private static void centered(BlockMania plugin, GuiTitle g, String text, int cx, int max, String font) {
+        centered(plugin, g, text, cx, max, font, false);
+    }
+
+    /** desc = descrizione del popup: grigio scuro #535353 senza ombra, come la scritta disegnata di prima. */
+    private static void centered(BlockMania plugin, GuiTitle g, String text, int cx, int max, String font, boolean desc) {
         String t = text;
         while (tinyAdvance(t) > max && t.length() > 1) {
             t = t.substring(0, t.length() - 1).trim();
@@ -564,8 +569,12 @@ public final class UserProfilePowers implements Listener {
                 continue;
             }
             int wa = tinyAdvance(w);
-            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), font, wa);
-            g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), font, wa);
+            if (desc) {
+                g.at(st + off + IMG, "&#535353" + tinyLetters(w, BAR), font, wa);
+            } else {
+                g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), font, wa);
+                g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), font, wa);
+            }
             off += wa + 4;
         }
     }
