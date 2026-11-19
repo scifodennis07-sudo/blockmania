@@ -60,6 +60,18 @@ public final class StaffTasks implements Listener {
     }
 
     /** id = numero progressivo come testo ("1", "2"...: la GUI mostra "#" + id). reason = motivazione. */
+    /** Modalita' test (solo OP): permette di prendere in carico le proprie task. config: tasks.modalita-test */
+    public boolean testMode(Player p) {
+        return p != null && p.isOp() && plugin.getConfig().getBoolean("tasks.modalita-test", false);
+    }
+
+    public boolean toggleTestMode() {
+        boolean v = !plugin.getConfig().getBoolean("tasks.modalita-test", false);
+        plugin.getConfig().set("tasks.modalita-test", v);
+        plugin.saveConfig();
+        return v;
+    }
+
     public record Task(String id, UUID createdBy, String createdByName, long createdAt, Status status, String reason,
                        List<Order> orders) {
     }
@@ -746,7 +758,7 @@ public final class StaffTasks implements Listener {
         if (suspended(p)) {
             return "sei sospeso dallo staff";
         }
-        if (p.getUniqueId().equals(t.createdBy())) {
+        if (p.getUniqueId().equals(t.createdBy()) && !testMode(p)) {
             return "non puoi prendere in carico gli ordini di una task creata da te";
         }
         Charge on = chargeOn(t.id(), o.id());

@@ -566,6 +566,16 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage("le task non sono disponibili");
                 return true;
             }
+            if (args.length >= 2 && args[1].equalsIgnoreCase("test")) {
+                if (!tp.isOp() || plugin.getStaffTasks() == null) {
+                    deny(sender, "solo un OP puo' usare la modalita' test delle task");
+                    return true;
+                }
+                boolean on = plugin.getStaffTasks().toggleTestMode();
+                sender.sendMessage(on ? "\u00a7amodalita' test task ATTIVA: da OP puoi prendere in carico le tue task"
+                        : "\u00a7cmodalita' test task disattivata");
+                return true;
+            }
             plugin.getTaskGui().open(tp);
             return true;
         }
