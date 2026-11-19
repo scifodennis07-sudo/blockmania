@@ -305,7 +305,7 @@ public final class UserProfilePowers implements Listener {
      * Conferma = si continua in chat col testo gia' scritto (chatText); annulla = di nuovo l'incudine con quel testo.
      */
     private void fullToChat(Player p, AnvilSession s, String written) {
-        confirmOver(p, "L'incudine e' piena (50 caratteri). Vuoi continuare a scrivere in chat?", g -> {
+        confirmOver(p, "incudine piena: vuoi continuare a scrivere in chat", g -> {
             g.at(-15, "&f" + ANVIL_BG, ANVIL_BG_FONT, ANVIL_BG_REAL);
         }, () -> {
             chatText(p, s, written);
@@ -422,6 +422,18 @@ public final class UserProfilePowers implements Listener {
      */
     public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
                             Runnable onYes, Runnable onNo, Consumer<GuiTitle> top) {
+        confirmOver(staff, text, drawDimmedBackground, onYes, onNo, top, null, null);
+    }
+
+    /**
+     * Conferma con i testi dei pulsanti scelti (es. DISINCARICA / CONTINUA): pannello con i pulsanti senza scritta (U+E209)
+     * e le etichette scritte col font. yesLabel/noLabel null = pulsanti CONFERMA/ANNULLA disegnati (U+E208).
+     * In tutti i casi text e' la DESCRIZIONE scritta nel pannello (1-3 righe, testo piccolo, solo lettere e numeri:
+     * la punteggiatura non c'e' nel font tiny) e anche nella lore del pulsante verde.
+     */
+    public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
+                            Runnable onYes, Runnable onNo, Consumer<GuiTitle> top, String yesLabel, String noLabel) {
+        boolean labels = yesLabel != null || noLabel != null;
         Holder h = new Holder();
         h.kind = "confirm";
         h.image = IMG_EMPTY;
@@ -431,8 +443,13 @@ public final class UserProfilePowers implements Listener {
         }
         GuiTitle g = new GuiTitle(plugin);
         g.atComponent(0, MinesGui.tint(content.build(), null), content.cursor());
-        g.at(-15, "&f" + '\uE207', MinesGui.F_MINES, 186);
+        g.at(-15, "&f" + (labels ? CONFIRM_BUTTONS : CONFIRM_EMPTY), MinesGui.F_MINES, 186);
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro (convenzione dei ticket)
+        drawDescription(plugin, g, text);
+        if (labels) {
+            drawLabel(plugin, g, yesLabel == null ? "conferma" : yesLabel, CONFIRM_YES_CX);
+            drawLabel(plugin, g, noLabel == null ? "annulla" : noLabel, CONFIRM_NO_CX);
+        }
         if (top == null) {
             topTitle(plugin, g, "conferma");
         } else {
@@ -458,13 +475,99 @@ public final class UserProfilePowers implements Listener {
             h.chosen = true;
             later(onNo);
         };
+        String yesName = "&a" + (yesLabel == null ? "conferma" : yesLabel.toLowerCase(java.util.Locale.ROOT));
+        String noName = "&c" + (noLabel == null ? "annulla" : noLabel.toLowerCase(java.util.Locale.ROOT));
         for (int s : CONFIRM_YES) {
-            put(h, s, pane("&aconferma", yes), doYes);
+            put(h, s, pane(yesName, yes), doYes);
         }
         for (int s : CONFIRM_NO) {
-            put(h, s, pane("&cannulla", no), doNo);
+            put(h, s, pane(noName, noLabel == null ? no : List.of("", "&eclicca per " + noLabel.toLowerCase(java.util.Locale.ROOT))), doNo);
         }
         open(staff, h);
+    }
+
+    /**
+     * Popup di conferma senza scritta fissa (POPUP_GLYPHS.md di Sara, font minecraft:mines): U+E208 = pannello vuoto con
+     * CONFERMA / ANNULLA, U+E209 = pannello vuoto con i pulsanti senza scritta. Area descrizione x28..161 (centro 94.5),
+     * righe alte 5 px: 1 riga a y69, 2 righe a y66/y74, 3 righe a y62/y70/y78; testi dei pulsanti a y92, centri x62 e x127.
+     * Ogni quota ha il suo font tiny_y<y> nel pack (= tiny3 spostato: set F500 testo, F600 ombra).
+     */
+    static final char CONFIRM_EMPTY = '\uE208';
+    private static final char CONFIRM_BUTTONS = '\uE209';
+    private static final int DESC_CX = 94;
+    private static final int DESC_MAX = 128;
+    private static final int[][] DESC_ROWS = {{69}, {66, 74}, {62, 70, 78}};
+    private static final int CONFIRM_YES_CX = 62;
+    private static final int CONFIRM_NO_CX = 127;
+    private static final int LABEL_MAX = 52;
+
+    /**
+     * Descrizione nel pannello di conferma U+E208/E209: parole a capo su max 3 righe da DESC_MAX px, maiuscolo, centrata.
+     * Da chiamare dopo il pannello (cursore gia' spostato di 7 px, come topTitle). Usata anche da MinesGui.
+     */
+    static void drawDescription(BlockMania plugin, GuiTitle g, String raw) {
+        String plain = java.text.Normalizer.normalize(raw == null ? "" : raw, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");   // e' / piu' -> e / piu (il font tiny ha solo lettere e numeri)
+        String clean = tinySafe(plain).toUpperCase(java.util.Locale.ROOT).replaceAll(" +", " ").trim();
+        if (clean.isEmpty()) {
+            return;
+        }
+        List<String> lines = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        for (String w : clean.split(" ")) {
+            String next = cur.length() == 0 ? w : cur + " " + w;
+            if (cur.length() > 0 && tinyAdvance(next) > DESC_MAX) {
+                lines.add(cur.toString());
+                cur.setLength(0);
+                cur.append(w);
+            } else {
+                cur.setLength(0);
+                cur.append(next);
+            }
+        }
+        if (cur.length() > 0) {
+            lines.add(cur.toString());
+        }
+        if (lines.size() > 3) {
+            List<String> cut = new ArrayList<>(lines.subList(0, 3));
+            String last = cut.get(2);
+            while (tinyAdvance(last) > DESC_MAX - 12 && last.length() > 1) {
+                last = last.substring(0, last.length() - 1).trim();
+            }
+            cut.set(2, last + " ..");
+            lines = cut;
+        }
+        int[] ys = DESC_ROWS[lines.size() - 1];
+        for (int i = 0; i < lines.size(); i++) {
+            centered(plugin, g, lines.get(i), DESC_CX, DESC_MAX, "minecraft:tiny_y" + ys[i]);
+        }
+    }
+
+    /** Testo di un pulsante (pannello U+E209), centrato sul pulsante. */
+    private static void drawLabel(BlockMania plugin, GuiTitle g, String raw, int cx) {
+        centered(plugin, g, tinySafe(raw).toUpperCase(java.util.Locale.ROOT).trim(), cx, LABEL_MAX, "minecraft:tiny_y92");
+    }
+
+    /** Una riga di testo piccolo centrata su cx (pixel immagine), ombra 1 px a destra come topTitle. */
+    private static void centered(BlockMania plugin, GuiTitle g, String text, int cx, int max, String font) {
+        String t = text;
+        while (tinyAdvance(t) > max && t.length() > 1) {
+            t = t.substring(0, t.length() - 1).trim();
+        }
+        if (t.isEmpty()) {
+            return;
+        }
+        int st = cx - Math.max(0, tinyAdvance(t) - 1) / 2;
+        int off = 0;
+        for (String w : t.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = tinyAdvance(w);
+            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), font, wa);
+            g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), font, wa);
+            off += wa + 4;
+        }
     }
 
     // ------------------------------------------------------------------

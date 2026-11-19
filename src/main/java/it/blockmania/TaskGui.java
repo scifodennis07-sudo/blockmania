@@ -33,7 +33,7 @@ import java.util.function.IntConsumer;
  * MOTIVAZIONE. Nella cartella ogni ordine e' un blocco di slot uniti su una riga (barra del font task_row dietro):
  * [testo][prendi] per l'ordine semplice / custom, [testo][ramo 1]..[ramo N][non fare nulla] per il condizionale; gli
  * ordini sono separati da uno slot vuoto, uno piu' lungo di 7 slot continua sulla riga sotto. Il "+" verde aggiunge ordini
- * (nell'anteprima e, per creatore/admin+, nelle task salvate: StaffTasks.addOrders). Cliccando "prendi" o un ramo lo staffer PRENDE IN CARICO l'ordine
+ * (solo nell'anteprima: una task salvata non si allunga, si possono solo togliere ordini non completati). Cliccando "prendi" o un ramo lo staffer PRENDE IN CARICO l'ordine
  * (StaffTasks.take: bossbar con timer 5 minuti, le azioni le fa a mano con userprofile / adminmania).
  * Tutti gli item usano le icone del pack (blockmania:task_*, ItemMeta.setItemModel); nomi e lore passano da LoreWrap.
  * Popup: si chiudono solo con conferma/annulla (gli altri click non fanno niente). Q sull'item di una task nella lista =
@@ -45,7 +45,7 @@ public final class TaskGui implements Listener {
 
     // ---------- pack: schermata principale ----------
     private static final String FONT = "minecraft:task";
-    private static final String IMAGE = "";
+    private static final String IMAGE = "\ue180";
     private static final int SIZE = 54;
     private static final int IMG_ADV = 179;    // avanzamento dichiarato nel titolo normale (reale 186 - 7)
     private static final int IMG_REAL = 186;   // avanzamento reale (sfondo dei popup): ultima colonna opaca 184 + 2
@@ -62,7 +62,11 @@ public final class TaskGui implements Listener {
     private static final int[] S_LOG = {37, 38, 39, 40, 41, 42, 43, 46, 47, 48, 49, 50, 51, 52};
 
     // ---------- popup scelta con frecce (userprofile-30, U+E11D: barra x62..127 y51..62) ----------
-    private static final String CH_IMAGE = "";
+    /** U+E11F = popup frecce con barra SENZA la scritta fissa (POPUP_GLYPHS.md): la descrizione la scrive choose. */
+    private static final String CH_IMAGE = "\ue11f";
+    /** Descrizione del popup frecce: 1 riga a y73 (area x28..161, centro 94.5), font tiny_y73 del pack. */
+    private static final String CH_DESC_FONT = "minecraft:tiny_y73";
+    private static final int CH_DESC_MAX = 128;
     private static final String CH_FONT = "minecraft:sp_popup";
     private static final int CH_ADV = 162;     // reale 169 - 7 (come RoleGui.ADV)
     private static final int[] CH_PREV = {10, 11};
@@ -75,18 +79,18 @@ public final class TaskGui implements Listener {
     private static final int CH_BAR_MAX = 58;
 
     // ---------- popup lista (ProfileLists, U+E119) e cartella (userprofile-31, U+E11E, stessa struttura) ----------
-    private static final String L_IMAGE = "";
+    private static final String L_IMAGE = "\ue119";
     private static final String L_FONT = "minecraft:userprofile3";
-    private static final String F_IMAGE = "";
+    private static final String F_IMAGE = "\ue11e";
     private static final String F_FONT = "minecraft:sp_popup";
     private static final int L_IMG = -22;
     private static final int L_ADV = 162;
     private static final int F_ADV = 162;
     private static final int L_NAV_CX = 96;
-    private static final char L_NAV = '';
-    private static final char L_NAV_SH = '';
-    private static final char BAR_BASE = '';
-    private static final char BAR_SHADOW = '';
+    private static final char L_NAV = '\ue4a0';
+    private static final char L_NAV_SH = '\ue4b0';
+    private static final char BAR_BASE = '\uf500';
+    private static final char BAR_SHADOW = '\uf600';
     private static final String L_BAR_FONT = "minecraft:tiny3";
     private static final int L_BAR_CX = 95;
     private static final int L_BAR_MAX = 70;
@@ -151,8 +155,6 @@ public final class TaskGui implements Listener {
     /** Task scritta (CREA), in memoria finche' non si salva o si annulla. */
     private static final class Draft {
         String reason = "";
-        /** Id della task salvata a cui si aggiungono gli ordini (null = task nuova). */
-        String addTo;
         /** Ordine da riscrivere con la prossima frase (-1 = la frase aggiunge ordini in coda). */
         int replace = -1;
         final List<TaskParser.ParsedOrder> orders = new ArrayList<>();
@@ -289,7 +291,7 @@ public final class TaskGui implements Listener {
             put(h, S_CREATE, pane("&8crea task", List.of("&7Le task le creano gli helper in su.", "", "&cnon puoi creare task")), null);
         } else if (d != null) {
             put(h, S_CREATE, pane("&acrea task", List.of(
-                    "&7Anteprima aperta: &f" + d.orders.size() + " ordini" + (d.addTo == null ? "" : " &8(per la task #" + d.addTo + ")"),
+                    "&7Anteprima aperta: &f" + d.orders.size() + " ordini",
                     "",
                     "&eclick sinistro: riprendi l'anteprima",
                     "&eclick destro: scrivi una nuova task (l'anteprima si perde)")), () -> {
@@ -355,19 +357,6 @@ public final class TaskGui implements Listener {
         }
         reloadWords();
         Draft d = new Draft();
-        drafts.put(p.getUniqueId(), d);
-        askSentence(p, "");
-    }
-
-    /** "+" nella cartella di una task salvata: nuova anteprima che aggiunge ordini a quella task. */
-    private void startAdd(Player p, StaffTasks.Task k) {
-        if (!guard(p)) {
-            return;
-        }
-        reloadWords();
-        Draft d = new Draft();
-        d.addTo = k.id();
-        d.reason = k.reason() == null ? "" : k.reason();
         drafts.put(p.getUniqueId(), d);
         askSentence(p, "");
     }
@@ -452,7 +441,7 @@ public final class TaskGui implements Listener {
             d.orders.addAll(parsed);
         }
         d.replace = -1;
-        if (d.addTo == null && d.reason.isBlank()) {
+        if (d.reason.isBlank()) {
             askMotivation(p, "");
         } else {
             openPreview(p, Integer.MAX_VALUE);   // ultima pagina: si vede l'ordine appena scritto
@@ -570,7 +559,7 @@ public final class TaskGui implements Listener {
                 deny(p, "non ci sono ordini da salvare.");
             } else if (unsureCount > 0) {
                 deny(p, "ci sono " + unsureCount + " ordini da chiarire (gialli): clicca e scegli cosa intendevi.");
-            } else if (d.addTo == null && (d.reason == null || d.reason.isBlank())) {
+            } else if (d.reason == null || d.reason.isBlank()) {
                 deny(p, "manca la motivazione.");
                 askMotivation(p, "");
             } else {
@@ -578,16 +567,16 @@ public final class TaskGui implements Listener {
             }
         };
         Map<Integer, Row> extra = new HashMap<>();
-        if (d.addTo == null) {
+        {
             extra.put(F_LEFT, new Row(icon("task_motivazione", "&fmotivazione", List.of(
                     noReason ? "&cmanca" : "&f" + clean(d.reason), "", "&eclicca per cambiarla")), () -> {
                 askMotivation(p, d.reason);
             }, null));
         }
-        boolean ready = !d.orders.isEmpty() && unsure == 0 && (d.addTo != null || !noReason);
+        boolean ready = !d.orders.isEmpty() && unsure == 0 && !noReason;
         extra.put(F_RIGHT, new Row(icon("task_salva", ready ? "&asalva" : "&8salva", List.of(
-                d.addTo == null ? "&7Salva la task nuova." : "&7Aggiunge gli ordini alla task #" + d.addTo + ".",
-                ready ? "" : "&7Prima chiarisci le parti gialle" + (d.addTo == null ? " e scrivi la motivazione." : "."),
+                "&7Salva la task.",
+                ready ? "" : "&7Prima chiarisci le parti gialle e scrivi la motivazione.",
                 ready ? "&eclicca per salvare" : "")), save, null));
         folder(p, "anteprima task", "anteprima", fp, pg, pages.size(), pgn -> {
             openPreview(p, pgn);
@@ -746,29 +735,7 @@ public final class TaskGui implements Listener {
             }
             orders.add(ord);
         }
-        if (d.addTo != null) {
-            String id = d.addTo;
-            plugin.getProfileUi().confirmOver(p, "Aggiungere " + orders.size() + " ordini alla task #" + id + "?", bg(), () -> {
-                if (!guard(p)) {
-                    return;
-                }
-                String err = tasks().addOrders(p, id, orders);
-                if (err != null) {
-                    deny(p, err);
-                    openPreview(p, 0);
-                    return;
-                }
-                drafts.remove(p.getUniqueId());
-                GuiMsg.send(plugin, p, "&7aggiunti " + orders.size() + " ordini alla task &f#" + id + "&7.");
-                viewTask(p, id, Integer.MAX_VALUE, () -> {
-                    openList(p, 0, 0);
-                });
-            }, () -> {
-                openPreview(p, 0);
-            });
-            return;
-        }
-        plugin.getProfileUi().confirmOver(p, "Salvare la task con " + orders.size() + " ordini?", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "salvare la task con " + orders.size() + (orders.size() == 1 ? " ordine" : " ordini"), bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -812,6 +779,12 @@ public final class TaskGui implements Listener {
 
     private void openList(Player p, int filterIdx, int page) {
         if (!guard(p)) {
+            return;
+        }
+        if (tasks().chargeOf(p.getUniqueId()) != null) {
+            chargePopup(p, () -> {
+                openList(p, filterIdx, page);
+            });
             return;
         }
         int fi = Math.max(0, Math.min(filterIdx, LIST_FILTERS.size() - 1));
@@ -926,23 +899,20 @@ public final class TaskGui implements Listener {
         }
         List<FolderPage> pages = layout(blocks);
         int pg = Math.max(0, Math.min(page, pages.size() - 1));
-        // creatore o admin+ (come canDelete): "+" = aggiungi ordini, click destro / Q = elimina
+        // task salvata: niente "+" (gli ordini si aggiungono solo nell'anteprima); il pulsante verde mostra le info.
+        // Creatore o admin+ (canDelete): click destro / Q = elimina la task; click destro su un ordine aperto = toglilo.
         boolean del = k.status() != StaffTasks.Status.ELIMINATA && t.canDelete(p, k);
         List<String> btnLore = folderLore(k, StaffTasks.counts(k));
         if (del) {
             btnLore.add("");
-            btnLore.add("&eclicca per aggiungere un ordine");
             btnLore.add("&cclick destro o Q per eliminare la task");
         }
         Runnable delete = del ? () -> {
             confirmDelete(p, taskId, back, self);
         } : null;
-        Runnable add = del ? () -> {
-            startAdd(p, k);
-        } : null;
         Holder h = folder(p, "task " + k.id(), "task " + k.id(), pages.get(pg), pg, pages.size(), pgn -> {
             viewTask(p, taskId, pgn, back);
-        }, back, "&cindietro", List.of(), pane(del ? "&a+ aggiungi ordine" : folderName(k), btnLore), add, delete, Map.of());
+        }, back, "&cindietro", List.of(), pane(folderName(k), btnLore), null, delete, Map.of());
         if (h != null && delete != null) {
             for (int s : L_BTN) {
                 h.dropActions.put(s, delete);
@@ -980,8 +950,17 @@ public final class TaskGui implements Listener {
                 finishCustom(p, self);
             };
         }
+        // togliere un ordine non completato: solo creatore o admin+ (con conferma)
+        Runnable removeOrder = null;
+        if (!done && !deleted && t.canDelete(p, k)) {
+            tl.add("");
+            tl.add("&cclick destro per togliere questo ordine");
+            removeOrder = () -> {
+                confirmRemoveOrder(p, k.id(), o.id(), oi + 1, self);
+            };
+        }
         String textIcon = done ? "task_fatto" : type == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo";
-        cells.add(new Row(icon(textIcon, (done ? "&a" : "&f") + "ordine " + (oi + 1), tl), textClick, null));
+        cells.add(new Row(icon(textIcon, (done ? "&a" : "&f") + "ordine " + (oi + 1), tl), textClick, removeOrder));
 
         List<StaffTasks.Branch> branches = safe(o.branches());
         if (type != StaffTasks.OrderType.CONDIZIONALE) {
@@ -1084,8 +1063,44 @@ public final class TaskGui implements Listener {
         return "&elibero";
     }
 
+    /**
+     * Ha gia' un incarico: "hai gia' un incarico, non puoi prenderne altri" con DISINCARICA (release come la scadenza:
+     * azioni fatte rimesse, ordine di nuovo libero) e CONTINUA (chiude: torna a fare l'incarico).
+     */
+    private void chargePopup(Player p, Runnable after) {
+        StaffTasks.Charge c = tasks().chargeOf(p.getUniqueId());
+        if (c == null) {
+            after.run();
+            return;
+        }
+        StaffTasks.Action next = tasks().nextAction(c);
+        String what = next == null ? "ordine custom da segnare come fatto" : StaffTasks.describe(next);
+        plugin.getProfileUi().confirmOver(p, "hai gia un incarico " + what + " non puoi prenderne altri", bg(), () -> {
+            StaffTasks.Charge now = tasks().chargeOf(p.getUniqueId());
+            if (now != null) {
+                tasks().release(p.getUniqueId(), "disincaricato");
+                GuiMsg.send(plugin, p, "&7incarico lasciato.");
+            }
+            after.run();
+        }, () -> {
+            p.closeInventory();
+        }, null, "disincarica", "continua");
+    }
+
     private void confirmTake(Player p, StaffTasks.Task k, StaffTasks.Order o, int branch, String what, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "Prendere in carico: " + clean(what) + "? Hai 5 minuti.", bg(), () -> {
+        // ha gia' un incarico: popup DISINCARICA / CONTINUA invece della conferma
+        if (tasks().chargeOf(p.getUniqueId()) != null) {
+            chargePopup(p, self);
+            return;
+        }
+        int number = Math.max(0, safe(k.orders()).indexOf(o)) + 1;
+        boolean cond = StaffTasks.type(o) == StaffTasks.OrderType.CONDIZIONALE;
+        StaffTasks.Branch b = branch >= 0 && branch < safe(o.branches()).size() ? o.branches().get(branch) : null;
+        String desc = b != null && b.nothing()
+                ? "nell ordine " + number + " della task " + k.id() + " non va fatto niente"
+                : "vuoi prendere in carico " + (cond ? "il ramo " + (branch + 1) + " dell ordine " : "l ordine ") + number
+                + " della task " + k.id();
+        plugin.getProfileUi().confirmOver(p, desc, bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1108,7 +1123,7 @@ public final class TaskGui implements Listener {
     }
 
     private void finishCustom(Player p, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "Segnare come fatto l'ordine che hai in carico?", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "segnare come fatto l ordine che hai in carico", bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1122,8 +1137,23 @@ public final class TaskGui implements Listener {
         }, self);
     }
 
+    private void confirmRemoveOrder(Player p, String taskId, String orderId, int number, Runnable self) {
+        plugin.getProfileUi().confirmOver(p, "togliere l ordine " + number + " dalla task " + taskId, bg(), () -> {
+            if (!guard(p)) {
+                return;
+            }
+            String err = tasks().removeOrder(p, taskId, orderId);
+            if (err == null) {
+                GuiMsg.send(plugin, p, "&7ordine " + number + " tolto dalla task &f#" + taskId + "&7.");
+            } else {
+                deny(p, err);
+            }
+            self.run();
+        }, self);
+    }
+
     private void confirmDelete(Player p, String taskId, Runnable afterDelete, Runnable onNo) {
-        plugin.getProfileUi().confirmOver(p, "Eliminare la task #" + taskId + " (va nel cestino)?", bg(), () -> {
+        plugin.getProfileUi().confirmOver(p, "eliminare la task " + taskId + " va nel cestino", bg(), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1161,7 +1191,7 @@ public final class TaskGui implements Listener {
                 openTrash(p, page);
             };
             rows.add(new Row(icon("task_elimina", "&c&lTask #" + k.id(), lore), () -> {
-                plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bg(), () -> {
+                plugin.getProfileUi().confirmOver(p, "ripristinare la task " + id, bg(), () -> {
                     if (!guard(p)) {
                         return;
                     }
@@ -1190,7 +1220,7 @@ public final class TaskGui implements Listener {
     private static final List<Filter> LOG_FILTERS = List.of(
             new Filter("Tutto", ""),
             new Filter("Create", "CREATA"),
-            new Filter("Aggiunte", "AGGIUNTI"),
+            new Filter("Ordini tolti", "TOLTO"),
             new Filter("Prese", "PRESA"),
             new Filter("Azioni", "AZIONE"),
             new Filter("Completate", "COMPLETATA"),
@@ -1215,7 +1245,7 @@ public final class TaskGui implements Listener {
             String color;
             switch (ev) {
                 case "CREATA" -> { iconName = "task_cartella"; color = "&e"; }
-                case "AGGIUNTI" -> { iconName = "task_testo"; color = "&e"; }
+                case "TOLTO" -> { iconName = "task_elimina"; color = "&c"; }
                 case "PRESA" -> { iconName = "task_in_carico"; color = "&6"; }
                 case "AZIONE" -> { iconName = "task_prendi"; color = "&b"; }
                 case "COMPLETATA" -> { iconName = "task_fatto"; color = "&a"; }
@@ -1440,6 +1470,8 @@ public final class TaskGui implements Listener {
         UserProfilePowers.drawDimmed(plugin, g, bg());
         g.at(-15, "&f" + CH_IMAGE, CH_FONT, CH_ADV);
         smallText(g, cur.label().toUpperCase(Locale.ROOT), CH_BAR_FONT, CH_BAR_CX, CH_BAR_MAX);
+        smallText(g, ("intendevi".equals(title) ? "scegli cosa intendevi" : "scegli con le frecce").toUpperCase(Locale.ROOT),
+                CH_DESC_FONT, CH_BAR_CX, CH_DESC_MAX);
         UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 

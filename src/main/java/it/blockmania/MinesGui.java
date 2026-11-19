@@ -338,6 +338,12 @@ public final class MinesGui implements Listener {
      */
     static Component fontTitle(BlockMania plugin, int greens, int[] cubes, boolean staffReset, boolean dim,
                                String top, int page, int pages, boolean showPage) {
+        return fontTitle(plugin, greens, cubes, staffReset, dim, top, page, pages, showPage, null);
+    }
+
+    /** Come sopra; confirmText (con dim) = descrizione scritta nel pannello di conferma senza scritta fissa (U+E208). */
+    static Component fontTitle(BlockMania plugin, int greens, int[] cubes, boolean staffReset, boolean dim,
+                               String top, int page, int pages, boolean showPage, String confirmText) {
         GuiTitle content = new GuiTitle(plugin);
         content.at(-15, "&f" + G_BASE, F_MINES, 186);
         for (int i = 1; i <= Math.min(5, greens); i++) {
@@ -356,9 +362,12 @@ public final class MinesGui implements Listener {
         Component body = content.build();
         g.atComponent(0, dim ? tint(body, null) : body, content.cursor());
         if (dim) {
-            g.at(-15, "&f" + G_CONFIRM, F_MINES, 186);
+            g.at(-15, "&f" + (confirmText != null ? UserProfilePowers.CONFIRM_EMPTY : G_CONFIRM), F_MINES, 186);
         }
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro rispetto al reale
+        if (dim && confirmText != null) {
+            UserProfilePowers.drawDescription(plugin, g, confirmText);
+        }
         if (top != null && !top.isBlank()) {
             UserProfilePowers.topTitle(plugin, g, top);
         }

@@ -85,7 +85,7 @@ public final class StaffTasks implements Listener {
                          int doneCustom) {
     }
 
-    /** event: CREATA AGGIUNTI PRESA AZIONE COMPLETATA ANNULLATA ELIMINATA RIPRISTINATA ; orderId null per gli eventi della task. */
+    /** event: CREATA PRESA AZIONE COMPLETATA ANNULLATA TOLTO ELIMINATA RIPRISTINATA ; orderId null per gli eventi della task. */
     public record LogEntry(long ts, String taskId, String orderId, String event, UUID by, String byName, String detail) {
     }
 
@@ -95,6 +95,14 @@ public final class StaffTasks implements Listener {
 
     /** Annullamento da fare al prossimo login del player (era offline allo scadere). */
     private record Undo(UUID target, String what, String spec, String before) {
+    }
+
+    /**
+     * Modifica per un player OFFLINE (i dati sono nel player: si applica al suo prossimo login). link = azione d'incarico
+     * spuntata con questa modifica ("task|ordine|ramo|indice"), "" se nessuna.
+     */
+    private record Pending(String id, UUID target, String verb, String what, String spec, long amount, UUID by, String byName,
+                           long ts, String link) {
     }
 
     public static final long CHARGE_MS = 5 * 60 * 1000L;
@@ -124,6 +132,7 @@ public final class StaffTasks implements Listener {
     private final List<LogEntry> log = new ArrayList<>();
     private final Map<UUID, Charge> charges = new LinkedHashMap<>();
     private final List<Undo> undos = new ArrayList<>();
+    private final List<Pending> offline = new ArrayList<>();
     private final Map<UUID, BossBar> bars = new HashMap<>();
     /** Valore di prima preso da allows() per l'azione che lo staffer sta per fare: staff -> {indice azione, valore}. */
     private final Map<UUID, Object[]> pendingBefore = new HashMap<>();
@@ -346,6 +355,7 @@ public final class StaffTasks implements Listener {
         log.clear();
         charges.clear();
         undos.clear();
+        offline.clear();
         nextId = 1;
         if (!file.exists()) {
             return;
@@ -411,6 +421,14 @@ public final class StaffTasks implements Listener {
             if (staff != null) {
                 charges.put(staff, new Charge(staff, str(m.get("task")), str(m.get("order")), (int) num(m.get("branch")),
                         num(m.get("expiresAt"))));
+            }
+        }
+        for (Map<?, ?> m : y.getMapList("offline")) {
+            UUID target = uuid(str(m.get("target")));
+            if (target != null) {
+                offline.add(new Pending(str(m.get("id")), target, str(m.get("verb")), str(m.get("what")),
+                        str(m.get("spec")).isEmpty() ? null : str(m.get("spec")), num(m.get("amount")), uuid(str(m.get("by"))),
+                        str(m.get("byName")), num(m.get("ts")), str(m.get("link"))));
             }
         }
         for (Map<?, ?> m : y.getMapList("undo")) {
@@ -582,6 +600,22 @@ public final class StaffTasks implements Listener {
             un.add(m);
         }
         y.set("undo", un);
+        List<Map<String, Object>> off = new ArrayList<>();
+        for (Pending pe : offline) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", pe.id());
+            m.put("target", pe.target().toString());
+            m.put("verb", pe.verb());
+            m.put("what", pe.what());
+            m.put("spec", nz(pe.spec()));
+            m.put("amount", pe.amount());
+            m.put("by", pe.by() == null ? "" : pe.by().toString());
+            m.put("byName", nz(pe.byName()));
+            m.put("ts", pe.ts());
+            m.put("link", nz(pe.link()));
+            off.add(m);
+        }
+        y.set("offline", off);
         try {
             plugin.getDataFolder().mkdirs();
             y.save(file);
@@ -604,13 +638,9 @@ public final class StaffTasks implements Listener {
             timer.cancel();
             timer = null;
         }
-        for (Map.Entry<UUID, BossBar> e : bars.entrySet()) {
-            Player p = Bukkit.getPlayer(e.getKey());
-            if (p != null) {
-                p.hideBossBar(e.getValue());
-            }
+        for (UUID id : new ArrayList<>(bars.keySet())) {
+            hideBar(id);
         }
-        bars.clear();
         save();
     }
 
@@ -815,49 +845,55 @@ public final class StaffTasks implements Listener {
         return t;
     }
 
-    /**
-     * Aggiunge ordini a una task esistente (creatore o admin+, non nel cestino). Gli id continuano (#task ordine 3, 4...);
-     * una task completata torna aperta. null = ok, altrimenti il motivo.
-     */
+    /** Dopo il salvataggio una task non accetta piu' ordini nuovi (scelta dell'utente): rifiuta sempre. */
     public String addOrders(Player by, String taskId, List<Order> orders) {
+        return "dopo il salvataggio non si possono aggiungere ordini: crea una nuova task";
+    }
+
+    /**
+     * Toglie un ordine non completato (creatore o admin+). Se qualcuno lo ha in carico l'incarico si annulla (azioni fatte
+     * rimesse come prima). Se era l'ultimo ordine la task va nel cestino. null = ok, altrimenti il motivo.
+     */
+    public String removeOrder(Player by, String taskId, String orderId) {
         Task t = get(taskId);
-        if (t == null) {
-            return "task non trovata";
+        Order o = orderOf(t, orderId);
+        if (t == null || o == null) {
+            return "ordine non trovato";
         }
         if (t.status() == Status.ELIMINATA) {
             return "la task e' nel cestino";
         }
         if (!canDelete(by, t)) {
-            return "solo chi ha creato la task o un admin puo' aggiungere ordini";
+            return "solo chi ha creato la task o un admin puo' togliere ordini";
         }
-        if (orders == null || orders.isEmpty()) {
-            return "nessun ordine da aggiungere";
+        if (o.status() != Status.APERTA) {
+            return "l'ordine e' gia' completato";
         }
-        for (Order o : orders) {
-            String err = whyInvalid(by, o);
-            if (err != null) {
-                return err;
-            }
+        Charge c = chargeOn(t.id(), o.id());
+        if (c != null) {
+            release(c.staff(), "ordine tolto dalla task");
         }
-        Task done;
+        boolean last;
         synchronized (this) {
             Task cur = tasks.get(t.id());
-            long max = 0;
-            for (Order o : cur.orders()) {
-                max = Math.max(max, num(o.id()));
+            Order now = orderOf(cur, orderId);
+            if (now == null) {
+                return "ordine non trovato";
             }
-            List<Order> all = new ArrayList<>(cur.orders());
-            for (Order o : orders) {
-                all.add(cleanOrder(o, String.valueOf(++max)));
+            List<Order> rest = new ArrayList<>(cur.orders());
+            rest.remove(now);
+            last = rest.isEmpty();
+            if (last) {
+                tasks.put(cur.id(), withStatus(cur, Status.ELIMINATA));
+            } else {
+                tasks.put(cur.id(), new Task(cur.id(), cur.createdBy(), cur.createdByName(), cur.createdAt(), statusOf(rest),
+                        cur.reason(), List.copyOf(rest)));
             }
-            done = new Task(cur.id(), cur.createdBy(), cur.createdByName(), cur.createdAt(),
-                    statusOf(all), cur.reason(), List.copyOf(all));
-            tasks.put(done.id(), done);
-            addLog(done.id(), null, "AGGIUNTI", by, orders.size() + (orders.size() == 1 ? " ordine aggiunto" : " ordini aggiunti"));
+            addLog(cur.id(), orderId, "TOLTO", by, shortText(now.text()) + (last ? " (ultimo ordine: task nel cestino)" : ""));
             save();
         }
-        movement(by.getUniqueId(), "Ha aggiunto " + orders.size() + " ordini alla task staff #" + done.id());
-        log("task #" + done.id() + ": " + orders.size() + " ordini aggiunti da " + by.getName());
+        movement(by.getUniqueId(), "Ha tolto l'ordine " + orderId + " dalla task staff #" + t.id());
+        log("task #" + t.id() + " ordine " + orderId + " tolto da " + by.getName() + (last ? " (task nel cestino)" : ""));
         return null;
     }
 
@@ -1013,8 +1049,9 @@ public final class StaffTasks implements Listener {
             if (t != null && o != null && c.branch() >= 0 && c.branch() < o.branches().size()) {
                 Branch b = o.branches().get(c.branch());
                 List<Action> fresh = new ArrayList<>();
-                for (Action a : b.actions()) {
-                    if (a.done()) {
+                for (int i = 0; i < b.actions().size(); i++) {
+                    Action a = b.actions().get(i);
+                    if (a.done() && !dropLinked(c.taskId() + "|" + c.orderId() + "|" + c.branch() + "|" + i)) {
                         undoNow.add(a);
                     }
                     fresh.add(new Action(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(), a.targetName(),
@@ -1108,6 +1145,18 @@ public final class StaffTasks implements Listener {
             finished = true;
             for (Action x : acts) {
                 finished &= x.done();
+            }
+            if (tp == null && !isSanction(v)) {
+                // player offline: la modifica e' in coda; la collego all'azione per poterla annullare
+                for (int k = offline.size() - 1; k >= 0; k--) {
+                    Pending pe = offline.get(k);
+                    if (pe.target().equals(target) && pe.link().isEmpty() && staff.getUniqueId().equals(pe.by())
+                            && pe.verb().equals(v) && pe.what().equals(low(what))) {
+                        offline.set(k, new Pending(pe.id(), pe.target(), pe.verb(), pe.what(), pe.spec(), pe.amount(), pe.by(),
+                                pe.byName(), pe.ts(), c.taskId() + "|" + c.orderId() + "|" + c.branch() + "|" + idx));
+                        break;
+                    }
+                }
             }
             addLog(c.taskId(), c.orderId(), "AZIONE", staff, describe(did));
             save();
@@ -1220,25 +1269,29 @@ public final class StaffTasks implements Listener {
         String what = next != null ? describe(next) : o != null && type(o) == OrderType.CUSTOM ? shortText(o.text()) + " (poi \"fatto\")"
                 : "ordine";
         long s = left / 1000;
-        String title = "&e" + what + " &7" + String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60);
-        float progress = Math.max(0f, Math.min(1f, left / (float) CHARGE_MS));
+        String title = (s < 60 ? "&c" : "&e") + what + " &7" + String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60);
+        double progress = Math.max(0.0, Math.min(1.0, left / (double) CHARGE_MS));
+        // stesso sfondo scuro dei riquadri dell'HUD (bossTextBar) e barra del tempo disegnata sotto il testo;
+        // nella pila delle bossbar (BarStack) cosi' non finisce sopra la barra della principale
+        net.kyori.adventure.text.Component name = plugin.bossTextBar(title, progress);
         BossBar bar = bars.get(p.getUniqueId());
         if (bar == null) {
-            bar = BossBar.bossBar(plugin.color(title), progress, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+            bar = BossBar.bossBar(name, 1f, BossBar.Color.WHITE, BossBar.Overlay.PROGRESS);
             bars.put(p.getUniqueId(), bar);
-            p.showBossBar(bar);
+            plugin.getBars().set(p, BAR_KEY, bar, BAR_PRIORITY, true);
         } else {
-            bar.name(plugin.color(title));
-            bar.progress(progress);
-            bar.color(s < 60 ? BossBar.Color.RED : BossBar.Color.YELLOW);
+            bar.name(name);
         }
     }
 
+    private static final String BAR_KEY = "task";
+    private static final int BAR_PRIORITY = 70;
+
     private void hideBar(UUID id) {
-        BossBar bar = bars.remove(id);
+        bars.remove(id);
         Player p = Bukkit.getPlayer(id);
-        if (bar != null && p != null) {
-            p.hideBossBar(bar);
+        if (p != null) {
+            plugin.getBars().remove(p, BAR_KEY);
         }
     }
 
@@ -1246,6 +1299,22 @@ public final class StaffTasks implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player p = event.getPlayer();
         UUID id = p.getUniqueId();
+        List<Pending> edits = new ArrayList<>();
+        synchronized (this) {
+            for (java.util.Iterator<Pending> it = offline.iterator(); it.hasNext(); ) {
+                Pending pe = it.next();
+                if (pe.target().equals(id)) {
+                    edits.add(pe);
+                    it.remove();
+                }
+            }
+        }
+        if (!edits.isEmpty()) {
+            // le modifiche fatte mentre era offline, un attimo dopo il join (prima degli annullamenti)
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                applyPending(p, edits);
+            }, 10L);
+        }
         List<Undo> mine = new ArrayList<>();
         synchronized (this) {
             for (java.util.Iterator<Undo> it = undos.iterator(); it.hasNext(); ) {
@@ -1284,6 +1353,213 @@ public final class StaffTasks implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         bars.remove(event.getPlayer().getUniqueId());
+    }
+
+    // ------------------------------------------------------------------ modifiche ai player offline
+
+    /**
+     * Dai / togli / setta / azzera su un player online (subito) o OFFLINE (in coda, applicata al suo prossimo login:
+     * i dati di coin, ball, miniere, potenziamenti, stamina e ricompense stanno nel player e si leggono solo da online).
+     * Non controlla i permessi (li controlla chi chiama, con allows). null = ok, altrimenti il motivo.
+     */
+    public String applyOrQueue(CommandSender by, UUID target, String verb, String what, String spec, long amount) {
+        if (target == null) {
+            return "player sconosciuto";
+        }
+        String v = low(verb);
+        String w = low(what);
+        if (!List.of("give", "remove", "set", "reset").contains(v) || !WHATS.contains(w)) {
+            return "azione non valida";
+        }
+        Player tp = Bukkit.getPlayer(target);
+        if (tp != null) {
+            return applyLive(by, tp, v, w, spec == null || spec.isBlank() ? null : low(spec), (int) Math.max(0, Math.min(Integer.MAX_VALUE, amount)));
+        }
+        Pending pe = new Pending(UUID.randomUUID().toString().substring(0, 8), target, v, w,
+                spec == null || spec.isBlank() ? null : low(spec), v.equals("reset") ? 0 : amount,
+                by instanceof Player bp ? bp.getUniqueId() : null, by == null ? "console" : by.getName(), System.currentTimeMillis(), "");
+        synchronized (this) {
+            offline.add(pe);
+            save();
+        }
+        String desc = describe(newAction(v, w, pe.spec(), pe.amount(), null, target, playerName(target)));
+        movement(target, "In attesa del login (offline): " + desc + " (da " + pe.byName() + ")");
+        log("modifica offline in coda: " + desc + " (da " + pe.byName() + ")");
+        return null;
+    }
+
+    /** Modifiche in coda per il player (per la lore: "in attesa del login"). */
+    public synchronized List<String> pendingOffline(UUID target) {
+        List<String> out = new ArrayList<>();
+        for (Pending pe : offline) {
+            if (pe.target().equals(target)) {
+                out.add(describe(newAction(pe.verb(), pe.what(), pe.spec(), pe.amount(), null, target, playerName(target))));
+            }
+        }
+        return out;
+    }
+
+    private void applyPending(Player p, List<Pending> edits) {
+        if (!p.isOnline()) {
+            synchronized (this) {
+                offline.addAll(edits);
+            }
+            return;
+        }
+        for (Pending pe : edits) {
+            String before = read(p, pe.what(), pe.spec());
+            String err = applyLive(null, p, pe.verb(), pe.what(), pe.spec(), (int) Math.max(0, Math.min(Integer.MAX_VALUE, pe.amount())));
+            if (err != null) {
+                log("modifica offline per " + p.getName() + " non applicata: " + err);
+                continue;
+            }
+            movement(p.getUniqueId(), "Applicata al login: " + describe(newAction(pe.verb(), pe.what(), pe.spec(), pe.amount(), null,
+                    p.getUniqueId(), p.getName())) + " (da " + pe.byName() + ")");
+            if (!pe.link().isEmpty()) {
+                setBefore(pe.link(), before);
+            }
+        }
+        synchronized (this) {
+            save();
+        }
+    }
+
+    /** Se l'azione d'incarico collegata e' ancora spuntata, le salva il valore di prima (per l'annullamento). */
+    private synchronized void setBefore(String link, String before) {
+        String[] k = link.split("\\|");
+        if (k.length != 4) {
+            return;
+        }
+        Task t = tasks.get(k[0]);
+        Order o = orderOf(t, k[1]);
+        int b = (int) num(k[2]);
+        int i = (int) num(k[3]);
+        if (o == null || b < 0 || b >= o.branches().size() || i < 0 || i >= o.branches().get(b).actions().size()) {
+            return;
+        }
+        Branch br = o.branches().get(b);
+        Action a = br.actions().get(i);
+        if (!a.done()) {
+            return;
+        }
+        List<Action> acts = new ArrayList<>(br.actions());
+        acts.set(i, new Action(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(), a.targetName(), a.targetUid(),
+                true, a.doneBy(), a.doneAt(), before));
+        replaceBranch(t, o, b, new Branch(br.condition(), List.copyOf(acts), br.nothing()));
+    }
+
+    /** Toglie dalla coda offline la modifica collegata all'azione (annullamento prima del login). true se c'era. */
+    private synchronized boolean dropLinked(String link) {
+        for (java.util.Iterator<Pending> it = offline.iterator(); it.hasNext(); ) {
+            if (link.equals(it.next().link())) {
+                it.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** dai / togli / setta / azzera con i metodi interni (come /adminmania e il profilo player). null = ok. */
+    private String applyLive(CommandSender by, Player target, String v, String w, String spec, int n) {
+        AmmoManager ammo = plugin.getAmmo();
+        switch (w) {
+            case "coin", "blockcoin", "blockshell", "power" -> {
+                PlayerCounters pc = plugin.getCounters();
+                if (pc == null) {
+                    return "contatori non disponibili";
+                }
+                PlayerCounters.Item it = switch (w) {
+                    case "coin" -> PlayerCounters.Item.COIN;
+                    case "blockcoin" -> PlayerCounters.Item.BLOCKCOIN;
+                    case "blockshell" -> PlayerCounters.Item.BLOCKSHELL;
+                    default -> PlayerCounters.Item.POWER_CHARGES;
+                };
+                String err = pc.apply(target.getUniqueId(), it, v, n, by);
+                return err == null ? null : err.toLowerCase(Locale.ROOT);
+            }
+            case "ball" -> {
+                List<String> chosen = new ArrayList<>();
+                boolean all = spec == null || spec.equals("all");
+                for (String bt : ammo.types()) {
+                    if (all || bt.equalsIgnoreCase(spec)) {
+                        chosen.add(bt.toLowerCase(Locale.ROOT));
+                    }
+                }
+                if (chosen.isEmpty()) {
+                    return "tipo di ball sconosciuto: " + spec;
+                }
+                for (String bt : chosen) {
+                    int cur = ammo.getAmmo(target, bt);
+                    int next = next(v, cur, n, ammo.getAmmoMax(target, bt));
+                    if (next != cur) {
+                        ammo.setAmmo(target, bt, next);
+                    }
+                }
+            }
+            case "mine" -> {
+                int cur = ammo.getMine(target);
+                int next = v.equals("set") ? Math.max(1, n) : v.equals("reset") ? 1 : Math.max(1, next(v, cur, n, Integer.MAX_VALUE));
+                if (next != cur) {
+                    ammo.setMine(target, next);
+                }
+                ammo.refreshMain(target);
+            }
+            case "upgrade" -> {
+                UpgradeManager up = plugin.getUpgrades();
+                List<String> chosen = new ArrayList<>();
+                boolean all = spec == null || spec.equals("all");
+                for (String id : up.ids()) {
+                    if (all || id.equals(spec)) {
+                        chosen.add(id);
+                    }
+                }
+                if (chosen.isEmpty()) {
+                    return "potenziamento sconosciuto: " + spec;
+                }
+                for (String id : chosen) {
+                    int cur = up.getLevel(target, id);
+                    int next = next(v, cur, n, up.maxLevel(id));
+                    if (next != cur) {
+                        up.setLevelAdmin(target, id, next);
+                    }
+                }
+            }
+            case "ricompense" -> {
+                Rewards rw = plugin.getRewards();
+                if (rw == null || spec == null || rewardLabel(spec) == null) {
+                    return "ricompensa sconosciuta: " + spec;
+                }
+                rw.setReached(target, spec, next(v, rw.reached(target, spec), n, rw.staffMaxLevel(spec)));
+            }
+            case "stamina" -> {
+                Power power = plugin.getPower();
+                if (power == null) {
+                    return "stamina non disponibile";
+                }
+                double cur = power.stamina(target) * 100.0;
+                switch (v) {
+                    case "give" -> power.setPercent(target, Math.min(100.0, cur + n));
+                    case "remove" -> power.setPercent(target, Math.max(0.0, cur - n));
+                    case "set" -> power.setPercent(target, Math.min(100.0, n));
+                    default -> power.setPercent(target, 0);
+                }
+                ammo.refreshMain(target);
+            }
+            default -> {
+                return "azione non valida";
+            }
+        }
+        return null;
+    }
+
+    /** give fino al massimo, remove fino a 0, set limitato al massimo, reset = 0. */
+    private static int next(String verb, int cur, int n, int max) {
+        return switch (verb) {
+            case "give" -> (int) Math.min((long) max, (long) cur + n);
+            case "remove" -> Math.max(0, cur - n);
+            case "set" -> Math.min(n, max);
+            default -> 0;
+        };
     }
 
     // ------------------------------------------------------------------ valori (per l'annullamento)
@@ -1409,6 +1685,11 @@ public final class StaffTasks implements Listener {
     }
 
     // ------------------------------------------------------------------ ponti per userprofile e /adminmania
+
+    /** cosa + specifica di un contatore del profilo (ball "ghostball", coin...; power_uses non e' nelle task). */
+    public static String[] itemWhatOf(PlayerCounters.Item it) {
+        return itemWhat(it);
+    }
 
     /** cosa + specifica di un contatore del profilo (ball "ghostball", coin...). */
     private static String[] itemWhat(PlayerCounters.Item it) {

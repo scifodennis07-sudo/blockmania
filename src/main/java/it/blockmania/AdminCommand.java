@@ -632,7 +632,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         UUID tTarget = null;
         long tAmount = 0;
         if (st != null && sender instanceof Player sp && verb != null && isWrite(verb)
-                && ("economy".equals(group) || "profile".equals(group))) {
+                && ("economy".equals(group) || "profile".equals(group) || "cheque".equals(verb))) {
             ta = StaffTasks.legacyAction(t, sp.getName());
             if (ta == null) {
                 if (!st.allows(sp, "set", "adminmania_" + t[0], null, null, 0)) {
@@ -640,7 +640,8 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                 }
             } else {
                 Player tp = Bukkit.getPlayerExact(ta[4]);
-                tTarget = tp == null ? null : tp.getUniqueId();
+                org.bukkit.OfflinePlayer off = tp == null ? Bukkit.getOfflinePlayerIfCached(ta[4]) : null;
+                tTarget = tp != null ? tp.getUniqueId() : off != null ? off.getUniqueId() : null;
                 try {
                     tAmount = Long.parseLong(ta[3] == null ? "0" : ta[3].trim());
                 } catch (NumberFormatException ex) {
@@ -650,6 +651,20 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
             }
+        }
+        if (ta != null && tTarget != null && Bukkit.getPlayer(tTarget) == null && tAmount >= 0) {
+            // player offline (gia' entrato nel server): la modifica si applica al suo prossimo login
+            String err = st.applyOrQueue(sender, tTarget, ta[0], ta[1], ta[2], tAmount);
+            if (err != null) {
+                deny(sender, err);
+                return true;
+            }
+            if (sender instanceof Player sp) {
+                st.done(sp, ta[0], ta[1], ta[2], tTarget, tAmount);
+            }
+            GuiMsg.sendTiny(plugin, sender, "&a" + ta[4] + " e' offline: fatto al suo prossimo accesso");
+            log(sender, group + "." + verb + " (offline, in coda) | " + String.join(" ", args));
+            return true;
         }
         run(sender, command, label, t);
         if (ta != null && tTarget != null && sender instanceof Player sp && Bukkit.getPlayer(tTarget) != null) {

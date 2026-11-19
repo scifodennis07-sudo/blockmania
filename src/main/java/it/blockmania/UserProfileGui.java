@@ -949,6 +949,12 @@ public final class UserProfileGui implements Listener {
                         again.run();
                         return;
                     }
+                    // reset totale: mai in una task, quindi sotto admin non si puo' (fuori incarico)
+                    if (plugin.getStaffTasks() != null
+                            && !plugin.getStaffTasks().allows(p, "reset", "player_all", null, target, 0)) {
+                        again.run();
+                        return;
+                    }
                     String summary = plugin.getPlayerReset().resetPlayer(target, p);
                     plugin.getMovements().record(target, MovementLog.Type.STAFF, "Reset del player da " + p.getName());
                     audit(p, "profile.reset player " + nameOf(target));
@@ -1002,14 +1008,12 @@ public final class UserProfileGui implements Listener {
     // ------------------------------------------------------------------
 
     private void staminaMenu(Player p, UUID target) {
-        if (Bukkit.getPlayer(target) == null) {
-            GuiMsg.send(plugin, p, "&cIl giocatore e' offline: stamina non disponibile.");
-            return;
-        }
         if (!authorize(p, target, "profile", "edit", 0)) {
             return;
         }
-        plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), List.of("set", "full", "infinite", "reset"),
+        // offline: niente "infinite" (si applica al login: set / full / reset)
+        List<String> cmds = Bukkit.getPlayer(target) == null ? List.of("set", "full", "reset") : List.of("set", "full", "infinite", "reset");
+        plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> staminaPick(p, target, cmd)),
                 () -> back(p, target), false, null);
     }
@@ -1027,7 +1031,8 @@ public final class UserProfileGui implements Listener {
         if (cmd.equals("set")) {
             ui.askNumber(p, "stamina %", "SETTA STAMINA 0 100", 0, 100, v -> applyStamina(p, target, "set", (int) v), cancel);
         } else {
-            ui.confirm(p, cmd + " stamina", () -> applyStamina(p, target, cmd, 0), cancel);
+            ui.confirm(p, (cmd.equals("full") ? "riempire la stamina di " : cmd.equals("infinite") ? "rendere infinita la stamina di "
+                    : "svuotare la stamina di ") + nameOf(target), () -> applyStamina(p, target, cmd, 0), cancel);
         }
     }
 
@@ -1037,6 +1042,30 @@ public final class UserProfileGui implements Listener {
         }
         Player tp = Bukkit.getPlayer(target);
         Power pw = plugin.getPower();
+        StaffTasks sto = plugin.getStaffTasks();
+        if (tp == null && sto != null && !cmd.equals("infinite")) {
+            // offline: in coda, applicata al login
+            if (!authorize(p, target, "profile", "edit", percent)) {
+                back(p, target);
+                return;
+            }
+            String qv = cmd.equals("reset") ? "reset" : "set";
+            long qa = cmd.equals("set") ? percent : cmd.equals("full") ? 100 : 0;
+            if (!sto.allows(p, qv, "stamina", null, target, qa)) {
+                back(p, target);
+                return;
+            }
+            String err = sto.applyOrQueue(p, target, qv, "stamina", null, qa);
+            if (err == null) {
+                sto.done(p, qv, "stamina", null, target, qa);
+                audit(p, "profile.edit stamina " + cmd + " " + nameOf(target) + " (offline)");
+                GuiMsg.send(plugin, p, "&astamina " + cmd + " in attesa del login di " + nameOf(target));
+            } else {
+                GuiMsg.send(plugin, p, "&c" + err);
+            }
+            back(p, target);
+            return;
+        }
         if (tp == null || pw == null) {
             GuiMsg.send(plugin, p, "&cIl giocatore e' offline: stamina non disponibile.");
             back(p, target);
@@ -1111,7 +1140,8 @@ public final class UserProfileGui implements Listener {
                 long max = plugin.getConfig().getLong("sanctions.max-minutes." + k, kind == SanctionManager.Kind.BAN ? 525600L : 43200L);
                 ui.askNumber(p, "minuti da togliere", "RIDUCI " + k.toUpperCase(java.util.Locale.ROOT) + " MIN", 1, max, v -> doSanction(p, target, kind, cmd, v), cancel);
             }
-            case "remove", "reset" -> ui.confirm(p, cmd + " " + k, () -> doSanction(p, target, kind, cmd, 0), cancel);
+            case "remove", "reset" -> ui.confirm(p, (cmd.equals("remove") ? "togliere il " + k + " a " : "azzerare i " + k + " di ")
+                    + nameOf(target), () -> doSanction(p, target, kind, cmd, 0), cancel);
             default -> back(p, target);
         }
     }
@@ -1134,7 +1164,7 @@ public final class UserProfileGui implements Listener {
                 if (!p.isOnline()) {
                     return;
                 }
-                ui.confirm(p, "sanzionare con la regola " + rule.code(),
+                ui.confirm(p, kind.name().toLowerCase(java.util.Locale.ROOT) + " a " + nameOf(target) + " con la regola " + rule.code(),
                         () -> Bukkit.getScheduler().runTask(plugin, () -> doRuleSanction(p, target, kind, rule, msg)), cancel);
             }), cancel);
         }), cancel);
@@ -1218,11 +1248,7 @@ public final class UserProfileGui implements Listener {
 
     private void itemMenu(Player p, UUID target, PlayerCounters.Item it) {
         PlayerCounters pc = plugin.getCounters();
-        if (!pc.isOnline(target)) {
-            GuiMsg.send(plugin, p, "&cIl player e' offline: i contatori si possono solo guardare.");
-            plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");
-            return;
-        }
+        // offline: si puo' modificare lo stesso, la modifica si applica al suo prossimo login (StaffTasks.applyOrQueue)
         if (!authorize(p, target, "profile", "see", 0)) {
             return;
         }
@@ -1308,7 +1334,8 @@ public final class UserProfileGui implements Listener {
                 ui.askNumber(p, cmd + " " + labelOf(it), bar, lo, Math.max(lo, hi),
                         v -> applyItem(p, target, it, cmd, (int) Math.min(Integer.MAX_VALUE, v)), cancel);
             }
-            case "full", "reset" -> ui.confirm(p, cmd + " " + labelOf(it), () -> applyItem(p, target, it, cmd, 0), cancel);
+            case "full", "reset" -> ui.confirm(p, (cmd.equals("full") ? "portare al massimo " : "azzerare ") + labelOf(it).toLowerCase(java.util.Locale.ROOT)
+                    + " di " + nameOf(target), () -> applyItem(p, target, it, cmd, 0), cancel);
             default -> back(p, target);
         }
     }
@@ -1327,7 +1354,16 @@ public final class UserProfileGui implements Listener {
             back(p, target);
             return;
         }
-        String err = plugin.getCounters().apply(target, it, cmd, n, p);
+        String err;
+        if (Bukkit.getPlayer(target) == null) {
+            // player offline: modifica in coda, applicata al login
+            String[] w = StaffTasks.itemWhatOf(it);
+            String qv = cmd.equals("give") || cmd.equals("remove") || cmd.equals("reset") ? cmd : "set";
+            err = st == null ? "il giocatore e' offline" : cmd.equals("setuses") || "power_uses".equals(w[0])
+                    ? "da offline non si puo' cambiare questo contatore" : st.applyOrQueue(p, target, qv, w[0], w[1], tAmount);
+        } else {
+            err = plugin.getCounters().apply(target, it, cmd, n, p);
+        }
         if (err == null && st != null) {
             st.doneItem(p, target, it, cmd, tAmount);
         }

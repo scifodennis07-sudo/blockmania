@@ -111,6 +111,12 @@ public final class Power implements Listener {
     /** Vero se la stamina va mostrata sotto la bossbar principale. */
     public boolean staminaVisible(Player player) {
         var c = plugin.getConfig();
+        // gli staffer da jr_mod in su non giocano: la barra della stamina non serve
+        StaffRoles roles = plugin.getStaffRoles();
+        String role = roles == null || player == null ? null : roles.roleOf(player.getUniqueId());
+        if (role != null && StaffRoles.SCALE.indexOf(role) >= StaffRoles.SCALE.indexOf("jr_mod")) {
+            return false;
+        }
         return c.getBoolean("stamina.enabled", true) && c.getBoolean("power-attack.enabled", true);
     }
 

@@ -336,8 +336,13 @@ public final class UserProfileMines implements Listener {
      * (il pannello conferma sta sopra, non scurito), nome nella barra in alto e numero pagina come nelle GUI originali.
      */
     private Component title(Player target, int page, int pages, boolean confirm) {
+        return title(target, page, pages, confirm, null);
+    }
+
+    /** confirmText = descrizione scritta nel pannello di conferma (solo con confirm). */
+    private Component title(Player target, int page, int pages, boolean confirm, String confirmText) {
         return MinesGui.fontTitle(plugin, greens(target, page), cubes(target, page), true, confirm,
-                "miniere " + UserProfilePowers.nameOf(target.getUniqueId()), page, pages, !confirm);
+                "miniere " + UserProfilePowers.nameOf(target.getUniqueId()), page, pages, !confirm, confirmText);
     }
 
     // ---------- aprire ----------
@@ -394,7 +399,7 @@ public final class UserProfileMines implements Listener {
         h.confirm = true;
         h.onYes = onYes;
         h.onNo = reopen;
-        Inventory inv = Bukkit.createInventory(h, SIZE, title(target, page, pageCount(), true));
+        Inventory inv = Bukkit.createInventory(h, SIZE, title(target, page, pageCount(), true, text));
         h.inventory = inv;
         String[] none = new String[0];
         for (int s : yes) {

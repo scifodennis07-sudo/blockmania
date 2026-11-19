@@ -375,7 +375,7 @@ public final class UserProfileUpgrades implements Listener {
             back.run();
             return;
         }
-        ui.confirmOver(staff, "reset potenziamenti", this::drawBackdrop, () -> {
+        ui.confirmOver(staff, "azzerare tutti i potenziamenti di " + UserProfilePowers.nameOf(h.target), this::drawBackdrop, () -> {
             Player target = Bukkit.getPlayer(h.target);
             if (target == null) {
                 GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
@@ -462,11 +462,11 @@ public final class UserProfileUpgrades implements Listener {
                         apply(staff, h, id, (int) Math.min(max, v), "set");
                         back.run();
                     }, back);
-            case "full" -> ui.confirmOver(staff, "maxa " + labelOf(id).toLowerCase(Locale.ROOT), this::drawBackdrop, () -> {
+            case "full" -> ui.confirmOver(staff, "portare al massimo " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target), this::drawBackdrop, () -> {
                 apply(staff, h, id, max, "full");
                 back.run();
             }, back);
-            case "reset" -> ui.confirmOver(staff, "azzera " + labelOf(id).toLowerCase(Locale.ROOT), this::drawBackdrop, () -> {
+            case "reset" -> ui.confirmOver(staff, "azzerare " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target), this::drawBackdrop, () -> {
                 apply(staff, h, id, 0, "reset");
                 back.run();
             }, back);
