@@ -143,6 +143,7 @@ public final class ItemsGui implements Listener {
             }
             meta.lore(lines);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -212,6 +213,7 @@ public final class ItemsGui implements Listener {
             if (!lore.isEmpty()) {
                 showMeta.lore(lore);
             }
+            LoreWrap.fix(showMeta);   // lore a capo, nome non troppo lungo
             show.setItemMeta(showMeta);
             out.add(new Entry(give, show));
         }
@@ -226,6 +228,7 @@ public final class ItemsGui implements Listener {
             lore.add(plugin.text(line));
         }
         meta.lore(lore);
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         show.setItemMeta(meta);
         return show;
     }
@@ -365,6 +368,7 @@ public final class ItemsGui implements Listener {
             meta.displayName(source.displayName());
             meta.lore(source.lore());
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

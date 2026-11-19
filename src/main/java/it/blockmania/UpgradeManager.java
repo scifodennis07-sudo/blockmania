@@ -267,6 +267,7 @@ public final class UpgradeManager implements Listener {
                 meta.lore(lines);
             }
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

@@ -730,6 +730,7 @@ public final class UserProfilePowers implements Listener {
         if (lore != null && !lore.isEmpty()) {
             meta.lore(lore(lore));
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -741,6 +742,7 @@ public final class UserProfilePowers implements Listener {
         if (lore != null && !lore.isEmpty()) {
             meta.lore(lore(lore));
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -863,6 +865,10 @@ public final class UserProfilePowers implements Listener {
         }
         event.setCancelled(true);
         if (event.getClickedInventory() != h.inventory) {
+            return;
+        }
+        // solo click sinistro/destro sui bottoni: Q, tasti numerici, doppio click, centrale ecc. non fanno niente
+        if (!event.getClick().isLeftClick() && !event.getClick().isRightClick()) {
             return;
         }
         Runnable action = h.actions.get(event.getRawSlot());

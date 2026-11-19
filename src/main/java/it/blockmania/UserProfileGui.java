@@ -606,6 +606,7 @@ public final class UserProfileGui implements Listener {
         if (lore != null && !lore.isEmpty()) {
             meta.lore(loreOf(lore));
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -1045,11 +1046,23 @@ public final class UserProfileGui implements Listener {
             back(p, target);
             return;
         }
+        // task: sotto admin solo se e' un'azione del suo incarico (infinita non e' mai in una task)
+        StaffTasks st = plugin.getStaffTasks();
+        String tVerb = cmd.equals("reset") ? "reset" : "set";
+        String tWhat = cmd.equals("infinite") ? "stamina_mode" : "stamina";
+        long tAmount = cmd.equals("set") ? percent : cmd.equals("full") ? 100 : 0;
+        if (st != null && !st.allows(p, tVerb, tWhat, null, target, tAmount)) {
+            back(p, target);
+            return;
+        }
         switch (cmd) {
             case "set" -> pw.setPercent(tp, percent);
             case "full" -> pw.refill(tp);
             case "infinite" -> pw.setMode(tp, "infinite");
             default -> pw.setPercent(tp, 0);   // reset: stamina a 0
+        }
+        if (st != null) {
+            st.done(p, tVerb, tWhat, null, target, tAmount);
         }
         audit(p, "profile.edit stamina " + cmd + " " + nameOf(target) + (cmd.equals("set") ? " " + percent : ""));
         GuiMsg.send(plugin, p, "&astamina " + cmd + " eseguito su " + nameOf(target));
@@ -1135,6 +1148,10 @@ public final class UserProfileGui implements Listener {
             return;
         }
         boolean ok = plugin.getSanctions().applyRule(p, target, rule, msg);
+        if (ok && plugin.getStaffTasks() != null) {
+            // spunta la sanzione se e' nell'incarico (le sanzioni non si bloccano)
+            plugin.getStaffTasks().done(p, k, null, rule.code(), target, 0);
+        }
         if (ok) {
             audit(p, "sanctions." + k + " add " + nameOf(target) + " regola " + rule.code());
             GuiMsg.send(plugin, p, "&a" + k + " add eseguito su " + nameOf(target) + " (regola " + rule.code() + ")");
@@ -1304,7 +1321,16 @@ public final class UserProfileGui implements Listener {
             back(p, target);
             return;
         }
+        StaffTasks st = plugin.getStaffTasks();
+        long tAmount = st == null ? n : st.itemAmountOf(target, it, cmd, n);
+        if (st != null && !st.allowsItem(p, target, it, cmd, n)) {
+            back(p, target);
+            return;
+        }
         String err = plugin.getCounters().apply(target, it, cmd, n, p);
+        if (err == null && st != null) {
+            st.doneItem(p, target, it, cmd, tAmount);
+        }
         if (err != null) {
             GuiMsg.send(plugin, p, "&c" + err);
             plugin.playConfiguredSound(p.getLocation(), "message-sounds.error");

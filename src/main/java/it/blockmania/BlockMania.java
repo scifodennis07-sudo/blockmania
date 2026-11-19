@@ -122,6 +122,9 @@ public final class BlockMania extends JavaPlugin {
         staffDiscipline.start();
         staffTasks = new StaffTasks(this);
         staffTasks.load();
+        // incarichi: bossbar e scadenze ogni secondo, annullamenti al login
+        staffTasks.start();
+        getServer().getPluginManager().registerEvents(staffTasks, this);
         ammo.start();
         upgrades = new UpgradeManager(this);
         shops = new ShopManager(this);

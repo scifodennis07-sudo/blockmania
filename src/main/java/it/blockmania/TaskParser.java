@@ -17,11 +17,14 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 
 /**
- * Task scritte a frase: "dare 20 palle standard a DoppiaX togliendole a crack" -> step StaffTasks (nessuna GUI).
+ * Task scritte a frase -> ordini StaffTasks (nessuna GUI): "dare 20 palle standard a DoppiaX togliendole a crack" = ordine
+ * semplice con due azioni; "se doppiaX ha la miniera 5, toglietegli la miniera, se invece ..." = ordine condizionale
+ * coi rami (+ "non fare nulla" in coda); il testo non capito = ordine custom.
  * La logica di testo e' in TaskText (provata senza Bukkit); qui il dizionario task-words.yml (scritto coi default la
  * prima volta, si modifica senza ricompilare), i player conosciuti (online o gia' entrati), le regole e le specifiche
  * reali del config. Si scrive e si mostra sempre il NOME del player (l'id utente e' salvato di nascosto da StaffTasks).
- * Uno step incerto (field != null) ha le alternative: la GUI ne fa scegliere una con choose.
+ * Un'azione incerta (field != null) ha le alternative: la GUI ne fa scegliere una con choose.
+ * Le parole del file si AGGIUNGONO a quelle di default (cosi' le parole nuove delle versioni dopo arrivano lo stesso).
  */
 public final class TaskParser {
 
@@ -29,15 +32,23 @@ public final class TaskParser {
     public record Candidate(String value, String label, int distance) {
     }
 
-    /** field = "verb" "what" "spec" "target" "amount" "rule" o null (step a posto); per amount la lista e' vuota: chiedere il numero. */
-    public record Parsed(StaffTasks.Step step, boolean uncertain, String field, List<Candidate> alternatives, String sourceText) {
+    /** field = "verb" "what" "spec" "target" "amount" "rule" o null (azione a posto); per amount la lista e' vuota: chiedere il numero. */
+    public record ParsedAction(StaffTasks.Action action, boolean uncertain, String field, List<Candidate> alternatives,
+                               String sourceText) {
+    }
+
+    /** Ramo: condizione (null = ordine semplice / "non fare nulla" finale), azioni, nothing. */
+    public record ParsedBranch(String condition, List<ParsedAction> actions, boolean nothing) {
+    }
+
+    public record ParsedOrder(String text, List<ParsedBranch> branches, StaffTasks.OrderType type) {
     }
 
     private final BlockMania plugin;
     private final File file;
     private TaskText text;
     /** Stato completo di ogni Parsed dato alla GUI (i pareggi degli altri campi), per choose. */
-    private final Map<Parsed, TaskText.Action> state = new WeakHashMap<>();
+    private final Map<ParsedAction, TaskText.Action> state = new WeakHashMap<>();
 
     public TaskParser(BlockMania plugin) {
         this.plugin = plugin;
@@ -74,13 +85,18 @@ public final class TaskParser {
         readMap(y.getConfigurationSection("verbs"), w.verbs, def.verbs);
         readMap(y.getConfigurationSection("whats"), w.whats, def.whats);
         ConfigurationSection specs = y.getConfigurationSection("specs");
-        if (specs == null) {
-            w.specs.putAll(def.specs);
-        } else {
+        for (Map.Entry<String, Map<String, List<String>>> e : def.specs.entrySet()) {
+            Map<String, List<String>> m = new LinkedHashMap<>();
+            readMap(specs == null ? null : specs.getConfigurationSection(e.getKey()), m, e.getValue());
+            w.specs.put(e.getKey(), m);
+        }
+        if (specs != null) {
             for (String what : specs.getKeys(false)) {
-                Map<String, List<String>> m = new LinkedHashMap<>();
-                readMap(specs.getConfigurationSection(what), m, Map.of());
-                w.specs.put(what, m);
+                if (!w.specs.containsKey(what)) {
+                    Map<String, List<String>> m = new LinkedHashMap<>();
+                    readMap(specs.getConfigurationSection(what), m, Map.of());
+                    w.specs.put(what, m);
+                }
             }
         }
         readMap(y.getConfigurationSection("gerunds"), w.gerunds, def.gerunds);
@@ -95,37 +111,96 @@ public final class TaskParser {
         text = new TaskText(w);
     }
 
+    /** Default + parole del file (unione). */
     private static void readMap(ConfigurationSection sec, Map<String, List<String>> out, Map<String, List<String>> def) {
+        for (Map.Entry<String, List<String>> e : def.entrySet()) {
+            out.put(e.getKey(), new ArrayList<>(e.getValue()));
+        }
         if (sec == null) {
-            out.putAll(def);
             return;
         }
         for (String k : sec.getKeys(false)) {
-            out.put(k.toLowerCase(Locale.ROOT), new ArrayList<>(sec.getStringList(k)));
+            List<String> l = out.computeIfAbsent(k.toLowerCase(Locale.ROOT), x -> new ArrayList<>());
+            for (String w : sec.getStringList(k)) {
+                if (!l.contains(w)) {
+                    l.add(w);
+                }
+            }
         }
     }
 
     private static void readList(YamlConfiguration y, String key, List<String> out, List<String> def) {
-        out.addAll(y.isList(key) ? y.getStringList(key) : def);
+        out.addAll(def);
+        if (y.isList(key)) {
+            for (String w : y.getStringList(key)) {
+                if (!out.contains(w)) {
+                    out.add(w);
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ parse
 
-    /** Divide la frase in step (ordinari capiti, incerti con alternative, custom col testo originale). */
-    public List<Parsed> parse(String sentence) {
+    /** Divide la frase in ordini (semplici, condizionali coi rami, custom). */
+    public List<ParsedOrder> parse(String sentence) {
         Map<String, UUID> names = knownPlayers();
-        List<Parsed> out = new ArrayList<>();
+        List<ParsedOrder> out = new ArrayList<>();
         if (sentence == null || sentence.isBlank()) {
             return out;
         }
-        for (TaskText.Action a : text.parse(sentence, names.keySet())) {
-            out.add(toParsed(a, names));
+        for (TaskText.OrderText o : text.parseOrders(sentence, names.keySet())) {
+            List<ParsedBranch> branches = new ArrayList<>();
+            for (TaskText.BranchText b : o.branches) {
+                List<ParsedAction> acts = new ArrayList<>();
+                for (TaskText.Action a : b.actions) {
+                    acts.add(toParsed(a, names));
+                }
+                branches.add(new ParsedBranch(b.condition, List.copyOf(acts), b.nothing));
+            }
+            StaffTasks.OrderType type = switch (o.type) {
+                case "conditional" -> StaffTasks.OrderType.CONDIZIONALE;
+                case "custom" -> StaffTasks.OrderType.CUSTOM;
+                default -> StaffTasks.OrderType.SEMPLICE;
+            };
+            out.add(new ParsedOrder(o.text, List.copyOf(branches), type));
         }
         return out;
     }
 
-    /** Applica la scelta (c.value) al campo incerto di p e ricalcola (puo' restare incerto su un altro campo). */
-    public Parsed choose(Parsed p, Candidate c) {
+    /** true se un'azione dell'ordine e' ancora incerta (o un ramo non ha azioni): non si salva. */
+    public static boolean uncertain(ParsedOrder o) {
+        if (o == null) {
+            return true;
+        }
+        for (ParsedBranch b : o.branches()) {
+            if (!b.nothing() && b.actions().isEmpty() && o.type() != StaffTasks.OrderType.CUSTOM) {
+                return true;
+            }
+            for (ParsedAction a : b.actions()) {
+                if (a.uncertain()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Ordine pronto per StaffTasks.create (controlla prima uncertain). */
+    public static StaffTasks.Order toOrder(ParsedOrder o) {
+        List<StaffTasks.Branch> br = new ArrayList<>();
+        for (ParsedBranch b : o.branches()) {
+            List<StaffTasks.Action> acts = new ArrayList<>();
+            for (ParsedAction a : b.actions()) {
+                acts.add(a.action());
+            }
+            br.add(StaffTasks.newBranch(b.condition(), acts, b.nothing()));
+        }
+        return StaffTasks.newOrder(o.text(), br);
+    }
+
+    /** Applica la scelta (c.value) al campo incerto di p e ricalcola (puo' restare incerta su un altro campo). */
+    public ParsedAction choose(ParsedAction p, Candidate c) {
         if (p == null || c == null || p.field() == null) {
             return p;
         }
@@ -133,16 +208,15 @@ public final class TaskParser {
         TaskText.Action a;
         synchronized (state) {
             TaskText.Action saved = state.get(p);
-            a = saved == null ? fromStep(p) : saved.copy();
+            a = saved == null ? fromAction(p) : saved.copy();
         }
         text.set(a, p.field(), c.value(), names.keySet());
         return toParsed(a, names);
     }
 
-    private static TaskText.Action fromStep(Parsed p) {
-        StaffTasks.Step s = p.step();
+    private static TaskText.Action fromAction(ParsedAction p) {
+        StaffTasks.Action s = p.action();
         TaskText.Action a = new TaskText.Action();
-        a.custom = s.kind() == StaffTasks.Kind.CUSTOM && (s.verb() == null || s.verb().isEmpty());
         a.verb = empty(s.verb());
         a.what = empty(s.what());
         a.spec = empty(s.spec());
@@ -150,7 +224,6 @@ public final class TaskParser {
         a.rule = empty(s.ruleCode());
         a.player = s.target() == null ? null : s.targetName();
         a.playerQuery = s.target() == null ? empty(s.targetName()) : null;
-        a.text = s.text() == null ? "" : s.text();
         a.source = p.sourceText();
         return a;
     }
@@ -159,14 +232,9 @@ public final class TaskParser {
         return s == null || s.isEmpty() ? null : s;
     }
 
-    /** Azione di TaskText -> Parsed, con i controlli che servono il server (player, regole, specifiche, limiti). */
-    private Parsed toParsed(TaskText.Action a, Map<String, UUID> names) {
+    /** Azione di TaskText -> ParsedAction, con i controlli del server (player, regole, specifiche, limiti). */
+    private ParsedAction toParsed(TaskText.Action a, Map<String, UUID> names) {
         UUID target = a.player == null ? null : names.get(a.player);
-        if (a.custom) {
-            StaffTasks.Step s = StaffTasks.newStep(StaffTasks.Kind.CUSTOM, target, target == null ? "" : a.player, "", null, null,
-                    0, null, a.text);
-            return remember(new Parsed(s, false, null, List.of(), a.source), a);
-        }
         String field = a.field;
         List<Candidate> alts = new ArrayList<>();
         for (TaskText.Alt x : a.alts) {
@@ -196,12 +264,11 @@ public final class TaskParser {
             }
         }
         String name = target != null ? a.player : a.playerQuery != null ? a.playerQuery : "";
-        StaffTasks.Step s = StaffTasks.newStep(StaffTasks.Kind.ORDINARIA, target, name, a.verb, a.what, a.spec,
-                a.amount == null ? 0 : a.amount, a.rule, "");
-        return remember(new Parsed(s, field != null, field, List.copyOf(alts), a.source), a);
+        StaffTasks.Action s = StaffTasks.newAction(a.verb, a.what, a.spec, a.amount == null ? 0 : a.amount, a.rule, target, name);
+        return remember(new ParsedAction(s, field != null, field, List.copyOf(alts), a.source), a);
     }
 
-    private Parsed remember(Parsed p, TaskText.Action a) {
+    private ParsedAction remember(ParsedAction p, TaskText.Action a) {
         synchronized (state) {
             state.put(p, a.copy());
         }

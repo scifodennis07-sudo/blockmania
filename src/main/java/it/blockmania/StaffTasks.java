@@ -1,13 +1,21 @@
 package it.blockmania;
 
+import net.kyori.adventure.bossbar.BossBar;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -15,54 +23,72 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Task dello staff v3 (GUI TaskGui, /adminmania task, frasi capite da TaskParser). Una task e' una CARTELLA con id
- * numerico (#1, #2...) e piu' step; ogni step ha il SUO player (target): dai / togli / setta / azzera una risorsa (con
- * la sua specifica: tipo di ball, ricompensa, potenziamento) oppure banna / warna / muta con un codice regola.
- * Ogni step e' ORDINARIA o CUSTOM (messaggio libero, con o senza azione).
- * Gli helper creano, i mod eseguono/rifiutano gli step ordinari, gli sr_mod quelli custom; il creatore o un admin
- * eliminano task e step, gli admin ripristinano. Le azioni usano i metodi interni di /adminmania e del profilo player
- * (PlayerCounters.apply, AmmoManager, UpgradeManager, Rewards.setReached, Power, SanctionManager.applyRule).
- * Tutto finisce nel resoconto. Si salva in staff-tasks.yml (version: 3, legge anche la 2). Da usare dal thread principale.
+ * Task dello staff v4 (GUI TaskGui, /adminmania task, frasi capite da TaskParser). Una task e' una CARTELLA con id
+ * numerico (#1, #2...), una MOTIVAZIONE e piu' ORDINI. Un ordine e' semplice (un ramo con le azioni), condizionale
+ * (un ramo per condizione + "non fare nulla" in coda) o custom (testo da fare a mano).
+ * Uno staffer PRENDE IN CARICO un ordine (un ramo) per 5 minuti: una bossbar gli mostra cosa fare e quanto manca.
+ * Le azioni le fa lui a mano con lo userprofile o /adminmania: sotto admin le puo' fare SOLO se sono nel suo incarico
+ * (allows), e ogni azione fatta si spunta (done). Ramo completo = ordine completato. Se scadono i 5 minuti (anche da
+ * offline) l'incarico si annulla: le azioni gia' fatte si rimettono come prima (subito o al prossimo login del player)
+ * e l'ordine torna libero. Un incarico per persona. Admin+ e OP restano liberi di dare/togliere.
+ * Tutto finisce nel resoconto. Si salva in staff-tasks.yml (version 4; il formato 3 si converte, i piu' vecchi -> .old).
+ * Da usare dal thread principale.
  */
-public final class StaffTasks {
+public final class StaffTasks implements Listener {
 
-    public enum Kind { ORDINARIA, CUSTOM }
-
-    /** Per task e per step (ELIMINATA solo per le task). */
+    /** Per task e ordini (RIFIUTATA resta solo per i dati vecchi; ELIMINATA solo per le task). */
     public enum Status { APERTA, ESEGUITA, RIFIUTATA, ELIMINATA }
 
-    /**
-     * target/targetName = player dello step (null solo per un CUSTOM senza player) ; targetUid = id utente (u-00012,
-     * PlayerIds) salvato di nascosto con UUID e nome: nei testi e nella GUI si mostra solo il nome ;
-     * verb = give|remove|set|reset|ban|warn|mute ("" per un CUSTOM senza azione) ;
-     * what = ball|ricompense|coin|blockcoin|blockshell|mine|upgrade|power|stamina (null per ban/warn/mute) ;
-     * spec = id ball / ricompensa / potenziamento ("all" = tutte) o null ; text = solo CUSTOM.
-     */
-    public record Step(String id, Kind kind, UUID target, String targetName, String targetUid, String verb, String what,
-                       String spec, long amount, String ruleCode, String text, Status status, UUID doneBy, String doneByName,
-                       long doneAt, String reason) {
-    }
+    public enum OrderType { SEMPLICE, CONDIZIONALE, CUSTOM }
 
     /**
-     * id = numero progressivo come testo ("1", "2"...: la GUI mostra "#" + id).
-     * status: APERTA finche' c'e' uno step aperto; poi ESEGUITA (almeno uno eseguito) o RIFIUTATA; ELIMINATA = cestino.
+     * verb = give|remove|set|reset|ban|warn|mute ; what = ball|ricompense|coin|blockcoin|blockshell|mine|upgrade|power|stamina
+     * (null per le sanzioni) ; spec = ball / ricompensa / potenziamento ("all") o null ; ruleCode per le sanzioni.
+     * targetUid = id utente nascosto (PlayerIds): si mostra solo targetName. before = valore di prima (interno, annullamento).
      */
-    public record Task(String id, UUID createdBy, String createdByName, long createdAt, Status status, List<Step> steps) {
+    public record Action(String verb, String what, String spec, long amount, String ruleCode, UUID target, String targetName,
+                         String targetUid, boolean done, UUID doneBy, long doneAt, String before) {
     }
 
-    /** Conteggi di una cartella: done = step chiusi (eseguiti o rifiutati). */
-    public record Counts(int total, int ord, int custom, int done, int doneOrd, int doneCustom) {
+    /** condition null = ordine semplice o "non fare nulla" finale ; nothing = completa l'ordine senza fare niente. */
+    public record Branch(String condition, List<Action> actions, boolean nothing) {
     }
 
-    /** event: CREATA ESEGUITA RIFIUTATA ELIMINATA RIPRISTINATA ; stepId null per gli eventi della task intera. */
-    public record LogEntry(long ts, String taskId, String stepId, String event, UUID by, String byName, String detail) {
+    /** chosenBranch = ramo scelto da chi l'ha completato (-1 = nessuno). */
+    public record Order(String id, String text, List<Branch> branches, Status status, UUID doneBy, String doneByName, long doneAt,
+                        int chosenBranch) {
+    }
+
+    /** id = numero progressivo come testo ("1", "2"...: la GUI mostra "#" + id). reason = motivazione. */
+    public record Task(String id, UUID createdBy, String createdByName, long createdAt, Status status, String reason,
+                       List<Order> orders) {
+    }
+
+    /** Incarico: lo staffer ha preso il ramo branch dell'ordine; scade a expiresAt (ms epoch). */
+    public record Charge(UUID staff, String taskId, String orderId, int branch, long expiresAt) {
+    }
+
+    /** Conteggi della cartella (ordini): done = completati. */
+    public record Counts(int total, int simple, int conditional, int custom, int done, int doneSimple, int doneConditional,
+                         int doneCustom) {
+    }
+
+    /** event: CREATA PRESA AZIONE COMPLETATA ANNULLATA ELIMINATA RIPRISTINATA ; orderId null per gli eventi della task. */
+    public record LogEntry(long ts, String taskId, String orderId, String event, UUID by, String byName, String detail) {
     }
 
     /** Specifica selezionabile (id interno, nome italiano). */
     public record Spec(String id, String label) {
     }
 
-    private static final int VERSION = 3;
+    /** Annullamento da fare al prossimo login del player (era offline allo scadere). */
+    private record Undo(UUID target, String what, String spec, String before) {
+    }
+
+    public static final long CHARGE_MS = 5 * 60 * 1000L;
+    public static final String EXPIRED = "annullato per tempo scaduto";
+
+    private static final int VERSION = 4;
     private static final int MAX_LOG = 5000;
 
     private static final List<String> VERBS = List.of("give", "remove", "set", "reset", "ban", "warn", "mute");
@@ -84,14 +110,19 @@ public final class StaffTasks {
     private final File file;
     private final Map<String, Task> tasks = new LinkedHashMap<>();
     private final List<LogEntry> log = new ArrayList<>();
+    private final Map<UUID, Charge> charges = new LinkedHashMap<>();
+    private final List<Undo> undos = new ArrayList<>();
+    private final Map<UUID, BossBar> bars = new HashMap<>();
+    /** Valore di prima preso da allows() per l'azione che lo staffer sta per fare: staff -> {indice azione, valore}. */
+    private final Map<UUID, Object[]> pendingBefore = new HashMap<>();
     private long nextId = 1;
+    private BukkitTask timer;
+    private TaskParser parser;
 
     public StaffTasks(BlockMania plugin) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "staff-tasks.yml");
     }
-
-    private TaskParser parser;
 
     /** Parser delle frasi (task-words.yml), creato alla prima richiesta. */
     public synchronized TaskParser parser() {
@@ -173,7 +204,7 @@ public final class StaffTasks {
         return noun + " " + act;
     }
 
-    /** {min, max} per askNumber; {0, 0} se non serve un valore. Il massimo reale del player si applica all'esecuzione. */
+    /** {min, max} per askNumber; {0, 0} se non serve un valore. */
     public static long[] valueRange(String verb, String what) {
         String v = low(verb);
         String w = low(what);
@@ -206,49 +237,11 @@ public final class StaffTasks {
     /** Nome italiano della cosa. */
     public static String labelWhat(String what) {
         return switch (low(what)) {
-            case "ball" -> "ball";
-            case "ricompense" -> "ricompense";
-            case "coin" -> "coin";
-            case "blockcoin" -> "blockcoin";
-            case "blockshell" -> "blockshell";
             case "mine" -> "miniere";
             case "upgrade" -> "potenziamenti";
             case "power" -> "poteri";
-            case "stamina" -> "stamina";
             default -> low(what);
         };
-    }
-
-    /**
-     * Riga leggibile col player: "dai 5 ball ghost a crack", "setta livello 3 battlepass (ricompense) a crack",
-     * "warna crack (regola 1.2)", custom senza azione: "custom: verifica se ..." (testo tagliato a 40 lettere).
-     */
-    public static String describe(Step s) {
-        if (s == null) {
-            return "";
-        }
-        String v = low(s.verb());
-        String who = s.targetName() == null || s.targetName().isEmpty() ? "?" : s.targetName();
-        if (v.isEmpty()) {
-            String tx = s.text() == null ? "" : s.text();
-            return "custom: " + (tx.length() > 40 ? tx.substring(0, 39) + "..." : tx);
-        }
-        if (isSanction(v)) {
-            return label(v) + " " + who + " (regola " + (s.ruleCode() == null ? "?" : s.ruleCode()) + ")";
-        }
-        String w = low(s.what());
-        String spec = s.spec() == null || s.spec().isEmpty() ? "" : " " + specLabel(w, s.spec());
-        if (v.equals("reset")) {
-            return label(v) + " " + labelWhat(w) + spec + " a " + who;
-        }
-        String amount = w.equals("stamina") ? s.amount() + "%" : String.valueOf(s.amount());
-        return switch (w) {
-            // "dai 5 livelli battlepass (ricompense)", "setta livello 3 danno (potenziamenti)"
-            case "ricompense", "upgrade" -> label(v) + " " + (v.equals("set") ? "livello " + amount : amount + " livelli") + spec
-                    + " (" + labelWhat(w) + ")";
-            case "stamina" -> label(v) + " " + amount + " stamina";
-            default -> label(v) + " " + amount + " " + labelWhat(w) + spec;
-        } + " a " + who;
     }
 
     /** Nome italiano della specifica (ball "ghost", upgrade "danno", ricompense "battlepass", "tutte"/"tutti"). */
@@ -256,22 +249,82 @@ public final class StaffTasks {
         return specLabel(what, spec);
     }
 
-    /**
-     * Nuovo step APERTO (id provvisorio; create assegna l'id definitivo). Normalizza i campi che non servono.
-     * verb vuoto/null = CUSTOM senza azione (solo il testo). target null ammesso solo per i CUSTOM.
-     */
-    public static Step newStep(Kind kind, UUID target, String targetName, String verb, String what, String spec, long amount,
-                               String ruleCode, String text) {
+    /** Riga leggibile col player: "dai 3000 blockcoin a DoppiaX", "setta miniera 4 a DoppiaX", "warna crack (regola 1.2)". */
+    public static String describe(Action a) {
+        if (a == null) {
+            return "";
+        }
+        String v = low(a.verb());
+        String who = a.targetName() == null || a.targetName().isEmpty() ? "?" : a.targetName();
+        if (isSanction(v)) {
+            return label(v) + " " + who + " (regola " + (a.ruleCode() == null ? "?" : a.ruleCode()) + ")";
+        }
+        String w = low(a.what());
+        String spec = a.spec() == null || a.spec().isEmpty() ? "" : " " + specLabel(w, a.spec());
+        if (v.equals("reset")) {
+            return label(v) + " " + labelWhat(w) + spec + " a " + who;
+        }
+        String amount = w.equals("stamina") ? a.amount() + "%" : String.valueOf(a.amount());
+        return switch (w) {
+            case "ricompense", "upgrade" -> label(v) + " " + (v.equals("set") ? "livello " + amount : amount + " livelli") + spec
+                    + " (" + labelWhat(w) + ")";
+            case "mine" -> v.equals("set") ? "setta miniera " + amount : label(v) + " " + amount + (a.amount() == 1 ? " miniera" : " miniere");
+            case "stamina" -> label(v) + " " + amount + " stamina";
+            default -> label(v) + " " + amount + " " + labelWhat(w) + spec;
+        } + " a " + who;
+    }
+
+    /** "se ha la miniera 5: togli 1 miniera a DoppiaX, dai 3000 blockcoin a DoppiaX" / "non fare nulla". */
+    public static String describe(Branch b) {
+        if (b == null) {
+            return "";
+        }
+        String cond = b.condition() == null || b.condition().isEmpty() ? "" : "se " + b.condition() + ": ";
+        if (b.nothing()) {
+            return cond + "non fare nulla";
+        }
+        if (b.actions().isEmpty()) {
+            return cond + "da fare a mano";
+        }
+        List<String> l = new ArrayList<>();
+        for (Action a : b.actions()) {
+            l.add(describe(a));
+        }
+        return cond + String.join(", ", l);
+    }
+
+    public static OrderType type(Order o) {
+        if (o == null || o.branches().isEmpty()) {
+            return OrderType.CUSTOM;
+        }
+        if (o.branches().size() == 1) {
+            Branch b = o.branches().get(0);
+            return b.actions().isEmpty() && !b.nothing() ? OrderType.CUSTOM : OrderType.SEMPLICE;
+        }
+        return OrderType.CONDIZIONALE;
+    }
+
+    /** Nuova azione (non fatta). Normalizza i campi che non servono. */
+    public static Action newAction(String verb, String what, String spec, long amount, String ruleCode, UUID target,
+                                   String targetName) {
         String v = low(verb);
         boolean sanction = isSanction(v);
-        boolean none = v.isEmpty();
-        String w = sanction || none ? null : low(what);
-        String sp = sanction || none || spec == null || spec.isBlank() ? null : spec.trim().toLowerCase(Locale.ROOT);
-        long a = sanction || none || v.equals("reset") ? 0 : amount;
+        String w = sanction ? null : low(what);
+        String sp = sanction || spec == null || spec.isBlank() ? null : spec.trim().toLowerCase(Locale.ROOT);
+        long a = sanction || v.equals("reset") ? 0 : amount;
         String rc = sanction && ruleCode != null ? ruleCode.trim() : null;
-        String tx = kind == Kind.CUSTOM && text != null ? text.trim() : "";
-        return new Step(UUID.randomUUID().toString().substring(0, 8), kind == null ? Kind.ORDINARIA : kind, target,
-                targetName == null ? "" : targetName, "", v, w, sp, a, rc, tx, Status.APERTA, null, "", 0L, "");
+        return new Action(v, w, sp, a, rc, target, targetName == null ? "" : targetName, "", false, null, 0L, "");
+    }
+
+    public static Branch newBranch(String condition, List<Action> actions, boolean nothing) {
+        String c = condition == null || condition.isBlank() ? null : condition.trim();
+        return new Branch(c, nothing || actions == null ? List.of() : List.copyOf(actions), nothing);
+    }
+
+    /** Nuovo ordine APERTO (id provvisorio; create assegna quello vero). */
+    public static Order newOrder(String text, List<Branch> branches) {
+        return new Order("0", text == null ? "" : text.trim(), branches == null ? List.of() : List.copyOf(branches),
+                Status.APERTA, null, "", 0L, -1);
     }
 
     // ------------------------------------------------------------------ persistenza
@@ -279,13 +332,15 @@ public final class StaffTasks {
     public synchronized void load() {
         tasks.clear();
         log.clear();
+        charges.clear();
+        undos.clear();
+        nextId = 1;
         if (!file.exists()) {
             return;
         }
         YamlConfiguration y = YamlConfiguration.loadConfiguration(file);
         int version = y.getInt("version", 1);
-        if (version != VERSION && version != 2) {
-            // formato v1 (task con una sola azione): si mette da parte
+        if (version != VERSION && version != 3) {
             File old = new File(plugin.getDataFolder(), "staff-tasks.yml.old");
             if (old.exists()) {
                 old.delete();
@@ -297,9 +352,8 @@ public final class StaffTasks {
             }
             return;
         }
-        // v2: il player era della task e l'id era esadecimale -> player nello step, id numerici (in ordine di creazione)
-        boolean v2 = version == 2;
-        List<Task> read = new ArrayList<>();
+        boolean v3 = version == 3;
+        long max = 0;
         for (Map<?, ?> m : y.getMapList("tasks")) {
             try {
                 Object id = m.get("id");
@@ -307,42 +361,27 @@ public final class StaffTasks {
                 if (id == null || status == null) {
                     continue;
                 }
-                UUID oldTarget = v2 ? uuid(str(m.get("target"))) : null;
-                String oldName = v2 ? str(m.get("targetName")) : "";
-                List<Step> steps = new ArrayList<>();
-                Object raw = m.get("steps");
+                List<Order> orders = new ArrayList<>();
+                Object raw = m.get(v3 ? "steps" : "orders");
                 if (raw instanceof List<?> list) {
+                    int n = 1;
                     for (Object o : list) {
-                        if (o instanceof Map<?, ?> sm) {
-                            Step s = readStep(sm, oldTarget, oldName);
-                            if (s != null) {
-                                steps.add(s);
+                        if (o instanceof Map<?, ?> om) {
+                            Order ord = v3 ? fromV3Step(om, String.valueOf(n)) : readOrder(om);
+                            if (ord != null) {
+                                orders.add(ord);
+                                n++;
                             }
                         }
                     }
                 }
-                read.add(new Task(String.valueOf(id), uuid(str(m.get("createdBy"))), str(m.get("createdByName")),
-                        num(m.get("createdAt")), Status.valueOf(String.valueOf(status)), steps));
+                Task t = new Task(String.valueOf(id), uuid(str(m.get("createdBy"))), str(m.get("createdByName")),
+                        num(m.get("createdAt")), Status.valueOf(String.valueOf(status)), str(m.get("reason")), List.copyOf(orders));
+                tasks.put(t.id(), t);
+                max = Math.max(max, num(t.id()));
             } catch (IllegalArgumentException ignored) {
                 // voce non valida: saltata
             }
-        }
-        Map<String, String> renamed = new LinkedHashMap<>();
-        if (v2) {
-            read.sort((a, b) -> Long.compare(a.createdAt(), b.createdAt()));
-            long n = 1;
-            List<Task> again = new ArrayList<>();
-            for (Task t : read) {
-                String nid = String.valueOf(n++);
-                renamed.put(t.id(), nid);
-                again.add(new Task(nid, t.createdBy(), t.createdByName(), t.createdAt(), t.status(), t.steps()));
-            }
-            read = again;
-        }
-        long max = 0;
-        for (Task t : read) {
-            tasks.put(t.id(), t);
-            max = Math.max(max, num(t.id()));
         }
         nextId = Math.max(max + 1, y.getLong("next-id", 1));
         for (Map<?, ?> m : y.getMapList("log")) {
@@ -351,36 +390,92 @@ public final class StaffTasks {
             if (tid == null || ev == null) {
                 continue;
             }
-            String task = renamed.getOrDefault(String.valueOf(tid), String.valueOf(tid));
-            String sid = str(m.get("step"));
-            log.add(new LogEntry(num(m.get("ts")), task, sid.isEmpty() ? null : sid, String.valueOf(ev),
+            String oid = str(m.get(v3 ? "step" : "order"));
+            log.add(new LogEntry(num(m.get("ts")), String.valueOf(tid), oid.isEmpty() || v3 ? null : oid, String.valueOf(ev),
                     uuid(str(m.get("by"))), str(m.get("byName")), str(m.get("detail"))));
         }
-        if (v2) {
-            plugin.getLogger().info("staff-tasks.yml: convertito dal formato 2 (" + tasks.size() + " task)");
+        for (Map<?, ?> m : y.getMapList("charges")) {
+            UUID staff = uuid(str(m.get("staff")));
+            if (staff != null) {
+                charges.put(staff, new Charge(staff, str(m.get("task")), str(m.get("order")), (int) num(m.get("branch")),
+                        num(m.get("expiresAt"))));
+            }
+        }
+        for (Map<?, ?> m : y.getMapList("undo")) {
+            UUID target = uuid(str(m.get("target")));
+            if (target != null) {
+                undos.add(new Undo(target, str(m.get("what")), str(m.get("spec")), str(m.get("before"))));
+            }
+        }
+        if (v3) {
+            plugin.getLogger().info("staff-tasks.yml: convertito dal formato 3 (" + tasks.size() + " task, ogni step = un ordine)");
             save();
         }
     }
 
-    /** Step dal file; per il formato 2 il player e' quello della task (defTarget). */
-    private static Step readStep(Map<?, ?> m, UUID defTarget, String defName) {
+    /** v3: uno step diventa un ordine semplice (o custom se non aveva azione). */
+    private static Order fromV3Step(Map<?, ?> m, String id) {
         try {
-            Object id = m.get("id");
-            Object kind = m.get("kind");
-            Object status = m.get("status");
-            if (id == null || kind == null || status == null) {
-                return null;
+            String verb = str(m.get("verb"));
+            Status st = Status.valueOf(str(m.get("status")));
+            UUID target = uuid(str(m.get("target")));
+            String tn = str(m.get("targetName"));
+            boolean done = st == Status.ESEGUITA;
+            UUID doneBy = uuid(str(m.get("doneBy")));
+            long doneAt = num(m.get("doneAt"));
+            List<Branch> br = new ArrayList<>();
+            String text;
+            if (verb.isEmpty()) {
+                text = str(m.get("text"));
+                br.add(new Branch(null, List.of(), false));
+            } else {
+                String what = str(m.get("what"));
+                String spec = str(m.get("spec"));
+                String rule = str(m.get("rule"));
+                Action a = new Action(verb, what.isEmpty() ? null : what, spec.isEmpty() ? null : spec, num(m.get("amount")),
+                        rule.isEmpty() ? null : rule, target, tn, str(m.get("targetUid")), done, done ? doneBy : null,
+                        done ? doneAt : 0L, "");
+                text = str(m.get("text")).isEmpty() ? describe(a) : str(m.get("text"));
+                br.add(new Branch(null, List.of(a), false));
             }
-            String what = str(m.get("what"));
-            String spec = str(m.get("spec"));
-            String rule = str(m.get("rule"));
-            UUID target = m.containsKey("target") ? uuid(str(m.get("target"))) : defTarget;
-            String targetName = m.containsKey("targetName") ? str(m.get("targetName")) : defName;
-            return new Step(String.valueOf(id), Kind.valueOf(String.valueOf(kind)), target, targetName, str(m.get("targetUid")),
-                    str(m.get("verb")),
-                    what.isEmpty() ? null : what, spec.isEmpty() ? null : spec, num(m.get("amount")),
-                    rule.isEmpty() ? null : rule, str(m.get("text")), Status.valueOf(String.valueOf(status)),
-                    uuid(str(m.get("doneBy"))), str(m.get("doneByName")), num(m.get("doneAt")), str(m.get("reason")));
+            return new Order(id, text, List.copyOf(br), st, doneBy, str(m.get("doneByName")), doneAt, done ? 0 : -1);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private static Order readOrder(Map<?, ?> m) {
+        try {
+            List<Branch> branches = new ArrayList<>();
+            Object raw = m.get("branches");
+            if (raw instanceof List<?> list) {
+                for (Object o : list) {
+                    if (!(o instanceof Map<?, ?> bm)) {
+                        continue;
+                    }
+                    List<Action> actions = new ArrayList<>();
+                    Object ra = bm.get("actions");
+                    if (ra instanceof List<?> al) {
+                        for (Object x : al) {
+                            if (x instanceof Map<?, ?> am) {
+                                String what = str(am.get("what"));
+                                String spec = str(am.get("spec"));
+                                String rule = str(am.get("rule"));
+                                actions.add(new Action(str(am.get("verb")), what.isEmpty() ? null : what,
+                                        spec.isEmpty() ? null : spec, num(am.get("amount")), rule.isEmpty() ? null : rule,
+                                        uuid(str(am.get("target"))), str(am.get("targetName")), str(am.get("targetUid")),
+                                        Boolean.TRUE.equals(am.get("done")), uuid(str(am.get("doneBy"))), num(am.get("doneAt")),
+                                        str(am.get("before"))));
+                            }
+                        }
+                    }
+                    String cond = str(bm.get("condition"));
+                    branches.add(new Branch(cond.isEmpty() ? null : cond, List.copyOf(actions),
+                            Boolean.TRUE.equals(bm.get("nothing"))));
+                }
+            }
+            return new Order(str(m.get("id")), str(m.get("text")), List.copyOf(branches), Status.valueOf(str(m.get("status"))),
+                    uuid(str(m.get("doneBy"))), str(m.get("doneByName")), num(m.get("doneAt")), (int) num(m.get("chosen")));
         } catch (IllegalArgumentException ex) {
             return null;
         }
@@ -398,28 +493,46 @@ public final class StaffTasks {
             m.put("createdByName", nz(t.createdByName()));
             m.put("createdAt", t.createdAt());
             m.put("status", t.status().name());
-            List<Map<String, Object>> steps = new ArrayList<>();
-            for (Step s : t.steps()) {
-                Map<String, Object> sm = new LinkedHashMap<>();
-                sm.put("id", s.id());
-                sm.put("kind", s.kind().name());
-                sm.put("target", s.target() == null ? "" : s.target().toString());
-                sm.put("targetName", nz(s.targetName()));
-                sm.put("targetUid", nz(s.targetUid()));
-                sm.put("verb", nz(s.verb()));
-                sm.put("what", nz(s.what()));
-                sm.put("spec", nz(s.spec()));
-                sm.put("amount", s.amount());
-                sm.put("rule", nz(s.ruleCode()));
-                sm.put("text", nz(s.text()));
-                sm.put("status", s.status().name());
-                sm.put("doneBy", s.doneBy() == null ? "" : s.doneBy().toString());
-                sm.put("doneByName", nz(s.doneByName()));
-                sm.put("doneAt", s.doneAt());
-                sm.put("reason", nz(s.reason()));
-                steps.add(sm);
+            m.put("reason", nz(t.reason()));
+            List<Map<String, Object>> orders = new ArrayList<>();
+            for (Order o : t.orders()) {
+                Map<String, Object> om = new LinkedHashMap<>();
+                om.put("id", o.id());
+                om.put("text", nz(o.text()));
+                om.put("status", o.status().name());
+                om.put("doneBy", o.doneBy() == null ? "" : o.doneBy().toString());
+                om.put("doneByName", nz(o.doneByName()));
+                om.put("doneAt", o.doneAt());
+                om.put("chosen", o.chosenBranch());
+                List<Map<String, Object>> branches = new ArrayList<>();
+                for (Branch b : o.branches()) {
+                    Map<String, Object> bm = new LinkedHashMap<>();
+                    bm.put("condition", nz(b.condition()));
+                    bm.put("nothing", b.nothing());
+                    List<Map<String, Object>> actions = new ArrayList<>();
+                    for (Action a : b.actions()) {
+                        Map<String, Object> am = new LinkedHashMap<>();
+                        am.put("verb", nz(a.verb()));
+                        am.put("what", nz(a.what()));
+                        am.put("spec", nz(a.spec()));
+                        am.put("amount", a.amount());
+                        am.put("rule", nz(a.ruleCode()));
+                        am.put("target", a.target() == null ? "" : a.target().toString());
+                        am.put("targetName", nz(a.targetName()));
+                        am.put("targetUid", nz(a.targetUid()));
+                        am.put("done", a.done());
+                        am.put("doneBy", a.doneBy() == null ? "" : a.doneBy().toString());
+                        am.put("doneAt", a.doneAt());
+                        am.put("before", nz(a.before()));
+                        actions.add(am);
+                    }
+                    bm.put("actions", actions);
+                    branches.add(bm);
+                }
+                om.put("branches", branches);
+                orders.add(om);
             }
-            m.put("steps", steps);
+            m.put("orders", orders);
             out.add(m);
         }
         y.set("tasks", out);
@@ -428,7 +541,7 @@ public final class StaffTasks {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("ts", e.ts());
             m.put("task", e.taskId());
-            m.put("step", nz(e.stepId()));
+            m.put("order", nz(e.orderId()));
             m.put("event", e.event());
             m.put("by", e.by() == null ? "" : e.by().toString());
             m.put("byName", nz(e.byName()));
@@ -436,6 +549,27 @@ public final class StaffTasks {
             lo.add(m);
         }
         y.set("log", lo);
+        List<Map<String, Object>> ch = new ArrayList<>();
+        for (Charge c : charges.values()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("staff", c.staff().toString());
+            m.put("task", c.taskId());
+            m.put("order", c.orderId());
+            m.put("branch", c.branch());
+            m.put("expiresAt", c.expiresAt());
+            ch.add(m);
+        }
+        y.set("charges", ch);
+        List<Map<String, Object>> un = new ArrayList<>();
+        for (Undo u : undos) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("target", u.target().toString());
+            m.put("what", u.what());
+            m.put("spec", nz(u.spec()));
+            m.put("before", u.before());
+            un.add(m);
+        }
+        y.set("undo", un);
         try {
             plugin.getDataFolder().mkdirs();
             y.save(file);
@@ -444,7 +578,27 @@ public final class StaffTasks {
         }
     }
 
+    /** Avvia il controllo degli incarichi (ogni secondo: bossbar e scadenze, anche per chi e' offline). */
+    public void start() {
+        if (timer == null) {
+            timer = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+                tick();
+            }, 20L, 20L);
+        }
+    }
+
     public void stop() {
+        if (timer != null) {
+            timer.cancel();
+            timer = null;
+        }
+        for (Map.Entry<UUID, BossBar> e : bars.entrySet()) {
+            Player p = Bukkit.getPlayer(e.getKey());
+            if (p != null) {
+                p.hideBossBar(e.getValue());
+            }
+        }
+        bars.clear();
         save();
     }
 
@@ -471,40 +625,27 @@ public final class StaffTasks {
         return tasks.get(k.startsWith("#") ? k.substring(1) : k);
     }
 
-    /** Conteggi della cartella (per la GUI: niente nomi di player). */
+    /** Conteggi della cartella per tipo di ordine. */
     public static Counts counts(Task t) {
-        int total = 0;
-        int ord = 0;
-        int custom = 0;
-        int done = 0;
-        int doneOrd = 0;
-        int doneCustom = 0;
+        int[] c = new int[8];
         if (t != null) {
-            for (Step s : t.steps()) {
-                boolean c = s.kind() == Kind.CUSTOM;
-                boolean closed = s.status() == Status.ESEGUITA || s.status() == Status.RIFIUTATA;
-                total++;
-                if (c) {
-                    custom++;
-                } else {
-                    ord++;
-                }
-                if (closed) {
-                    done++;
-                    if (c) {
-                        doneCustom++;
-                    } else {
-                        doneOrd++;
-                    }
+            for (Order o : t.orders()) {
+                OrderType ty = type(o);
+                boolean done = o.status() == Status.ESEGUITA || o.status() == Status.RIFIUTATA;
+                int k = ty == OrderType.SEMPLICE ? 1 : ty == OrderType.CONDIZIONALE ? 2 : 3;
+                c[0]++;
+                c[k]++;
+                if (done) {
+                    c[4]++;
+                    c[4 + k]++;
                 }
             }
         }
-        return new Counts(total, ord, custom, done, doneOrd, doneCustom);
+        return new Counts(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]);
     }
 
     /**
-     * Resoconto, le voci piu' recenti prima. onlyForOrNull = tutte le voci delle task create da lui
-     * piu' le voci fatte da lui (step eseguiti/rifiutati).
+     * Resoconto, le voci piu' recenti prima. onlyForOrNull = tutte le voci delle task create da lui piu' le voci fatte da lui.
      */
     public synchronized List<LogEntry> log(UUID onlyForOrNull) {
         List<LogEntry> out = new ArrayList<>();
@@ -520,6 +661,42 @@ public final class StaffTasks {
         }
         out.sort((a, b) -> Long.compare(b.ts(), a.ts()));
         return out;
+    }
+
+    public synchronized Charge chargeOf(UUID staff) {
+        return staff == null ? null : charges.get(staff);
+    }
+
+    /** Chi ha in carico l'ordine (null = libero). */
+    public synchronized Charge chargeOn(String taskId, String orderId) {
+        Task t = get(taskId);
+        if (t == null) {
+            return null;
+        }
+        for (Charge c : charges.values()) {
+            if (c.taskId().equals(t.id()) && c.orderId().equals(orderId)) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    /** Prossima azione da fare dell'incarico (null = nessuna: custom o tutte fatte). */
+    public synchronized Action nextAction(Charge c) {
+        Branch b = branchOf(c);
+        if (b == null) {
+            return null;
+        }
+        for (Action a : b.actions()) {
+            if (!a.done()) {
+                return a;
+            }
+        }
+        return null;
+    }
+
+    public static long remainingMs(Charge c) {
+        return c == null ? 0 : Math.max(0, c.expiresAt() - System.currentTimeMillis());
     }
 
     // ------------------------------------------------------------------ permessi
@@ -546,189 +723,153 @@ public final class StaffTasks {
         return p != null && !suspended(p) && rank(p) >= HELPER;
     }
 
-    /**
-     * Puo' eseguire o rifiutare lo step: step aperto in una task aperta, non creata da lui, non su se stesso (salvo admin+),
-     * mod+ per ORDINARIA (e sanzioni), sr_mod+ per CUSTOM. Per le sanzioni all'esecuzione servono anche i permessi
-     * "sanctions" di /adminmania (AdminCommand.authorize).
-     */
-    public boolean canExecute(Player p, Step s) {
-        Task t = findTask(s == null ? null : s.id());
-        return cannot(p, t, stepOf(t, s == null ? null : s.id())) == null;
-    }
-
     public boolean isAdmin(Player p) {
         return p != null && !suspended(p) && rank(p) >= ADMIN;
     }
 
-    /** Puo' eliminare la task (o un suo step): chi l'ha creata o admin+, non sospeso. */
+    /** Puo' eliminare la task: chi l'ha creata o admin+, non sospeso. */
     public boolean canDelete(Player p, Task t) {
         return p != null && t != null && !suspended(p) && (p.getUniqueId().equals(t.createdBy()) || isAdmin(p));
     }
 
-    // ------------------------------------------------------------------ azioni
+    /** null = p puo' prendere in carico l'ordine; altrimenti il motivo. */
+    public synchronized String canTake(Player p, Task t, Order o) {
+        if (p == null || t == null || o == null) {
+            return "ordine non trovato";
+        }
+        if (t.status() == Status.ELIMINATA) {
+            return "la task e' nel cestino";
+        }
+        if (o.status() != Status.APERTA) {
+            return "ordine gia' completato";
+        }
+        if (suspended(p)) {
+            return "sei sospeso dallo staff";
+        }
+        if (p.getUniqueId().equals(t.createdBy())) {
+            return "non puoi prendere in carico gli ordini di una task creata da te";
+        }
+        Charge on = chargeOn(t.id(), o.id());
+        if (on != null) {
+            return on.staff().equals(p.getUniqueId()) ? "ce l'hai gia' in carico" : "gia' in carico a " + playerName(on.staff());
+        }
+        Charge mine = charges.get(p.getUniqueId());
+        if (mine != null) {
+            return "hai gia' un incarico: finiscilo prima di prenderne un altro";
+        }
+        if (rank(p) < (type(o) == OrderType.CUSTOM ? SR_MOD : MOD)) {
+            return "il tuo grado non puo' prendere questo ordine";
+        }
+        if (!isAdmin(p)) {
+            for (Branch b : o.branches()) {
+                for (Action a : b.actions()) {
+                    if (p.getUniqueId().equals(a.target())) {
+                        return "col tuo grado non puoi fare azioni su te stesso";
+                    }
+                }
+            }
+        }
+        return null;
+    }
 
-    /**
-     * Crea la cartella; null se non puo' crearla, la lista e' vuota o uno step non e' valido (vedi whyInvalid).
-     * Niente step su se stessi (un helper non si fa dare risorse da un mod), salvo gli admin.
-     */
-    public Task create(Player by, List<Step> steps) {
-        if (by == null || steps == null || steps.isEmpty() || !canCreate(by)) {
+    // ------------------------------------------------------------------ creazione ed eliminazione
+
+    /** Crea la cartella; null se non puo' crearla, manca la motivazione, la lista e' vuota o un ordine non e' valido. */
+    public Task create(Player by, List<Order> orders, String reason) {
+        String why = reason == null ? "" : reason.trim();
+        if (by == null || orders == null || orders.isEmpty() || why.isEmpty() || !canCreate(by)) {
             return null;
         }
-        for (Step s : steps) {
-            if (whyInvalid(by, s) != null) {
+        for (Order o : orders) {
+            if (whyInvalid(by, o) != null) {
                 return null;
             }
         }
         Task t;
         synchronized (this) {
-            List<Step> clean = new ArrayList<>();
-            for (Step s : steps) {
-                Step n = newStep(s.kind(), s.target(), s.target() == null ? s.targetName() : playerName(s.target()), s.verb(),
-                        s.what(), s.spec(), s.amount(), s.ruleCode(), s.text());
-                clean.add(new Step(newStepId(clean), n.kind(), n.target(), n.targetName(), userId(n.target()), n.verb(), n.what(),
-                        n.spec(), n.amount(), n.ruleCode(), n.text(), Status.APERTA, null, "", 0L, ""));
+            List<Order> clean = new ArrayList<>();
+            int n = 1;
+            for (Order o : orders) {
+                List<Branch> br = new ArrayList<>();
+                for (Branch b : o.branches()) {
+                    List<Action> acts = new ArrayList<>();
+                    for (Action a : b.actions()) {
+                        Action x = newAction(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(),
+                                a.target() == null ? a.targetName() : playerName(a.target()));
+                        acts.add(new Action(x.verb(), x.what(), x.spec(), x.amount(), x.ruleCode(), x.target(), x.targetName(),
+                                userId(x.target()), false, null, 0L, ""));
+                    }
+                    br.add(newBranch(b.condition(), acts, b.nothing()));
+                }
+                clean.add(new Order(String.valueOf(n++), o.text() == null ? "" : o.text().trim(), List.copyOf(br), Status.APERTA,
+                        null, "", 0L, -1));
             }
-            t = new Task(newTaskId(), by.getUniqueId(), by.getName(), System.currentTimeMillis(), Status.APERTA, List.copyOf(clean));
+            t = new Task(newTaskId(), by.getUniqueId(), by.getName(), System.currentTimeMillis(), Status.APERTA, why,
+                    List.copyOf(clean));
             tasks.put(t.id(), t);
-            addLog(t.id(), null, "CREATA", by, clean.size() + (clean.size() == 1 ? " azione: " : " azioni: ") + summary(clean));
+            addLog(t.id(), null, "CREATA", by, clean.size() + (clean.size() == 1 ? " ordine" : " ordini") + " | motivazione: " + why);
             save();
         }
-        movement(by.getUniqueId(), "Ha creato la task staff #" + t.id() + ": " + summary(t.steps()));
-        log("task #" + t.id() + " creata da " + by.getName() + ": " + summary(t.steps()));
+        movement(by.getUniqueId(), "Ha creato la task staff #" + t.id() + " (" + t.orders().size() + " ordini): " + why);
+        log("task #" + t.id() + " creata da " + by.getName() + ": " + why);
         return t;
     }
 
-    /** Perche' lo step non si puo' salvare (per la GUI dell'anteprima), o null se va bene. */
-    public String whyInvalid(Player by, Step s) {
-        String err = invalid(s);
-        if (err != null) {
-            return err;
+    /** Perche' l'ordine non si puo' salvare (per l'anteprima), o null se va bene. */
+    public String whyInvalid(Player by, Order o) {
+        if (o == null || o.branches().isEmpty()) {
+            return "ordine vuoto";
         }
-        if (by != null && s.target() != null && by.getUniqueId().equals(s.target()) && !isAdmin(by)) {
-            return "col tuo grado non puoi creare azioni su te stesso";
+        OrderType ty = type(o);
+        if (ty == OrderType.CUSTOM && (o.text() == null || o.text().isBlank())) {
+            return "manca il testo";
         }
-        return null;
-    }
-
-    /** Esegue davvero lo step. null = ok, altrimenti il messaggio d'errore. */
-    public String executeStep(Player by, String taskId, String stepId) {
-        Task t = get(taskId);
-        Step s = stepOf(t, stepId);
-        String why = cannot(by, t, s);
-        if (why != null) {
-            return why;
-        }
-        String v = low(s.verb());
-        String err;
-        if (v.isEmpty()) {
-            err = null; // custom senza azione: lo staffer l'ha fatto a mano
-        } else if (isSanction(v)) {
-            err = applySanction(by, s);
-        } else {
-            Player target = s.target() == null ? null : Bukkit.getPlayer(s.target());
-            if (target == null) {
-                return "il player " + s.targetName() + " e' offline: si puo' eseguire solo quando e' online";
+        for (Branch b : o.branches()) {
+            if (!b.nothing() && b.actions().isEmpty() && ty != OrderType.CUSTOM) {
+                return "un ramo non ha azioni" + (b.condition() == null ? "" : " (se " + b.condition() + ")");
             }
-            err = apply(by, target, s);
-        }
-        if (err != null) {
-            return err;
-        }
-        Task done;
-        synchronized (this) {
-            done = closeStep(t.id(), s.id(), Status.ESEGUITA, by, "");
-            addLog(t.id(), s.id(), "ESEGUITA", by, describe(s));
-            save();
-        }
-        AdminCommand ac = plugin.getAdminCommand();
-        if (ac != null) {
-            ac.record(by, "task #" + t.id() + "/" + s.id() + " (" + kindLabel(s.kind()) + ") | " + describe(s));
-        }
-        movement(s.target(), "Task staff #" + t.id() + ": " + describe(s) + " (eseguita da " + by.getName() + ")");
-        movement(by.getUniqueId(), "Ha eseguito nella task staff #" + t.id() + " di " + t.createdByName() + ": " + describe(s));
-        notify(t.createdBy(), "&aNella tua task &f#" + t.id() + "&a &f" + by.getName() + "&a ha eseguito: &7" + describe(s)
-                + closedNote(done));
-        log("task #" + t.id() + " step " + s.id() + " eseguito da " + by.getName() + ": " + describe(s));
-        return null;
-    }
-
-    /** Rifiuta lo step con un motivo. null = ok, altrimenti il messaggio d'errore. */
-    public String rejectStep(Player by, String taskId, String stepId, String reason) {
-        Task t = get(taskId);
-        Step s = stepOf(t, stepId);
-        String why = cannot(by, t, s);
-        if (why != null) {
-            return why;
-        }
-        String r = reason == null ? "" : reason.trim();
-        if (r.isEmpty()) {
-            return "scrivi il motivo del rifiuto";
-        }
-        Task done;
-        synchronized (this) {
-            done = closeStep(t.id(), s.id(), Status.RIFIUTATA, by, r);
-            addLog(t.id(), s.id(), "RIFIUTATA", by, describe(s) + " | motivo: " + r);
-            save();
-        }
-        movement(by.getUniqueId(), "Ha rifiutato nella task staff #" + t.id() + " di " + t.createdByName() + ": " + describe(s)
-                + " (" + r + ")");
-        notify(t.createdBy(), "&cNella tua task &f#" + t.id() + "&c &f" + by.getName() + "&c ha rifiutato: &7" + describe(s)
-                + " &7Motivo: &f\"" + r + "\"" + closedNote(done));
-        log("task #" + t.id() + " step " + s.id() + " rifiutato da " + by.getName() + ": " + r);
-        return null;
-    }
-
-    /** Creatore o admin+: manda la task nel cestino. */
-    public boolean delete(Player admin, String taskId) {
-        Task t;
-        synchronized (this) {
-            t = get(taskId);
-            if (t == null || t.status() == Status.ELIMINATA || !canDelete(admin, t)) {
-                return false;
+            for (Action a : b.actions()) {
+                String err = invalid(a);
+                if (err != null) {
+                    return err;
+                }
+                if (by != null && by.getUniqueId().equals(a.target()) && !isAdmin(by)) {
+                    return "col tuo grado non puoi creare azioni su te stesso";
+                }
             }
-            tasks.put(t.id(), withStatus(t, Status.ELIMINATA));
-            addLog(t.id(), null, "ELIMINATA", admin, "era " + statusLabel(t.status()));
+        }
+        return null;
+    }
+
+    /** Creatore o admin+: manda la task nel cestino (gli incarichi su quella task si annullano). */
+    public boolean delete(Player by, String taskId) {
+        Task t = get(taskId);
+        if (t == null || t.status() == Status.ELIMINATA || !canDelete(by, t)) {
+            return false;
+        }
+        List<UUID> held = new ArrayList<>();
+        synchronized (this) {
+            for (Charge c : charges.values()) {
+                if (c.taskId().equals(t.id())) {
+                    held.add(c.staff());
+                }
+            }
+        }
+        for (UUID s : held) {
+            release(s, "task eliminata");
+        }
+        synchronized (this) {
+            Task now = tasks.get(t.id());
+            tasks.put(t.id(), withStatus(now, Status.ELIMINATA));
+            addLog(t.id(), null, "ELIMINATA", by, "era " + statusLabel(now.status()));
             save();
         }
-        movement(admin.getUniqueId(), "Ha eliminato la task staff #" + t.id() + " di " + t.createdByName());
-        log("task #" + t.id() + " eliminata da " + admin.getName());
+        movement(by.getUniqueId(), "Ha eliminato la task staff #" + t.id() + " di " + t.createdByName());
+        log("task #" + t.id() + " eliminata da " + by.getName());
         return true;
     }
 
-    /**
-     * Creatore o admin+: toglie uno step APERTO dalla cartella (resta nel resoconto). Se era l'ultimo step la task va
-     * nel cestino (con lo step, cosi' si puo' ripristinare).
-     */
-    public boolean deleteStep(Player by, String taskId, String stepId) {
-        Task t;
-        Step s;
-        boolean whole;
-        synchronized (this) {
-            t = get(taskId);
-            s = stepOf(t, stepId);
-            if (t == null || s == null || t.status() == Status.ELIMINATA || s.status() != Status.APERTA || !canDelete(by, t)) {
-                return false;
-            }
-            whole = t.steps().size() == 1;
-            if (whole) {
-                tasks.put(t.id(), withStatus(t, Status.ELIMINATA));
-                addLog(t.id(), s.id(), "ELIMINATA", by, describe(s) + " (ultima azione: task nel cestino)");
-            } else {
-                List<Step> rest = new ArrayList<>(t.steps());
-                rest.remove(s);
-                tasks.put(t.id(), new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(), statusOf(rest),
-                        List.copyOf(rest)));
-                addLog(t.id(), s.id(), "ELIMINATA", by, describe(s));
-            }
-            save();
-        }
-        movement(by.getUniqueId(), "Ha eliminato dalla task staff #" + t.id() + ": " + describe(s));
-        log("task #" + t.id() + " step " + s.id() + " eliminato da " + by.getName() + (whole ? " (task nel cestino)" : ""));
-        return true;
-    }
-
-    /** Admin: rimette la task dal cestino con lo stato calcolato dagli step. */
+    /** Admin: rimette la task dal cestino con lo stato calcolato dagli ordini. */
     public boolean restore(Player admin, String taskId) {
         if (!isAdmin(admin)) {
             return false;
@@ -740,7 +881,7 @@ public final class StaffTasks {
             if (t == null || t.status() != Status.ELIMINATA) {
                 return false;
             }
-            back = statusOf(t.steps());
+            back = statusOf(t.orders());
             tasks.put(t.id(), withStatus(t, back));
             addLog(t.id(), null, "RIPRISTINATA", admin, "torna " + statusLabel(back));
             save();
@@ -750,327 +891,747 @@ public final class StaffTasks {
         return true;
     }
 
-    // ------------------------------------------------------------------ applicazione delle azioni
+    // ------------------------------------------------------------------ incarichi
 
-    /** Sanzione con regola, come UserProfileGui.doRuleSanction (permessi sanctions + SanctionManager.applyRule). */
-    private String applySanction(Player by, Step s) {
-        String v = low(s.verb());
-        Rules rules = plugin.getRules();
-        Rules.Rule rule = rules == null || s.ruleCode() == null ? null : rules.get(s.ruleCode());
-        if (rule == null || !rule.type().name().equalsIgnoreCase(v)) {
-            return "la regola " + s.ruleCode() + " non esiste piu' o non e' di tipo " + v;
+    /** Prende in carico il ramo dell'ordine. Ramo "non fare nulla" = ordine completato subito. null = ok. */
+    public String take(Player p, String taskId, String orderId, int branch) {
+        Task t = get(taskId);
+        Order o = orderOf(t, orderId);
+        String why = canTake(p, t, o);
+        if (why != null) {
+            return why;
         }
-        AdminCommand ac = plugin.getAdminCommand();
-        if (s.target() == null) {
-            return "manca il player";
+        if (branch < 0 || branch >= o.branches().size()) {
+            return "ramo non valido";
         }
-        if (ac != null && !ac.authorize(by, "sanctions", v, s.target(), 0)) {
-            return "il tuo ruolo non puo' fare " + v;
+        Branch b = o.branches().get(branch);
+        if (b.nothing()) {
+            complete(p, t.id(), o.id(), branch, "non fare nulla");
+            return null;
         }
-        SanctionManager sm = plugin.getSanctions();
-        if (sm == null) {
-            return "sanzioni non disponibili";
+        Charge c = new Charge(p.getUniqueId(), t.id(), o.id(), branch, System.currentTimeMillis() + CHARGE_MS);
+        synchronized (this) {
+            charges.put(p.getUniqueId(), c);
+            addLog(t.id(), o.id(), "PRESA", p, describe(b));
+            save();
         }
-        if (!sm.applyRule(by, s.target(), rule, null)) {
-            return "nessuna sanzione applicata (regola non applicabile o limite warn raggiunto)";
-        }
+        movement(p.getUniqueId(), "Ha preso in carico l'ordine " + o.id() + " della task staff #" + t.id() + ": " + describe(b));
+        log("task #" + t.id() + " ordine " + o.id() + " preso da " + p.getName() + " (ramo " + branch + ")");
+        GuiMsg.send(plugin, p, "&aHai preso in carico l'ordine: &7" + describe(b) + " &8(5 minuti)");
+        showBar(p);
         return null;
     }
 
-    /** dai / togli / setta / azzera con i metodi interni (come /adminmania e il profilo player). null = ok. */
-    private String apply(Player by, Player target, Step s) {
-        String v = low(s.verb());
-        String w = low(s.what());
-        String spec = s.spec();
-        int n = (int) Math.max(0, Math.min(Integer.MAX_VALUE, s.amount()));
-        AmmoManager ammo = plugin.getAmmo();
-        switch (w) {
-            case "coin", "blockcoin", "blockshell", "power" -> {
-                PlayerCounters pc = plugin.getCounters();
-                if (pc == null) {
-                    return "contatori non disponibili";
-                }
-                PlayerCounters.Item it = switch (w) {
-                    case "coin" -> PlayerCounters.Item.COIN;
-                    case "blockcoin" -> PlayerCounters.Item.BLOCKCOIN;
-                    case "blockshell" -> PlayerCounters.Item.BLOCKSHELL;
-                    default -> PlayerCounters.Item.POWER_CHARGES;
-                };
-                String err = pc.apply(target.getUniqueId(), it, v.equals("give") ? "give" : v, n, by);
-                return err == null ? null : err.toLowerCase(Locale.ROOT);
-            }
-            case "ball" -> {
-                List<String> chosen = new ArrayList<>();
-                boolean all = spec == null || spec.equals("all");
-                if (all) {
-                    for (String bt : ammo.types()) {
-                        chosen.add(bt.toLowerCase(Locale.ROOT));
-                    }
-                } else if (ammo.exists(spec)) {
-                    chosen.add(spec);
-                } else {
-                    return "tipo di ball sconosciuto: " + spec;
-                }
-                if (!all && v.equals("set") && n > ammo.getAmmoMax(target, spec)) {
-                    return "il massimo di " + specLabel("ball", spec) + " per questo player e' " + ammo.getAmmoMax(target, spec);
-                }
-                for (String bt : chosen) {
-                    int cur = ammo.getAmmo(target, bt);
-                    int next = next(v, cur, n, ammo.getAmmoMax(target, bt));
-                    if (next != cur) {
-                        ammo.setAmmo(target, bt, next);
-                    }
-                }
-                moved(target, MovementLog.Type.ITEMS, v, n, "ball " + (all ? "(tutte)" : specLabel("ball", spec)));
-            }
-            case "mine" -> {
-                int cur = ammo.getMine(target);
-                int next = v.equals("set") ? Math.max(1, n) : next(v, cur, n, Integer.MAX_VALUE);
-                if (next != cur) {
-                    ammo.setMine(target, next);
-                }
-                moved(target, MovementLog.Type.ITEMS, v, n, "miniere");
-            }
-            case "upgrade" -> {
-                UpgradeManager up = plugin.getUpgrades();
-                List<String> chosen = new ArrayList<>();
-                boolean all = spec == null || spec.equals("all");
-                if (all) {
-                    chosen.addAll(up.ids());
-                } else if (up.ids().contains(spec)) {
-                    chosen.add(spec);
-                } else {
-                    return "potenziamento sconosciuto: " + spec;
-                }
-                for (String id : chosen) {
-                    int cur = up.getLevel(target, id);
-                    int next = next(v, cur, n, up.maxLevel(id));
-                    if (next != cur) {
-                        up.setLevelAdmin(target, id, next);
-                    }
-                }
-                moved(target, MovementLog.Type.UPGRADE, v, n,
-                        "livelli " + (all ? "di tutti i potenziamenti" : specLabel("upgrade", spec)));
-            }
-            case "ricompense" -> {
-                Rewards rw = plugin.getRewards();
-                if (rw == null) {
-                    return "ricompense non disponibili";
-                }
-                if (spec == null || rewardLabel(spec) == null) {
-                    return "ricompensa sconosciuta: " + spec;
-                }
-                int cur = rw.reached(target, spec);
-                int max = rw.staffMaxLevel(spec);
-                rw.setReached(target, spec, next(v, cur, n, max));
-                moved(target, MovementLog.Type.REWARD, v, n, "livelli " + rewardLabel(spec));
-            }
-            case "stamina" -> {
-                Power power = plugin.getPower();
-                if (power == null) {
-                    return "stamina non disponibile";
-                }
-                double cur = power.stamina(target) * 100.0;
-                switch (v) {
-                    case "give" -> power.setPercent(target, Math.min(100.0, cur + n));
-                    case "remove" -> power.setPercent(target, Math.max(0.0, cur - n));
-                    case "set" -> power.setPercent(target, Math.min(100.0, n));
-                    default -> {
-                        // azzera = come /adminmania profile stamina empty
-                        power.setMode(target, "normal");
-                        power.drain(target, 1.0);
-                    }
-                }
-                ammo.refreshMain(target);
-                moved(target, MovementLog.Type.ITEMS, v, n, "% stamina");
-            }
-            default -> {
-                return "azione non valida";
-            }
+    /** "fatto" per l'ordine custom in carico. null = ok. */
+    public String finishCustom(Player p) {
+        Charge c = p == null ? null : chargeOf(p.getUniqueId());
+        if (c == null) {
+            return "non hai incarichi";
         }
+        Order o = orderOf(get(c.taskId()), c.orderId());
+        if (o == null || type(o) != OrderType.CUSTOM) {
+            return "il tuo incarico non e' un ordine da fare a mano";
+        }
+        complete(p, c.taskId(), c.orderId(), c.branch(), "fatto a mano");
         return null;
     }
 
-    /** give fino al massimo, remove fino a 0, set limitato al massimo, reset = 0 (come runStats / setLevelAdmin). */
-    private static int next(String verb, int cur, int n, int max) {
-        return switch (verb) {
-            case "give" -> (int) Math.min((long) max, (long) cur + n);
-            case "remove" -> Math.max(0, cur - n);
-            case "set" -> Math.min(n, max);
-            default -> 0;
-        };
+    /** Annulla l'incarico: le azioni gia' fatte si rimettono come prima e l'ordine torna libero. */
+    public void release(UUID staff, String why) {
+        Charge c;
+        List<Action> undoNow = new ArrayList<>();
+        synchronized (this) {
+            c = charges.remove(staff);
+            pendingBefore.remove(staff);
+            if (c == null) {
+                return;
+            }
+            Task t = tasks.get(c.taskId());
+            Order o = orderOf(t, c.orderId());
+            if (t != null && o != null && c.branch() >= 0 && c.branch() < o.branches().size()) {
+                Branch b = o.branches().get(c.branch());
+                List<Action> fresh = new ArrayList<>();
+                for (Action a : b.actions()) {
+                    if (a.done()) {
+                        undoNow.add(a);
+                    }
+                    fresh.add(new Action(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(), a.targetName(),
+                            a.targetUid(), false, null, 0L, ""));
+                }
+                replaceBranch(t, o, c.branch(), new Branch(b.condition(), List.copyOf(fresh), b.nothing()));
+            }
+            addLog(c.taskId(), c.orderId(), "ANNULLATA", null, why + (undoNow.isEmpty() ? "" : " (" + undoNow.size()
+                    + " azioni rimesse come prima)"));
+        }
+        for (Action a : undoNow) {
+            restoreBefore(a);
+        }
+        synchronized (this) {
+            save();
+        }
+        hideBar(staff);
+        Player p = Bukkit.getPlayer(staff);
+        if (p != null) {
+            GuiMsg.send(plugin, p, "&cIncarico annullato: &7" + why);
+        }
+        movement(staff, "Incarico della task staff #" + c.taskId() + " annullato: " + why);
+        log("incarico di " + playerName(staff) + " (task #" + c.taskId() + " ordine " + c.orderId() + ") annullato: " + why);
     }
 
-    private void moved(Player target, MovementLog.Type type, String verb, int n, String what) {
-        if (plugin.getMovements() == null) {
+    // ------------------------------------------------------------------ blocco delle azioni a mano
+
+    /**
+     * Lo staffer puo' fare questa azione (userprofile, /adminmania)? Admin+ e OP sempre; sotto admin solo se e' un'azione
+     * non ancora fatta del suo incarico (stesso verbo, cosa, specifica, player e quantita'). Le sanzioni non si bloccano.
+     * Se nega avvisa lo staffer. Se combacia ricorda il valore di prima (per l'annullamento).
+     */
+    public boolean allows(Player staff, String verb, String what, String spec, UUID target, long amount) {
+        if (staff == null) {
+            return true;
+        }
+        String v = low(verb);
+        if (isSanction(v)) {
+            return true;
+        }
+        int idx = matching(staff.getUniqueId(), v, what, spec, target, amount);
+        if (idx >= 0) {
+            Player tp = target == null ? null : Bukkit.getPlayer(target);
+            synchronized (this) {
+                pendingBefore.put(staff.getUniqueId(), new Object[]{idx, tp == null ? "" : read(tp, low(what), spec)});
+            }
+            return true;
+        }
+        if (staff.isOp() || isAdmin(staff)) {
+            return true;
+        }
+        GuiMsg.send(plugin, staff, chargeOf(staff.getUniqueId()) == null
+                ? "&cnon hai questa azione in carico: prendi un ordine dalle task (/adminmania task)"
+                : "&cnon hai questa azione in carico &7(da fare: " + describe(nextAction(chargeOf(staff.getUniqueId()))) + ")");
+        plugin.playConfiguredSound(staff.getLocation(), "message-sounds.error");
+        return false;
+    }
+
+    /** Dopo un'azione riuscita: se e' nel suo incarico la spunta; ramo finito = ordine completato. */
+    public void done(Player staff, String verb, String what, String spec, UUID target, long amount) {
+        if (staff == null) {
             return;
         }
-        String text = switch (verb) {
-            case "give" -> "Ha ricevuto " + n + " " + what;
-            case "remove" -> "Gli sono stati tolti " + n + " " + what;
-            case "set" -> "Ha " + what + " impostato a " + n;
-            default -> "Ha azzerato " + what;
+        String v = low(verb);
+        int idx = matching(staff.getUniqueId(), v, what, spec, target, amount);
+        if (idx < 0) {
+            return;
+        }
+        Charge c;
+        boolean finished;
+        Action did;
+        synchronized (this) {
+            c = charges.get(staff.getUniqueId());
+            Task t = c == null ? null : tasks.get(c.taskId());
+            Order o = orderOf(t, c == null ? null : c.orderId());
+            if (o == null) {
+                return;
+            }
+            Branch b = o.branches().get(c.branch());
+            Object[] pb = pendingBefore.remove(staff.getUniqueId());
+            String before = pb != null && ((Integer) pb[0]) == idx ? (String) pb[1] : "";
+            Player tp = target == null ? null : Bukkit.getPlayer(target);
+            if (!isSanction(v) && tp != null && !before.isEmpty() && (v.equals("give") || v.equals("remove"))
+                    && before.equals(read(tp, low(what), spec))) {
+                return; // non e' cambiato niente: l'azione non e' riuscita
+            }
+            List<Action> acts = new ArrayList<>(b.actions());
+            Action a = acts.get(idx);
+            did = new Action(a.verb(), a.what(), a.spec(), a.amount(), a.ruleCode(), a.target(), a.targetName(), a.targetUid(),
+                    true, staff.getUniqueId(), System.currentTimeMillis(), before);
+            acts.set(idx, did);
+            replaceBranch(t, o, c.branch(), new Branch(b.condition(), List.copyOf(acts), b.nothing()));
+            finished = true;
+            for (Action x : acts) {
+                finished &= x.done();
+            }
+            addLog(c.taskId(), c.orderId(), "AZIONE", staff, describe(did));
+            save();
+        }
+        movement(staff.getUniqueId(), "Task staff #" + c.taskId() + ": " + describe(did));
+        if (finished) {
+            complete(staff, c.taskId(), c.orderId(), c.branch(), describe(branchOf(c)));
+        } else {
+            showBar(staff);
+        }
+    }
+
+    /** Indice dell'azione non fatta dell'incarico che combacia, -1 se nessuna. */
+    private synchronized int matching(UUID staff, String verb, String what, String spec, UUID target, long amount) {
+        Branch b = branchOf(charges.get(staff));
+        if (b == null || target == null) {
+            return -1;
+        }
+        String w = low(what);
+        String sp = spec == null || spec.isBlank() ? "" : spec.trim().toLowerCase(Locale.ROOT);
+        for (int i = 0; i < b.actions().size(); i++) {
+            Action a = b.actions().get(i);
+            if (a.done() || !verb.equals(a.verb()) || !target.equals(a.target())) {
+                continue;
+            }
+            if (isSanction(verb)) {
+                return i;
+            }
+            String asp = a.spec() == null ? "" : a.spec();
+            if (!w.equals(low(a.what())) || !sp.equals(asp)) {
+                continue;
+            }
+            if (!verb.equals("reset") && amount != a.amount()) {
+                continue;
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    // ------------------------------------------------------------------ completamento, bossbar, scadenze
+
+    private void complete(Player by, String taskId, String orderId, int branch, String detail) {
+        Task t;
+        synchronized (this) {
+            charges.remove(by.getUniqueId());
+            pendingBefore.remove(by.getUniqueId());
+            Task cur = tasks.get(taskId);
+            Order o = orderOf(cur, orderId);
+            if (o == null) {
+                return;
+            }
+            Order done = new Order(o.id(), o.text(), o.branches(), Status.ESEGUITA, by.getUniqueId(), by.getName(),
+                    System.currentTimeMillis(), branch);
+            List<Order> orders = new ArrayList<>(cur.orders());
+            orders.set(orders.indexOf(o), done);
+            t = new Task(cur.id(), cur.createdBy(), cur.createdByName(), cur.createdAt(),
+                    cur.status() == Status.ELIMINATA ? Status.ELIMINATA : statusOf(orders), cur.reason(), List.copyOf(orders));
+            tasks.put(t.id(), t);
+            addLog(t.id(), o.id(), "COMPLETATA", by, detail);
+            save();
+        }
+        hideBar(by.getUniqueId());
+        GuiMsg.send(plugin, by, "&aOrdine completato: &7" + detail);
+        plugin.playConfiguredSound(by.getLocation(), "message-sounds.success");
+        AdminCommand ac = plugin.getAdminCommand();
+        if (ac != null) {
+            ac.record(by, "task #" + taskId + " ordine " + orderId + " completato | " + detail);
+        }
+        movement(by.getUniqueId(), "Ha completato l'ordine " + orderId + " della task staff #" + taskId + ": " + detail);
+        notify(t.createdBy(), "&aNella tua task &f#" + taskId + "&a &f" + by.getName() + "&a ha completato un ordine: &7" + detail
+                + (t.status() == Status.APERTA ? "" : " &7(task completata)"));
+        log("task #" + taskId + " ordine " + orderId + " completato da " + by.getName() + ": " + detail);
+    }
+
+    /** Ogni secondo: scadenze (anche offline) e bossbar di chi e' online. */
+    private void tick() {
+        long now = System.currentTimeMillis();
+        List<UUID> expired = new ArrayList<>();
+        List<Charge> live = new ArrayList<>();
+        synchronized (this) {
+            for (Charge c : charges.values()) {
+                if (c.expiresAt() <= now || orderOf(tasks.get(c.taskId()), c.orderId()) == null) {
+                    expired.add(c.staff());
+                } else {
+                    live.add(c);
+                }
+            }
+        }
+        for (UUID s : expired) {
+            release(s, EXPIRED);
+        }
+        for (Charge c : live) {
+            Player p = Bukkit.getPlayer(c.staff());
+            if (p != null) {
+                showBar(p);
+            }
+        }
+    }
+
+    private void showBar(Player p) {
+        Charge c = chargeOf(p.getUniqueId());
+        if (c == null) {
+            hideBar(p.getUniqueId());
+            return;
+        }
+        long left = remainingMs(c);
+        Action next = nextAction(c);
+        Order o = orderOf(get(c.taskId()), c.orderId());
+        String what = next != null ? describe(next) : o != null && type(o) == OrderType.CUSTOM ? shortText(o.text()) + " (poi \"fatto\")"
+                : "ordine";
+        long s = left / 1000;
+        String title = "&e" + what + " &7" + String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60);
+        float progress = Math.max(0f, Math.min(1f, left / (float) CHARGE_MS));
+        BossBar bar = bars.get(p.getUniqueId());
+        if (bar == null) {
+            bar = BossBar.bossBar(plugin.color(title), progress, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
+            bars.put(p.getUniqueId(), bar);
+            p.showBossBar(bar);
+        } else {
+            bar.name(plugin.color(title));
+            bar.progress(progress);
+            bar.color(s < 60 ? BossBar.Color.RED : BossBar.Color.YELLOW);
+        }
+    }
+
+    private void hideBar(UUID id) {
+        BossBar bar = bars.remove(id);
+        Player p = Bukkit.getPlayer(id);
+        if (bar != null && p != null) {
+            p.hideBossBar(bar);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        Player p = event.getPlayer();
+        UUID id = p.getUniqueId();
+        List<Undo> mine = new ArrayList<>();
+        synchronized (this) {
+            for (java.util.Iterator<Undo> it = undos.iterator(); it.hasNext(); ) {
+                Undo u = it.next();
+                if (u.target().equals(id)) {
+                    mine.add(u);
+                    it.remove();
+                }
+            }
+        }
+        if (!mine.isEmpty()) {
+            // un attimo dopo il join, quando i dati del player sono pronti
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                for (Undo u : mine) {
+                    if (p.isOnline()) {
+                        write(p, u.what(), u.spec(), u.before());
+                    } else {
+                        synchronized (this) {
+                            undos.add(u);
+                        }
+                    }
+                }
+                synchronized (this) {
+                    save();
+                }
+                movement(id, "Azioni staff annullate (" + EXPIRED + ")");
+            }, 20L);
+        }
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (p.isOnline() && chargeOf(id) != null) {
+                showBar(p);
+            }
+        }, 20L);
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        bars.remove(event.getPlayer().getUniqueId());
+    }
+
+    // ------------------------------------------------------------------ valori (per l'annullamento)
+
+    /** Rimette l'azione com'era prima: subito se il player e' online, altrimenti al suo prossimo login. */
+    private void restoreBefore(Action a) {
+        if (isSanction(low(a.verb())) || a.target() == null || a.before() == null || a.before().isEmpty()) {
+            return;
+        }
+        Player tp = Bukkit.getPlayer(a.target());
+        if (tp != null) {
+            write(tp, low(a.what()), a.spec(), a.before());
+            if (plugin.getMovements() != null) {
+                plugin.getMovements().record(a.target(), MovementLog.Type.STAFF, "Annullato (" + EXPIRED + "): " + describe(a));
+            }
+        } else {
+            synchronized (this) {
+                undos.add(new Undo(a.target(), low(a.what()), a.spec(), a.before()));
+            }
+        }
+    }
+
+    /** Valore attuale come "chiave=valore;..." (piu' chiavi per ball/upgrade "all"). */
+    private String read(Player p, String what, String spec) {
+        AmmoManager ammo = plugin.getAmmo();
+        Map<String, String> m = new LinkedHashMap<>();
+        switch (what) {
+            case "coin" -> m.put("_", String.valueOf(ammo.getCoin(p)));
+            case "blockcoin" -> m.put("_", String.valueOf(ammo.getBlockCoin(p)));
+            case "blockshell" -> m.put("_", String.valueOf(ammo.getShell(p)));
+            case "mine" -> m.put("_", String.valueOf(ammo.getMine(p)));
+            case "power" -> m.put("_", String.valueOf(plugin.getPower() == null ? 0 : plugin.getPower().charges(p)));
+            case "stamina" -> {
+                Power pw = plugin.getPower();
+                if (pw != null) {
+                    m.put("_", String.valueOf(Math.round(pw.stamina(p) * 100)));
+                    m.put("mode", pw.mode(p));
+                }
+            }
+            case "ball" -> {
+                for (String t : ammo.types()) {
+                    String bt = t.toLowerCase(Locale.ROOT);
+                    if (spec == null || spec.equals("all") || spec.equals(bt)) {
+                        m.put(bt, String.valueOf(ammo.getAmmo(p, bt)));
+                    }
+                }
+            }
+            case "upgrade" -> {
+                for (String id : plugin.getUpgrades().ids()) {
+                    if (spec == null || spec.equals("all") || spec.equals(id)) {
+                        m.put(id, String.valueOf(plugin.getUpgrades().getLevel(p, id)));
+                    }
+                }
+            }
+            case "ricompense" -> {
+                if (spec != null && plugin.getRewards() != null) {
+                    m.put(spec, String.valueOf(plugin.getRewards().reached(p, spec)));
+                }
+            }
+            default -> {
+            }
+        }
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, String> e : m.entrySet()) {
+            parts.add(e.getKey() + "=" + e.getValue());
+        }
+        return String.join(";", parts);
+    }
+
+    private void write(Player p, String what, String spec, String before) {
+        AmmoManager ammo = plugin.getAmmo();
+        Map<String, String> m = new LinkedHashMap<>();
+        for (String part : before.split(";")) {
+            int k = part.indexOf('=');
+            if (k > 0) {
+                m.put(part.substring(0, k), part.substring(k + 1));
+            }
+        }
+        int v = (int) num(m.get("_"));
+        switch (what) {
+            case "coin" -> ammo.setCoinQuiet(p, v);
+            case "blockcoin" -> ammo.setBlockCoinQuiet(p, v);
+            case "blockshell" -> ammo.setShell(p, v);
+            case "mine" -> ammo.setMine(p, Math.max(1, v));
+            case "power" -> {
+                if (plugin.getPower() != null) {
+                    plugin.getPower().setChargesTo(p, v);
+                }
+            }
+            case "stamina" -> {
+                Power pw = plugin.getPower();
+                if (pw != null) {
+                    pw.setPercent(p, v);
+                    String mode = m.getOrDefault("mode", "normal");
+                    if (!mode.equals("normal")) {
+                        pw.setMode(p, mode);
+                    }
+                    ammo.refreshMain(p);
+                }
+            }
+            case "ball" -> {
+                for (Map.Entry<String, String> e : m.entrySet()) {
+                    if (ammo.exists(e.getKey())) {
+                        ammo.setAmmo(p, e.getKey(), (int) num(e.getValue()));
+                    }
+                }
+            }
+            case "upgrade" -> {
+                for (Map.Entry<String, String> e : m.entrySet()) {
+                    plugin.getUpgrades().setLevelAdmin(p, e.getKey(), (int) num(e.getValue()));
+                }
+            }
+            case "ricompense" -> {
+                if (plugin.getRewards() != null) {
+                    for (Map.Entry<String, String> e : m.entrySet()) {
+                        plugin.getRewards().setReached(p, e.getKey(), (int) num(e.getValue()));
+                    }
+                }
+            }
+            default -> {
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ ponti per userprofile e /adminmania
+
+    /** cosa + specifica di un contatore del profilo (ball "ghostball", coin...). */
+    private static String[] itemWhat(PlayerCounters.Item it) {
+        return switch (it) {
+            case DOUBLEBALL, GHOSTBALL, STANDARDBALL, EXPLOSIONBALL -> new String[]{"ball", it.name().toLowerCase(Locale.ROOT)};
+            case BLOCKSHELL -> new String[]{"blockshell", null};
+            case BLOCKCOIN -> new String[]{"blockcoin", null};
+            case COIN -> new String[]{"coin", null};
+            case POWER_CHARGES -> new String[]{"power", null};
+            case POWER_USES -> new String[]{"power_uses", null};
         };
-        plugin.getMovements().record(target.getUniqueId(), type, text + " (task staff)");
+    }
+
+    /** Verbo e quantita' di un comando del profilo (give remove set full reset setuses): full = set al massimo. */
+    private long[] itemAmount(UUID target, PlayerCounters.Item it, String cmd, int n) {
+        if (cmd.equals("full") && plugin.getCounters() != null) {
+            return new long[]{plugin.getCounters().max(target, it)};
+        }
+        return new long[]{n};
+    }
+
+    private static String itemVerb(String cmd) {
+        return switch (cmd) {
+            case "give" -> "give";
+            case "remove" -> "remove";
+            case "reset" -> "reset";
+            default -> "set"; // set, full, setuses
+        };
+    }
+
+    /** allows per i contatori dello userprofile (UserProfileGui.applyItem). */
+    public boolean allowsItem(Player staff, UUID target, PlayerCounters.Item it, String cmd, int n) {
+        String[] w = itemWhat(it);
+        return allows(staff, itemVerb(cmd), w[0], w[1], target, itemAmount(target, it, cmd, n)[0]);
+    }
+
+    /** done per i contatori dello userprofile. Chiamare dopo l'apply riuscito (amount calcolato prima: full). */
+    public void doneItem(Player staff, UUID target, PlayerCounters.Item it, String cmd, long amount) {
+        String[] w = itemWhat(it);
+        done(staff, itemVerb(cmd), w[0], w[1], target, amount);
+    }
+
+    /** Azione a livelli scelta da allowsLevel (staff -> {verbo, quantita', cosa, spec}), per doneLevel. */
+    private final Map<UUID, Object[]> pendingLevel = new HashMap<>();
+
+    /**
+     * Cambio di livello dalla GUI dello userprofile (miniere, potenziamenti, ricompense: da from a to): combacia con
+     * "dai/togli N", "setta N" o "azzera" dell'incarico (spec = potenziamento / ricompensa, null per le miniere).
+     */
+    public boolean allowsLevel(Player staff, UUID target, String what, String spec, int from, int to) {
+        List<Object[]> cands = new ArrayList<>();
+        if (to > from) {
+            cands.add(new Object[]{"give", (long) (to - from)});
+        } else if (to < from) {
+            cands.add(new Object[]{"remove", (long) (from - to)});
+        }
+        cands.add(new Object[]{"set", (long) to});
+        if (to <= ("mine".equals(what) ? 1 : 0)) {
+            cands.add(new Object[]{"reset", 0L});
+        }
+        synchronized (this) {
+            pendingLevel.remove(staff.getUniqueId());
+        }
+        for (Object[] c : cands) {
+            if (matching(staff.getUniqueId(), (String) c[0], what, spec, target, (Long) c[1]) >= 0) {
+                synchronized (this) {
+                    pendingLevel.put(staff.getUniqueId(), new Object[]{c[0], c[1], what, spec});
+                }
+                return allows(staff, (String) c[0], what, spec, target, (Long) c[1]);
+            }
+        }
+        return allows(staff, (String) cands.get(0)[0], what, spec, target, (Long) cands.get(0)[1]);
+    }
+
+    /** Dopo il cambio di livello riuscito (vedi allowsLevel). */
+    public void doneLevel(Player staff, UUID target) {
+        Object[] c;
+        synchronized (this) {
+            c = pendingLevel.remove(staff.getUniqueId());
+        }
+        if (c != null) {
+            done(staff, (String) c[0], (String) c[2], (String) c[3], target, (Long) c[1]);
+        }
+    }
+
+    /** Miniere dalla GUI (da miniera from a miniera to). */
+    public boolean allowsMine(Player staff, UUID target, int from, int to) {
+        return allowsLevel(staff, target, "mine", null, from, to);
+    }
+
+    public void doneMine(Player staff, UUID target) {
+        doneLevel(staff, target);
+    }
+
+    /** Quantita' di un comando del profilo come la vede il task (full = massimo del player). */
+    public long itemAmountOf(UUID target, PlayerCounters.Item it, String cmd, int n) {
+        return itemAmount(target, it, cmd, n)[0];
+    }
+
+    /**
+     * Comando di /bm gia' tradotto da /adminmania (coin|blockcoin|blockshell|mine|ball|upgrade|power|stamina|ricompense ...)
+     * -> {verb, what, spec, amount, targetName}; null se non e' un'azione che le task conoscono (allora vale come
+     * "fuori incarico" per chi e' sotto admin, se scrive).
+     */
+    public static String[] legacyAction(String[] t, String senderName) {
+        if (t == null || t.length < 2) {
+            return null;
+        }
+        String name = low(t[0]);
+        String sub = low(t[1]);
+        switch (name) {
+            case "coin", "blockcoin", "blockshell", "mine" -> {
+                String verb = sub.equals("get") || sub.equals("give") || sub.equals("add") ? "give"
+                        : sub.equals("remove") || sub.equals("take") ? "remove" : sub.equals("reset") ? "reset" : null;
+                if (verb == null) {
+                    return null;
+                }
+                boolean amt = !verb.equals("reset");
+                String amount = amt ? at(t, 2) : "0";
+                String target = at(t, amt ? 3 : 2);
+                return new String[]{verb, name, null, amount, target == null ? senderName : target};
+            }
+            case "ball", "upgrade" -> {
+                String verb = sub.equals("get") || sub.equals("give") || sub.equals("add") ? "give"
+                        : sub.equals("remove") || sub.equals("take") ? "remove" : sub.equals("reset") ? "reset" : null;
+                if (verb == null || t.length < 3) {
+                    return null;
+                }
+                String spec = low(t[2]);
+                boolean amt = !verb.equals("reset");
+                String amount = amt ? at(t, 3) : "0";
+                String target = at(t, amt ? 4 : 3);
+                return new String[]{verb, name, spec, amount, target == null ? senderName : target};
+            }
+            case "power" -> {
+                String verb = switch (sub) {
+                    case "give" -> "give";
+                    case "reset" -> "reset";
+                    case "set" -> "set";
+                    default -> null;
+                };
+                if (verb == null) {
+                    return null;
+                }
+                String amount = verb.equals("give") ? "1" : verb.equals("set") ? at(t, 2) : "0";
+                String target = at(t, verb.equals("set") ? 3 : 2);
+                return new String[]{verb, "power", null, amount, target == null ? senderName : target};
+            }
+            case "stamina" -> {
+                String verb = switch (sub) {
+                    case "set" -> "set";
+                    case "refill" -> "set";
+                    case "empty" -> "reset";
+                    default -> null;
+                };
+                if (verb == null) {
+                    return sub.equals("see") ? null : new String[]{"set", "stamina_mode", null, "0", at(t, 2) == null ? senderName : at(t, 2)};
+                }
+                String amount = sub.equals("set") ? at(t, 2) : sub.equals("refill") ? "100" : "0";
+                String target = at(t, sub.equals("set") ? 3 : 2);
+                return new String[]{verb, "stamina", null, amount == null ? "" : amount.replace("%", ""),
+                        target == null ? senderName : target};
+            }
+            case "ricompense" -> {
+                if ((sub.equals("livello") || sub.equals("level") || sub.equals("lvl")) && t.length >= 4) {
+                    String type = Rewards.typeFromName(t[2]);
+                    String act = low(t[3]);
+                    String verb = act.equals("add") || act.equals("give") ? "give" : act.equals("remove") || act.equals("take")
+                            ? "remove" : act.equals("set") ? "set" : act.equals("reset") ? "reset" : null;
+                    if (verb == null) {
+                        return null;
+                    }
+                    boolean amt = !verb.equals("reset");
+                    String amount = amt ? at(t, 4) : "0";
+                    String target = at(t, amt ? 5 : 4);
+                    return new String[]{verb, "ricompense", type, amount, target == null ? senderName : target};
+                }
+                if (sub.equals("exp") && t.length >= 3) {
+                    String act = low(t[2]);
+                    if (act.equals("get") || act.equals("see")) {
+                        return null;
+                    }
+                    return new String[]{"set", "ricompense_exp", null, "0", senderName};
+                }
+                return null;
+            }
+            default -> {
+                return null;
+            }
+        }
+    }
+
+    private static String at(String[] t, int i) {
+        return i < t.length ? t[i] : null;
     }
 
     // ------------------------------------------------------------------ interni
 
-    /** Motivo per cui by non puo' eseguire/rifiutare lo step, o null. */
-    private String cannot(Player by, Task t, Step s) {
-        if (t == null || s == null) {
-            return "azione non trovata";
-        }
-        if (by == null) {
-            return "solo uno staffer puo' farlo";
-        }
-        if (t.status() == Status.ELIMINATA) {
-            return "la task e' nel cestino";
-        }
-        if (s.status() != Status.APERTA) {
-            return "questa azione e' gia' chiusa";
-        }
-        if (suspended(by)) {
-            return "sei sospeso dallo staff";
-        }
-        if (by.getUniqueId().equals(t.createdBy())) {
-            return "non puoi eseguire o rifiutare le azioni di una task creata da te";
-        }
-        if (by.getUniqueId().equals(s.target()) && !isAdmin(by)) {
-            return "col tuo grado non puoi eseguire azioni su te stesso";
-        }
-        if (rank(by) < (s.kind() == Kind.CUSTOM ? SR_MOD : MOD)) {
-            return s.kind() == Kind.CUSTOM ? "le azioni custom le gestiscono gli sr_mod in su" : "le azioni le gestiscono i mod in su";
-        }
-        return null;
-    }
-
-    /** Motivo per cui lo step non e' valido, o null. */
-    private String invalid(Step s) {
-        if (s == null || s.kind() == null) {
+    private static String invalid(Action a) {
+        if (a == null) {
             return "azione vuota";
         }
-        String v = low(s.verb());
-        if (s.kind() == Kind.CUSTOM && (s.text() == null || s.text().isBlank())) {
-            return "manca il messaggio custom";
-        }
-        if (v.isEmpty() && s.kind() == Kind.CUSTOM) {
-            return null; // custom senza azione: basta il testo (player facoltativo)
-        }
+        String v = low(a.verb());
         if (!VERBS.contains(v)) {
             return "verbo sconosciuto";
         }
-        if (s.target() == null) {
-            return "player inesistente: " + (s.targetName() == null || s.targetName().isEmpty() ? "?" : s.targetName());
+        if (a.target() == null) {
+            return "player inesistente: " + (a.targetName() == null || a.targetName().isEmpty() ? "?" : a.targetName());
         }
         if (isSanction(v)) {
-            Rules rules = plugin.getRules();
-            Rules.Rule rule = rules == null || s.ruleCode() == null ? null : rules.get(s.ruleCode().trim());
-            return rule != null && rule.type().name().equalsIgnoreCase(v) ? null : "regola inesistente o di altro tipo";
+            return a.ruleCode() == null || a.ruleCode().isBlank() ? "manca il codice regola" : null;
         }
-        String w = low(s.what());
+        String w = low(a.what());
         if (!whatsFor(v).contains(w)) {
             return "cosa non valida";
         }
-        List<Spec> specs = specsFor(v, w);
-        if (!specs.isEmpty()) {
-            String sp = s.spec() == null ? "" : s.spec().toLowerCase(Locale.ROOT);
-            boolean found = false;
-            for (Spec x : specs) {
-                if (x.id().equals(sp)) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                return "specifica non valida";
-            }
+        if (("ball".equals(w) || "ricompense".equals(w) || "upgrade".equals(w)) && (a.spec() == null || a.spec().isEmpty())) {
+            return "manca la specifica (" + labelWhat(w) + ")";
         }
         if (v.equals("reset")) {
             return null;
         }
         long[] r = valueRange(v, w);
-        return s.amount() >= r[0] && s.amount() <= r[1] ? null : "valore fuori dai limiti";
+        return a.amount() >= r[0] && a.amount() <= r[1] ? null : "valore fuori dai limiti";
     }
 
-    private static boolean isSanction(String verb) {
-        return verb.equals("ban") || verb.equals("warn") || verb.equals("mute");
+    static boolean isSanction(String verb) {
+        return "ban".equals(verb) || "warn".equals(verb) || "mute".equals(verb);
     }
 
-    private synchronized Task findTask(String stepId) {
-        if (stepId == null) {
+    private static Order orderOf(Task t, String orderId) {
+        if (t == null || orderId == null) {
             return null;
         }
-        for (Task t : tasks.values()) {
-            if (stepOf(t, stepId) != null) {
-                return t;
+        for (Order o : t.orders()) {
+            if (o.id().equals(orderId)) {
+                return o;
             }
         }
         return null;
     }
 
-    private static Step stepOf(Task t, String stepId) {
-        if (t == null || stepId == null) {
+    private synchronized Branch branchOf(Charge c) {
+        if (c == null) {
             return null;
         }
-        for (Step s : t.steps()) {
-            if (s.id().equals(stepId)) {
-                return s;
-            }
-        }
-        return null;
+        Order o = orderOf(tasks.get(c.taskId()), c.orderId());
+        return o == null || c.branch() < 0 || c.branch() >= o.branches().size() ? null : o.branches().get(c.branch());
     }
 
-    /** Chiude lo step e ricalcola lo stato della task. Chiamare dentro synchronized. Non salva. */
-    private Task closeStep(String taskId, String stepId, Status st, Player by, String reason) {
-        Task t = tasks.get(taskId);
-        List<Step> steps = new ArrayList<>();
-        for (Step s : t.steps()) {
-            steps.add(!s.id().equals(stepId) ? s : new Step(s.id(), s.kind(), s.target(), s.targetName(), s.targetUid(),
-                    s.verb(), s.what(),
-                    s.spec(), s.amount(), s.ruleCode(), s.text(), st, by.getUniqueId(), by.getName(), System.currentTimeMillis(),
-                    reason));
-        }
-        Task done = new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(),
-                t.status() == Status.ELIMINATA ? Status.ELIMINATA : statusOf(steps), List.copyOf(steps));
-        tasks.put(done.id(), done);
-        return done;
+    /** Sostituisce un ramo dell'ordine. Chiamare dentro synchronized. Non salva. */
+    private void replaceBranch(Task t, Order o, int branch, Branch b) {
+        List<Branch> br = new ArrayList<>(o.branches());
+        br.set(branch, b);
+        Order no = new Order(o.id(), o.text(), List.copyOf(br), o.status(), o.doneBy(), o.doneByName(), o.doneAt(), o.chosenBranch());
+        List<Order> orders = new ArrayList<>(t.orders());
+        orders.set(orders.indexOf(o), no);
+        tasks.put(t.id(), new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(), t.status(), t.reason(),
+                List.copyOf(orders)));
     }
 
-    private static Status statusOf(List<Step> steps) {
-        boolean done = false;
-        for (Step s : steps) {
-            if (s.status() == Status.APERTA) {
+    private static Status statusOf(List<Order> orders) {
+        for (Order o : orders) {
+            if (o.status() == Status.APERTA) {
                 return Status.APERTA;
             }
-            if (s.status() == Status.ESEGUITA) {
-                done = true;
-            }
         }
-        return done ? Status.ESEGUITA : Status.RIFIUTATA;
+        return Status.ESEGUITA;
     }
 
     private static Task withStatus(Task t, Status s) {
-        return new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(), s, t.steps());
+        return new Task(t.id(), t.createdBy(), t.createdByName(), t.createdAt(), s, t.reason(), t.orders());
     }
 
-    /** " (task completata)" quando l'ultimo step si e' chiuso. */
-    private static String closedNote(Task t) {
-        return t.status() == Status.APERTA ? "" : " &7(task chiusa: " + statusLabel(t.status()) + ")";
-    }
-
-    private static String summary(List<Step> steps) {
-        List<String> parts = new ArrayList<>();
-        for (Step s : steps) {
-            parts.add(describe(s));
-        }
-        return String.join(", ", parts);
+    private static String shortText(String s) {
+        String x = s == null ? "" : s;
+        return x.length() > 40 ? x.substring(0, 39) + "..." : x;
     }
 
     /** Chiamare dentro synchronized. Non salva. */
-    private void addLog(String taskId, String stepId, String event, CommandSender by, String detail) {
-        log.add(new LogEntry(System.currentTimeMillis(), taskId, stepId, event, by instanceof Player p ? p.getUniqueId() : null,
-                by == null ? "console" : by.getName(), detail == null ? "" : detail));
+    private void addLog(String taskId, String orderId, String event, CommandSender by, String detail) {
+        log.add(new LogEntry(System.currentTimeMillis(), taskId, orderId, event, by instanceof Player p ? p.getUniqueId() : null,
+                by == null ? "server" : by.getName(), detail == null ? "" : detail));
         while (log.size() > MAX_LOG) {
             log.remove(0);
         }
@@ -1117,14 +1678,10 @@ public final class StaffTasks {
         return null;
     }
 
-    private static String kindLabel(Kind k) {
-        return k == Kind.CUSTOM ? "custom" : "ordinaria";
-    }
-
     private static String statusLabel(Status s) {
         return switch (s) {
             case APERTA -> "aperta";
-            case ESEGUITA -> "eseguita";
+            case ESEGUITA -> "completata";
             case RIFIUTATA -> "rifiutata";
             case ELIMINATA -> "eliminata";
         };
@@ -1136,29 +1693,6 @@ public final class StaffTasks {
             nextId++;
         }
         return String.valueOf(nextId++);
-    }
-
-    /** Id corto dello step, univoco fra tutte le task (canExecute trova la task dallo step). Dentro synchronized. */
-    private String newStepId(List<Step> pending) {
-        while (true) {
-            String id = UUID.randomUUID().toString().substring(0, 8);
-            boolean used = false;
-            for (Step s : pending) {
-                if (s.id().equals(id)) {
-                    used = true;
-                    break;
-                }
-            }
-            for (Task t : tasks.values()) {
-                if (used) {
-                    break;
-                }
-                used = stepOf(t, id) != null;
-            }
-            if (!used) {
-                return id;
-            }
-        }
     }
 
     private void notify(UUID target, String msg) {
@@ -1178,19 +1712,19 @@ public final class StaffTasks {
         plugin.getLogger().info("Task staff: " + text);
     }
 
+    /** Id utente nascosto (u-00012) del player, "" se non c'e'. */
+    private String userId(UUID id) {
+        PlayerIds ids = plugin.getPlayerIds();
+        String u = id == null || ids == null ? null : ids.userId(id);
+        return u == null ? "" : u;
+    }
+
     private static String low(String s) {
         return s == null ? "" : s.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String nz(String s) {
         return s == null ? "" : s;
-    }
-
-    /** Id utente nascosto (u-00012) del player, "" se non c'e'. */
-    private String userId(UUID id) {
-        PlayerIds ids = plugin.getPlayerIds();
-        String u = id == null || ids == null ? null : ids.userId(id);
-        return u == null ? "" : u;
     }
 
     private static String playerName(UUID id) {
@@ -1207,7 +1741,7 @@ public final class StaffTasks {
             return n.longValue();
         }
         try {
-            return o == null ? 0L : Long.parseLong(String.valueOf(o));
+            return o == null ? 0L : Long.parseLong(String.valueOf(o).trim());
         } catch (NumberFormatException ex) {
             return 0L;
         }

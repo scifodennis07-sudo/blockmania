@@ -265,6 +265,7 @@ public final class UserProfileHistory implements Listener {
             }
             meta.lore(l);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -330,6 +331,7 @@ public final class UserProfileHistory implements Listener {
         lore.add(plugin.text(" "));
         lore.add(plugin.text("&etasto Q per eliminare la voce"));
         meta.lore(lore);
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

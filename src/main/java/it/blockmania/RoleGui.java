@@ -269,6 +269,7 @@ public final class RoleGui implements Listener {
             out.add(raw == null || raw.isBlank() ? plugin.color(" ") : plugin.text(raw));
         }
         meta.lore(out);
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

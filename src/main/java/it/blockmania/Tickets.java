@@ -962,6 +962,7 @@ public final class Tickets implements Listener {
                 meta.lore(loreComponents(lore));
             }
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -973,6 +974,7 @@ public final class Tickets implements Listener {
         if (lore != null && !lore.isEmpty()) {
             meta.lore(loreComponents(lore));
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -986,6 +988,7 @@ public final class Tickets implements Listener {
             meta.lore(loreComponents(lore));
         }
         meta.setItemModel(new NamespacedKey(plugin, STATUS_MODEL[statusOf(t)]));
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -996,6 +999,7 @@ public final class Tickets implements Listener {
         meta.displayName(plugin.text(name));
         meta.lore(loreComponents(lore));
         meta.setItemModel(new NamespacedKey(plugin, "ticket_link"));
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -2124,6 +2128,7 @@ public final class Tickets implements Listener {
             meta.lore(loreComponents(List.of("&7ticket aperti: &f" + cnt + "/" + maxStaffOpen(),
                     Bukkit.getPlayer(u) != null ? "&aonline" : "&7offline", " ",
                     full ? "&cha gia troppi ticket aperti" : "&eclicca per taggarlo")));
+            LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             head.setItemMeta(meta);
             put(h, gridSlot(i), head, full ? "deny" : "tagpick:" + u);
         }

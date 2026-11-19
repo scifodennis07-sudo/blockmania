@@ -385,7 +385,15 @@ public final class UserProfileUpgrades implements Listener {
                 back.run();
                 return;
             }
+            StaffTasks st = plugin.getStaffTasks();
+            if (st != null && !st.allows(staff, "reset", "upgrade", "all", h.target, 0)) {
+                back.run();
+                return;
+            }
             plugin.getUpgrades().resetLevels(target);
+            if (st != null) {
+                st.done(staff, "reset", "upgrade", "all", h.target, 0);
+            }
             audit(staff, "profile.reset upgrades " + target.getName());
             done(staff, "&aPotenziamenti di " + target.getName() + " azzerati.");
             back.run();
@@ -475,7 +483,14 @@ public final class UserProfileUpgrades implements Listener {
         if (!authorize(staff, h.target, verbOf(cmd))) {
             return;
         }
+        StaffTasks st = plugin.getStaffTasks();
+        if (st != null && !st.allowsLevel(staff, h.target, "upgrade", id, plugin.getUpgrades().getLevel(target, id), level)) {
+            return;
+        }
         plugin.getUpgrades().setLevelAdmin(target, id, level);
+        if (st != null) {
+            st.doneLevel(staff, h.target);
+        }
         audit(staff, "profile." + verbOf(cmd) + " upgrade " + id + " " + target.getName() + " livello " + level);
         done(staff, "&a" + labelOf(id) + " di " + target.getName() + ": livello " + level + ".");
     }

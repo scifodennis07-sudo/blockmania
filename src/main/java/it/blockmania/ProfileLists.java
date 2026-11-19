@@ -460,6 +460,7 @@ public final class ProfileLists implements Listener {
             }
             meta.lore(l);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -474,6 +475,7 @@ public final class ProfileLists implements Listener {
             meta.displayName(sm.displayName());
             meta.lore(sm.lore());
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -487,6 +489,7 @@ public final class ProfileLists implements Listener {
             l.add(plugin.text(line));
         }
         meta.lore(l);
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

@@ -667,6 +667,7 @@ public final class StaffProfileGui implements Listener {
             }
             meta.lore(out);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -947,6 +948,7 @@ public final class StaffProfileGui implements Listener {
             ItemMeta meta = none.getItemMeta();
             meta.displayName(plugin.text("&7Nessuna assistenza vocale"));
             meta.lore(List.of(plugin.text("&8Funzione non ancora disponibile.")));
+            LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             none.setItemMeta(meta);
             out.add(new ProfileLists.Row(none));
         }
@@ -1039,6 +1041,7 @@ public final class StaffProfileGui implements Listener {
             l.add(plugin.text(line));
         }
         meta.lore(l);
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return new ProfileLists.Row(stack, ProfileLists.iconIndex(iconName));
     }
@@ -1422,6 +1425,7 @@ public final class StaffProfileGui implements Listener {
                 l.add(line.isEmpty() ? plugin.color(" ") : plugin.text(line));
             }
             meta.lore(l);
+            LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             it.setItemMeta(meta);
             rows.add(new PRow(it, ProfileLists.iconIndex(icon), null, e.id()));
         }
@@ -1513,6 +1517,7 @@ public final class StaffProfileGui implements Listener {
             meta.lore(List.of(plugin.text("&7Toglie il tutor a &f" + nameOf(target) + "&7."),
                     plugin.text("&7tutor attuale: &f" + (current == null ? "nessuno" : nameOf(current))),
                     plugin.color(" "), plugin.text("&eclicca per togliere")));
+            LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             none.setItemMeta(meta);
             rows.add(new PRow(none, -1, null, "none"));
         }
@@ -1856,6 +1861,7 @@ public final class StaffProfileGui implements Listener {
             meta.displayName(sm.displayName());
             meta.lore(sm.lore());
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

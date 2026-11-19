@@ -147,6 +147,7 @@ public final class UserProfileMines implements Listener {
             }
             meta.lore(lines);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -486,7 +487,14 @@ public final class UserProfileMines implements Listener {
                 if (!authorize(staff, t.getUniqueId(), "reset")) {
                     return;
                 }
+                StaffTasks st = plugin.getStaffTasks();
+                if (st != null && !st.allowsMine(staff, t.getUniqueId(), owned(t), 1)) {
+                    return;
+                }
                 resetAll(t);
+                if (st != null) {
+                    st.doneMine(staff, t.getUniqueId());
+                }
                 audit(staff, "profile.reset mines " + t.getName());
                 msg(staff, "&aMiniere di " + t.getName() + " azzerate.");
                 render(staff, t, 0, holder.onBack, false);
@@ -537,7 +545,14 @@ public final class UserProfileMines implements Listener {
                 if (!authorize(staff, t.getUniqueId(), "remove")) {
                     return;
                 }
+                StaffTasks st = plugin.getStaffTasks();
+                if (st != null && !st.allowsMine(staff, t.getUniqueId(), mine, Math.max(1, mine - 1))) {
+                    return;
+                }
                 removeLast(t, mine);
+                if (st != null) {
+                    st.doneMine(staff, t.getUniqueId());
+                }
                 audit(staff, "profile.remove mine " + mine + " " + t.getName());
                 msg(staff, "&aMiniera " + mine + " tolta a " + t.getName() + ".");
                 render(staff, t, holder.page, holder.onBack, false);
@@ -558,7 +573,14 @@ public final class UserProfileMines implements Listener {
                 if (!authorize(staff, target.getUniqueId(), "get")) {
                     return;
                 }
+                StaffTasks st = plugin.getStaffTasks();
+                if (st != null && !st.allowsMine(staff, target.getUniqueId(), owned, mine)) {
+                    return;
+                }
                 plugin.getAmmo().setMine(target, mine);
+                if (st != null) {
+                    st.doneMine(staff, target.getUniqueId());
+                }
                 plugin.getAmmo().refreshMain(target);
                 audit(staff, "profile.get mine " + mine + " " + target.getName());
                 plugin.playConfiguredSound(staff.getLocation(), "mines-gui.sounds.buy");

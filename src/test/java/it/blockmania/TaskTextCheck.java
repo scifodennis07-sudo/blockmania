@@ -10,7 +10,7 @@ import java.util.List;
  */
 public final class TaskTextCheck {
 
-    private static final List<String> PLAYERS = List.of("DoppiaX", "crack", "Marco_99", "LucaGamer", "Lucas", "Giulia");
+    private static final List<String> PLAYERS = List.of("DoppiaX", "crack", "Marco_99", "LucaGamer", "Lucas", "Giulia", "zcrask");
 
     private static int fails;
 
@@ -50,8 +50,35 @@ public final class TaskTextCheck {
         expect(t, "dai una palla ghost a crack", "give 1 ball:ghostball -> crack");
         expect(t, "warna crak 2.1", "warn regola 2.1 -> crack");
         expect(t, "muta Lucs per la regola 4.1", "mute regola 4.1 -> Lucas");
+        // ordini (v4): semplici, condizionali coi rami, custom
+        orders(t, "se doppiaX ha comprato la miniera 5, toglietegli la miniera e dategli 3000 blockcoin, se invece non ce l'ha "
+                + "date 200 coin a zcrask, se invece ha solo la miniera 3 dategli la miniera 4 togliendogli 3000 blockcoin, "
+                + "se invece ha solo la miniera 2 non fare niente", "CONDITIONAL | [doppiaX ha comprato la miniera 5] remove 1 mine -> DoppiaX + give 3000 blockcoin -> DoppiaX | [non ce l'ha] give 200 coin -> zcrask | [ha solo la miniera 3] set 4 mine -> DoppiaX + remove 3000 blockcoin -> DoppiaX | [ha solo la miniera 2] non fare nulla | non fare nulla");
+        orders(t, "dai 20 palle standard a DoppiaX togliendole a crack", "SIMPLE | give 20 ball:standardball -> DoppiaX + remove 20 ball:standardball -> crack");
+        orders(t, "se crack ha piu' di 1000 coin togligliene 500, altrimenti dagli 100 coin", "CONDITIONAL | [crack ha piu' di 1000 coin] remove 500 coin -> crack | [altrimenti] give 100 coin -> crack | non fare nulla");
+        orders(t, "nel caso Giulia abbia la stamina vuota riempigliela: setta la stamina di Giulia a 100", "CONDITIONAL | [Giulia abbia la stamina vuota riempigliela] set 100 stamina -> Giulia | non fare nulla");
+        orders(t, "se crack ha usato la fly warnalo 1.2, se l'ha fatto di nuovo bannalo regola 2.1, se non ha fatto nulla non fare niente", "CONDITIONAL | [crack ha usato la fly] warn regola 1.2 -> crack | [l'ha fatto di nuovo] ban regola 2.1 -> crack | [non ha fatto nulla] non fare nulla | non fare nulla");
+        orders(t, "verifica se zcrask usa la x-ray. dai 5 coin a Giulia", "CUSTOM \"verifica se zcrask usa la x-ray\" | ", "SIMPLE | give 5 coin -> Giulia");
+        orders(t, "se Lucas ha meno di 3 palle ghost dagli 10 palle ghost; se invece ne ha gia' 3 togli 1 miniera a Lucas", "CONDITIONAL | [Lucas ha meno di 3 palle ghost] give 10 ball:ghostball -> Lucas | [ne ha gia' 3] remove 1 mine -> Lucas | non fare nulla");
+        orders(t, "se DoppiaX ha il battlepass al livello 2 dagli 3 livelli battlepass e 50 bc altrimenti non fare nulla", "CONDITIONAL | [DoppiaX ha il battlepass al livello 2] give 3 ricompense:pass -> DoppiaX + give 50 blockcoin -> DoppiaX | non fare nulla");
+        orders(t, "qualora crack abbia 0 blockshell dagli 64 blockshell, se invece ne ha almeno 10 azzera le blockshell", "CONDITIONAL | [crack abbia 0 blockshell] give 64 blockshell -> crack | [ne ha almeno 10] reset blockshell -> crack | non fare nulla");
         System.out.println(fails == 0 ? "\nTUTTO OK" : "\nFALLITI: " + fails);
         System.exit(fails == 0 ? 0 : 1);
+    }
+
+    private static void orders(TaskText t, String text, String... want) {
+        List<TaskText.OrderText> got = t.parseOrders(text, PLAYERS);
+        System.out.println("# " + text);
+        boolean ok = got.size() == want.length;
+        for (int i = 0; i < got.size(); i++) {
+            String g = got.get(i).toString();
+            boolean same = i < want.length && g.equals(want[i]);
+            ok &= same;
+            System.out.println("   " + (same ? "ok  " : "NO  ") + g + (same || i >= want.length ? "" : "\n       (atteso: " + want[i] + ")"));
+        }
+        if (!ok) {
+            fails++;
+        }
     }
 
     private static void expect(TaskText t, String text, String... want) {

@@ -148,6 +148,7 @@ public final class UserProfileRewards implements Listener {
             }
             meta.lore(lines);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -363,7 +364,15 @@ public final class UserProfileRewards implements Listener {
         if (t == null) {
             return;
         }
+        StaffTasks st = plugin.getStaffTasks();
+        if (st != null && !st.allowsLevel(staff, t.getUniqueId(), "ricompense", type, rewards().reached(t, type), level)) {
+            show(staff, s);
+            return;
+        }
         rewards().setReached(t, type, level);
+        if (st != null) {
+            st.doneLevel(staff, t.getUniqueId());
+        }
         GuiMsg.send(plugin, staff, "&a" + t.getName() + ": " + Rewards.italianType(type) + " ora al livello &f"
                 + rewards().reached(t, type) + "&a/&f" + rewards().staffMaxLevel(type) + "&a.");
         show(staff, s);
@@ -406,6 +415,10 @@ public final class UserProfileRewards implements Listener {
         if (t == null) {
             return;
         }
+        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "set", "ricompense_daily", null, t.getUniqueId(), days)) {
+            show(staff, s);
+            return;
+        }
         plugin.getAmmo().setCounter(t, "rw_days", Math.max(0, days));
         GuiMsg.send(plugin, staff, "&a" + t.getName() + ": giorni di giornaliera ora &f" + Math.max(0, days) + "&a.");
         show(staff, s);
@@ -414,6 +427,10 @@ public final class UserProfileRewards implements Listener {
     private void resetDaily(Player staff, Session s) {
         Player t = targetOf(staff, s);
         if (t == null) {
+            return;
+        }
+        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "reset", "ricompense_daily", null, t.getUniqueId(), 0)) {
+            show(staff, s);
             return;
         }
         AmmoManager a = plugin.getAmmo();
@@ -447,6 +464,11 @@ public final class UserProfileRewards implements Listener {
             default -> confirmDim(staff, s, "Azzerare TUTTE le ricompense di " + t.getName() + "?", () -> {
                 Player tt = targetOf(staff, s);
                 if (tt == null) {
+                    return;
+                }
+                if (plugin.getStaffTasks() != null
+                        && !plugin.getStaffTasks().allows(staff, "reset", "ricompense_all", null, tt.getUniqueId(), 0)) {
+                    show(staff, s);
                     return;
                 }
                 rewards().resetAll(tt);
@@ -503,6 +525,10 @@ public final class UserProfileRewards implements Listener {
             return;
         }
         int v = (int) Math.max(0, Math.min(Integer.MAX_VALUE, value));
+        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "set", "ricompense_exp", null, id, v)) {
+            after.run();
+            return;
+        }
         plugin.getAmmo().setCounter(t, "rw_exp", v);
         GuiMsg.send(plugin, staff, "&a" + t.getName() + ": exp ora &f" + v + "&a (livello pass &f"
                 + rewards().reached(t, "pass") + "&a).");

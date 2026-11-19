@@ -562,6 +562,7 @@ public final class Rewards implements Listener {
                 meta.lore(lines);
             }
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -1332,6 +1333,7 @@ public final class Rewards implements Listener {
                         List<Component> lore = meta.lore() == null ? new ArrayList<>() : new ArrayList<>(meta.lore());
                         lore.add(plugin.text("&8» &eClicca per modificare questo livello"));
                         meta.lore(lore);
+                        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
                         it.setItemMeta(meta);
                     }
                     holder.actions.put(slot, "lvl:" + level);

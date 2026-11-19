@@ -616,7 +616,35 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             deny(sender, "il tuo ruolo non può usare questo comando");
             return true;
         }
+        // task: sotto admin dare/togliere/settare/azzerare si puo' solo per le azioni del proprio incarico
+        StaffTasks st = plugin.getStaffTasks();
+        String[] ta = null;
+        UUID tTarget = null;
+        long tAmount = 0;
+        if (st != null && sender instanceof Player sp && verb != null && isWrite(verb)
+                && ("economy".equals(group) || "profile".equals(group))) {
+            ta = StaffTasks.legacyAction(t, sp.getName());
+            if (ta == null) {
+                if (!st.allows(sp, "set", "adminmania_" + t[0], null, null, 0)) {
+                    return true;
+                }
+            } else {
+                Player tp = Bukkit.getPlayerExact(ta[4]);
+                tTarget = tp == null ? null : tp.getUniqueId();
+                try {
+                    tAmount = Long.parseLong(ta[3] == null ? "0" : ta[3].trim());
+                } catch (NumberFormatException ex) {
+                    tAmount = -1;
+                }
+                if (!st.allows(sp, ta[0], ta[1], ta[2], tTarget, tAmount)) {
+                    return true;
+                }
+            }
+        }
         run(sender, command, label, t);
+        if (ta != null && tTarget != null && sender instanceof Player sp && Bukkit.getPlayer(tTarget) != null) {
+            st.done(sp, ta[0], ta[1], ta[2], tTarget, tAmount);
+        }
         if (group != null && verb != null && (isWrite(verb) || verb.equals("use") || verb.equals("reload"))) {
             log(sender, group + "." + verb + " | " + String.join(" ", args));
         }

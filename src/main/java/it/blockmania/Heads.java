@@ -80,6 +80,7 @@ public final class Heads {
             if (lore != null && !lore.isEmpty()) {
                 meta.lore(lore);
             }
+            LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             stack.setItemMeta(meta);
         }
         return stack;

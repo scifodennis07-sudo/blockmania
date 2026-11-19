@@ -63,6 +63,7 @@ public final class BlockVariantsGui implements Listener {
             }
             meta.lore(lines);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }
@@ -149,6 +150,7 @@ public final class BlockVariantsGui implements Listener {
                 lore.add(plugin.text(line));
             }
             meta.lore(lore);
+            LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             show.setItemMeta(meta);
             put(holder, grid.get(i), show, "give:" + (i + 1));
         }

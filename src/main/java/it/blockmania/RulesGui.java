@@ -350,6 +350,7 @@ public final class RulesGui implements Listener {
             }
             meta.lore(l);
         }
+        LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
         return stack;
     }

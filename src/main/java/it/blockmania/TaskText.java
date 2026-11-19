@@ -125,15 +125,19 @@ public final class TaskText {
         Words w = new Words();
         w.verbs.put("give", l("dai", "dare", "dagli", "dalle", "daglieli", "dagliele", "givva", "givvare", "givvagli", "regala",
                 "regalare", "regalagli", "aggiungi", "aggiungere", "aggiungigli", "metti", "mettere", "mettigli", "manda",
-                "mandare", "mandagli", "passa", "passare", "passagli", "give", "add"));
+                "mandare", "mandagli", "passa", "passare", "passagli", "give", "add", "dagliene", "dategliene", "date", "dategli", "datele", "dategliele",
+                "regalate", "regalategli", "aggiungete", "aggiungetegli", "mettete", "mettetegli", "mandate", "mandategli",
+                "passate", "passategli"));
         w.verbs.put("remove", l("togli", "togliere", "toglili", "togligli", "toglile", "rimuovi", "rimuovere", "rimuovigli",
-                "leva", "levare", "levagli", "sottrai", "sottrarre", "prendi", "prendere", "remove", "take"));
+                "leva", "levare", "levagli", "sottrai", "sottrarre", "prendi", "prendere", "remove", "take", "togligliene",
+                "toglietegliene", "levagliene", "togliete",
+                "toglietegli", "toglietele", "levate", "levategli", "rimuovete", "rimuovetegli", "sottraete", "prendete"));
         w.verbs.put("set", l("setta", "settare", "settagli", "imposta", "impostare", "impostagli", "imposta a", "porta a",
-                "metti a", "setta a", "set"));
-        w.verbs.put("reset", l("azzera", "azzerare", "azzeragli", "resetta", "resettare", "resettagli", "reset"));
-        w.verbs.put("ban", l("banna", "bannare", "bannalo", "bannala", "ban"));
-        w.verbs.put("warn", l("warna", "warnare", "warnalo", "warnala", "ammonisci", "ammonire", "warn"));
-        w.verbs.put("mute", l("muta", "mutare", "mutalo", "mutala", "silenzia", "mute"));
+                "metti a", "setta a", "set", "settate", "settategli", "impostate", "impostategli"));
+        w.verbs.put("reset", l("azzera", "azzerare", "azzeragli", "resetta", "resettare", "resettagli", "reset", "azzerate", "azzerategli", "resettate"));
+        w.verbs.put("ban", l("banna", "bannare", "bannalo", "bannala", "ban", "bannate", "bannatelo"));
+        w.verbs.put("warn", l("warna", "warnare", "warnalo", "warnala", "ammonisci", "ammonire", "warn", "warnate", "warnatelo"));
+        w.verbs.put("mute", l("muta", "mutare", "mutalo", "mutala", "silenzia", "mute", "mutate", "mutatelo"));
 
         w.whats.put("ball", l("palle", "palla", "pall", "ball", "balls", "palline", "pallina", "munizioni"));
         w.whats.put("ricompense", l("ricompense", "ricompensa", "premi", "premio", "rewards", "reward"));
@@ -844,6 +848,11 @@ public final class TaskText {
 
     /** Divide il testo in azioni e le completa (con check). players = nomi dei player conosciuti. */
     public List<Action> parse(String text, Collection<String> players) {
+        return parse(text, players, null);
+    }
+
+    /** Come parse; defaultPlayer = player sottinteso ("toglietegli") quando l'azione non ne nomina uno. */
+    public List<Action> parse(String text, Collection<String> players, String defaultPlayer) {
         String src = text == null ? "" : text;
         List<Item> items = items(tokenize(src), players);
         // segmenti
@@ -875,7 +884,7 @@ public final class TaskText {
         List<Action> out = new ArrayList<>();
         Action prev = null;
         for (List<Item> seg : segs) {
-            List<Action> made = build(seg, src, prev, players);
+            List<Action> made = build(seg, src, prev, players, defaultPlayer);
             for (Action a : made) {
                 check(a, players);
                 out.add(a);
@@ -908,7 +917,7 @@ public final class TaskText {
         return n;
     }
 
-    private List<Action> build(List<Item> seg, String src, Action prev, Collection<String> players) {
+    private List<Action> build(List<Item> seg, String src, Action prev, Collection<String> players, String defaultPlayer) {
         int from = seg.get(0).start;
         int to = seg.get(seg.size() - 1).end;
         String source = src.substring(from, Math.min(to, src.length())).trim();
@@ -940,6 +949,7 @@ public final class TaskText {
         Item tiedPlayer = null;
         boolean ruleWord = false;
         boolean article = false;
+        boolean mineSingular = false;
         Long amount = null;
         String dottedNum = null;
         for (Item it : seg) {
@@ -959,6 +969,7 @@ public final class TaskText {
                             a.ties.put("what", it.ties);
                         } else {
                             a.what = it.value;
+                            mineSingular = it.value.equals("mine") && plain(it.raw).equals("miniera");
                         }
                     }
                 }
@@ -1050,6 +1061,14 @@ public final class TaskText {
             if (amount == null && article) {
                 amount = 1L;
             }
+            // "dagli la miniera 4" = portalo alla miniera 4 ; "togligli la miniera" = una miniera in meno
+            if ("mine".equals(a.what) && mineSingular && !article) {
+                if (amount != null && "give".equals(a.verb)) {
+                    a.verb = "set";
+                } else if (amount == null && ("give".equals(a.verb) || "remove".equals(a.verb))) {
+                    amount = 1L;
+                }
+            }
             if (amount == null && prev != null && !prev.custom && (ref || !hasVerb)) {
                 amount = prev.amount;
             }
@@ -1064,6 +1083,9 @@ public final class TaskText {
         }
         if (segPlayers.isEmpty() && badPlayer == null && tiedPlayer == null && prev != null && !prev.custom) {
             a.player = prev.player;
+        }
+        if (a.player == null && segPlayers.isEmpty() && badPlayer == null && tiedPlayer == null && defaultPlayer != null) {
+            a.player = defaultPlayer;
         }
         if (segPlayers.size() <= 1) {
             a.player = segPlayers.isEmpty() ? a.player : segPlayers.get(0);
@@ -1214,6 +1236,205 @@ public final class TaskText {
             }
             default -> {
                 // amount e rule: niente lista, la GUI chiede il valore
+            }
+        }
+        return out;
+    }
+
+    // ------------------------------------------------------------------ ordini (semplici, condizionali, custom)
+
+    /** Un ramo: condizione (testo, null = nessuna), azioni capite, nothing = "non fare nulla". */
+    public static final class BranchText {
+        public String condition;
+        public boolean nothing;
+        public final List<Action> actions = new ArrayList<>();
+
+        @Override
+        public String toString() {
+            if (nothing) {
+                return (condition == null ? "" : "[" + condition + "] ") + "non fare nulla";
+            }
+            List<String> l = new ArrayList<>();
+            for (Action a : actions) {
+                l.add(a.toString());
+            }
+            return (condition == null ? "" : "[" + condition + "] ") + String.join(" + ", l);
+        }
+    }
+
+    /** Un ordine: testo originale, tipo (simple / conditional / custom) e rami. */
+    public static final class OrderText {
+        public String text = "";
+        public String type = "simple";
+        public final List<BranchText> branches = new ArrayList<>();
+
+        @Override
+        public String toString() {
+            List<String> l = new ArrayList<>();
+            for (BranchText b : branches) {
+                l.add(b.toString());
+            }
+            return type.toUpperCase(Locale.ROOT) + (type.equals("custom") ? " \"" + text + "\"" : "") + " | "
+                    + String.join(" | ", l);
+        }
+    }
+
+    private static final java.util.regex.Pattern COND_START = java.util.regex.Pattern.compile(
+            "(?iu)^\\s*(se|nel caso|in caso|qualora|casomai)\\b");
+    /**
+     * Inizio di un ramo: a inizio frase o dopo , ; : (anche "e se", "ma se") qualunque marcatore; "se invece",
+     * "altrimenti", "se no" anche senza punteggiatura prima.
+     */
+    private static final java.util.regex.Pattern BRANCH = java.util.regex.Pattern.compile(
+            "(?iu)(?:(?:^|[,;:]\\s*(?:e\\s+|ma\\s+|mentre\\s+)?)\\s*(se invece|invece se|se no|sennò|senno|altrimenti|"
+                    + "nel caso in cui|nel caso|in caso|qualora|casomai|se)|\\s(se invece|invece se|se no|sennò|senno|altrimenti))\\b");
+    private static final java.util.regex.Pattern NOTHING = java.util.regex.Pattern.compile(
+            "(?iu)\\b(non (fare|fate|fai|faccia|si fa) (niente|nulla)|lascia(te)? (stare|perdere)|niente da fare|"
+                    + "nessuna azione|non serve (niente|nulla)|non fare|ignora)\\b");
+
+    /**
+     * Divide il testo in ordini (frasi separate da . ! ? o a capo). Una frase che inizia con "se" / "nel caso" e' un
+     * ordine condizionale: un ramo per ogni "se ...", "se invece ...", "altrimenti" (dopo una virgola), la condizione e'
+     * il testo fino al primo verbo, poi le azioni del ramo ("non fare niente" = ramo nulla). In coda c'e' sempre il ramo
+     * "non fare nulla". Le altre frasi: le azioni capite fanno un ordine semplice, i pezzi non capiti un ordine custom.
+     */
+    public List<OrderText> parseOrders(String text, Collection<String> players) {
+        List<OrderText> out = new ArrayList<>();
+        for (String chunk : sentences(text == null ? "" : text)) {
+            if (COND_START.matcher(chunk).find()) {
+                out.add(conditional(chunk, players));
+                continue;
+            }
+            List<Action> acts = parse(chunk, players);
+            OrderText simple = null;
+            for (Action a : acts) {
+                if (a.custom) {
+                    OrderText c = new OrderText();
+                    c.type = "custom";
+                    c.text = a.text;
+                    BranchText b = new BranchText();
+                    c.branches.add(b);
+                    out.add(c);
+                } else {
+                    if (simple == null) {
+                        simple = new OrderText();
+                        simple.text = chunk;
+                        simple.branches.add(new BranchText());
+                        out.add(simple);
+                    }
+                    simple.branches.get(0).actions.add(a);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Frasi: divide su . ! ? e a capo (non sul punto dentro un numero: 1.2, 1.000). Il ; separa i rami. */
+    static List<String> sentences(String text) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean dotInNumber = c == '.' && i > 0 && i + 1 < text.length() && Character.isDigit(text.charAt(i - 1))
+                    && Character.isDigit(text.charAt(i + 1));
+            if ((c == '.' && !dotInNumber) || c == '!' || c == '?' || c == '\n') {
+                if (!cur.toString().isBlank()) {
+                    out.add(cur.toString().trim());
+                }
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        if (!cur.toString().isBlank()) {
+            out.add(cur.toString().trim());
+        }
+        return out;
+    }
+
+    private OrderText conditional(String chunk, Collection<String> players) {
+        OrderText o = new OrderText();
+        o.type = "conditional";
+        o.text = chunk;
+        java.util.regex.Matcher m = BRANCH.matcher(chunk);
+        List<int[]> marks = new ArrayList<>(); // {inizio del ramo, fine del marcatore}
+        List<String> words = new ArrayList<>();
+        while (m.find()) {
+            marks.add(new int[]{m.start(), m.end()});
+            words.add(plain(m.group(1) != null ? m.group(1) : m.group(2)));
+        }
+        String orderPlayer = null;
+        for (int k = 0; k < marks.size(); k++) {
+            int bodyStart = marks.get(k)[1];
+            int bodyEnd = k + 1 < marks.size() ? marks.get(k + 1)[0] : chunk.length();
+            String body = chunk.substring(bodyStart, bodyEnd).trim();
+            boolean otherwise = words.get(k).equals("altrimenti") || words.get(k).equals("se no") || words.get(k).startsWith("senn");
+            BranchText b = new BranchText();
+            // dove finisce la condizione: primo verbo o "non fare niente"
+            int cut = body.length();
+            List<Item> its = items(tokenize(body), players);
+            for (Item it : its) {
+                if (it.type == IType.VERB || it.type == IType.GERUND) {
+                    cut = it.start;
+                    break;
+                }
+            }
+            java.util.regex.Matcher nm = NOTHING.matcher(body);
+            boolean nothing = nm.find() && nm.start() <= cut;
+            if (nothing) {
+                cut = nm.start();
+            }
+            String cond = body.substring(0, cut).trim().replaceAll("(?iu)[\\s,:;]*(allora|->|=>)?[\\s,:;]*$", "").trim();
+            b.condition = cond.isEmpty() ? (otherwise ? "altrimenti" : null) : (otherwise ? "altrimenti " + cond : cond);
+            List<String> condPlayers = playersIn(cond, players);
+            if (orderPlayer == null && !condPlayers.isEmpty()) {
+                orderPlayer = condPlayers.get(0);
+            }
+            String def = condPlayers.isEmpty() ? orderPlayer : condPlayers.get(0);
+            if (nothing) {
+                b.nothing = true;
+            } else {
+                String condWhat = firstWhat(cond, players);
+                for (Action a : parse(body.substring(cut), players, def)) {
+                    if (a.custom) {
+                        continue;
+                    }
+                    // "togligliene 500": la cosa e' quella della condizione ("se ha piu' di 1000 coin")
+                    if (a.what == null && !a.ties.containsKey("what") && condWhat != null && !isSanction(a.verb) && a.verb != null) {
+                        set(a, "what", condWhat, players);
+                    }
+                    b.actions.add(a);
+                }
+            }
+            o.branches.add(b);
+        }
+        BranchText last = o.branches.isEmpty() ? null : o.branches.get(o.branches.size() - 1);
+        if (last == null || !(last.nothing && (last.condition == null || last.condition.equals("altrimenti")))) {
+            BranchText n = new BranchText();
+            n.nothing = true;
+            o.branches.add(n);
+        } else {
+            last.condition = null;
+        }
+        return o;
+    }
+
+    /** Prima cosa (coin, ball...) nominata nel testo, o null. */
+    private String firstWhat(String text, Collection<String> players) {
+        for (Item it : items(tokenize(text == null ? "" : text), players)) {
+            if (it.type == IType.WHAT && it.value != null) {
+                return it.value;
+            }
+        }
+        return null;
+    }
+
+    /** Player nominati nel testo (per le condizioni: "se doppiaX ha ..."). */
+    public List<String> playersIn(String text, Collection<String> players) {
+        List<String> out = new ArrayList<>();
+        for (Item it : items(tokenize(text == null ? "" : text), players)) {
+            if (it.type == IType.PLAYER && it.value != null && !out.contains(it.value)) {
+                out.add(it.value);
             }
         }
         return out;
