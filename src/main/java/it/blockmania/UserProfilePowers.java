@@ -455,7 +455,9 @@ public final class UserProfilePowers implements Listener {
         g.atComponent(0, MinesGui.tint(content.build(), null), content.cursor());
         g.at(-15, "&f" + (labels ? CONFIRM_BUTTONS : CONFIRM_EMPTY), MinesGui.F_MINES, 186);
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro (convenzione dei ticket)
-        drawDescription(plugin, g, text);
+        // ordine: prima pulsanti e titolo, la DESCRIZIONE PER ULTIMA. Ogni pezzo si posiziona rispetto al cursore che
+        // GuiTitle crede: se un glifo del testo avesse a schermo una larghezza diversa da quella dichiarata (es. font del
+        // pack vecchio o sbagliato) l'errore sposterebbe tutto quello che viene dopo; cosi' resta confinato alla descrizione.
         if (labels) {
             drawLabel(plugin, g, yesLabel == null ? "conferma" : yesLabel, CONFIRM_YES_CX);
             drawLabel(plugin, g, noLabel == null ? "annulla" : noLabel, CONFIRM_NO_CX);
@@ -465,6 +467,7 @@ public final class UserProfilePowers implements Listener {
         } else {
             top.accept(g);
         }
+        drawDescription(plugin, g, text);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         List<String> yes = new ArrayList<>();
         yes.add("&7" + (text == null ? "" : text));
@@ -505,7 +508,7 @@ public final class UserProfilePowers implements Listener {
     static final char CONFIRM_EMPTY = '\uE208';
     private static final char CONFIRM_BUTTONS = '\uE209';
     private static final int DESC_CX = 94;
-    private static final int DESC_MAX = 128;
+    private static final int DESC_MAX = 122;   // area x28..161 (134 px): 6 px di margine per lato
     private static final int[][] DESC_ROWS = {{69}, {66, 74}, {62, 70, 78}};
     private static final int CONFIRM_YES_CX = 62;
     private static final int CONFIRM_NO_CX = 127;

@@ -365,9 +365,6 @@ public final class MinesGui implements Listener {
             g.at(-15, "&f" + (confirmText != null ? UserProfilePowers.CONFIRM_EMPTY : G_CONFIRM), F_MINES, 186);
         }
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro rispetto al reale
-        if (dim && confirmText != null) {
-            UserProfilePowers.drawDescription(plugin, g, confirmText);
-        }
         if (top != null && !top.isBlank()) {
             UserProfilePowers.topTitle(plugin, g, top);
         }
@@ -384,6 +381,9 @@ public final class MinesGui implements Listener {
             int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
             g.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
                     c.getString(GUI + "title.page.font", ""));
+        }
+        if (dim && confirmText != null) {
+            UserProfilePowers.drawDescription(plugin, g, confirmText);   // per ultima: un errore di larghezza non sposta altro
         }
         return g.build();
     }

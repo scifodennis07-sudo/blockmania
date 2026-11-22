@@ -66,7 +66,7 @@ public final class TaskGui implements Listener {
     private static final String CH_IMAGE = "\ue11f";
     /** Descrizione del popup frecce: 1 riga a y73 (area x28..161, centro 94.5), font tiny_y73 del pack. */
     private static final String CH_DESC_FONT = "minecraft:tiny_y73";
-    private static final int CH_DESC_MAX = 128;
+    private static final int CH_DESC_MAX = 122;
     private static final String CH_FONT = "minecraft:sp_popup";
     private static final int CH_ADV = 162;     // reale 169 - 7 (come RoleGui.ADV)
     private static final int[] CH_PREV = {10, 11};
@@ -1492,9 +1492,10 @@ public final class TaskGui implements Listener {
         UserProfilePowers.drawDimmed(plugin, g, under);
         g.at(-15, "&f" + CH_IMAGE, CH_FONT, CH_ADV);
         smallText(g, cur.label().toUpperCase(Locale.ROOT), CH_BAR_FONT, CH_BAR_CX, CH_BAR_MAX);
+        UserProfilePowers.topTitle(plugin, g, title);
+        // descrizione per ultima (un errore di larghezza dei glifi non sposta il resto)
         smallText(g, "intendevi".equals(title) ? "Cosa intendevi? Scegli con le frecce." : "Scegli con le frecce.",
                 CH_DESC_FONT, CH_BAR_CX, CH_DESC_MAX);
-        UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         List<String> barLore = new ArrayList<>(cur.lore());
