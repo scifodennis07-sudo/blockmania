@@ -85,4 +85,15 @@ public final class Tiny {
         }
         return out.toString();
     }
+
+    /** Lettera "tiny" -> lettera normale minuscola (gli altri caratteri restano uguali). */
+    static char untiny(char c) {
+        int i = TO.indexOf(c);
+        return i >= 0 ? FROM.charAt(i) : c;
+    }
+
+    /** True se c e' una delle piccole maiuscole (la x resta x e non conta). */
+    static boolean isTiny(char c) {
+        return c != 'x' && TO.indexOf(c) >= 0;
+    }
 }

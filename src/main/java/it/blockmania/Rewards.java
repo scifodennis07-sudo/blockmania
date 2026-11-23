@@ -1652,6 +1652,7 @@ public final class Rewards implements Listener {
         }
         meta.lore(lore);
         meta.getPersistentDataContainer().set(chequeKey, PersistentDataType.STRING, kind);
+        LoreWrap.fix(meta);   // lore a capo, tasti -> icone
         stack.setItemMeta(meta);
         return stack;
     }

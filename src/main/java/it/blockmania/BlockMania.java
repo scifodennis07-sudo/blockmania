@@ -966,7 +966,8 @@ public final class BlockMania extends JavaPlugin {
                                      int barWidth, String... replacements) {
         List<String> legacies = new ArrayList<>();
         for (String template : templates) {
-            String t = tiny(keyMarks(template));
+            // parole dei tasti e {key:...} -> icone GRANDI (prima dei segnaposto: i nomi dei giocatori non si toccano)
+            String t = KeyIcons.iconizeBig(tiny(keyMarks(template)));
             for (int i = 0; i + 1 < replacements.length; i += 2) {
                 t = t.replace(replacements[i], replacements[i + 1]);
             }
@@ -1333,6 +1334,9 @@ public final class BlockMania extends JavaPlugin {
 
         for (String line : lines) {
             String t = tiny(keyMarks(icon + prefix + line + suffix));
+            if (actionBar) {
+                t = KeyIcons.iconizeBig(t);   // actionbar: tasti -> icone GRANDI (la chat resta a parole)
+            }
             if (uniform) {
                 t = stripCodes(t);
             }
@@ -1376,7 +1380,7 @@ public final class BlockMania extends JavaPlugin {
 
     /** Testo fisso per la actionbar (tiny, tasti, icone) con lo sfondo, come i messaggi standard. */
     public Component actionBarText(String template, String... replacements) {
-        String t = tiny(keyMarks(template));
+        String t = KeyIcons.iconizeBig(tiny(keyMarks(template)));   // tasti -> icone GRANDI
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             t = t.replace(replacements[i], replacements[i + 1]);
         }
@@ -1494,6 +1498,7 @@ public final class BlockMania extends JavaPlugin {
             meta.setCustomModelData(li.customModelData());
         }
         meta.getPersistentDataContainer().set(itemKey, PersistentDataType.STRING, li.id());
+        LoreWrap.fix(meta);   // lore a capo, tasti -> icone
         stack.setItemMeta(meta);
         return stack;
     }
@@ -1526,6 +1531,7 @@ public final class BlockMania extends JavaPlugin {
         if (getConfig().getBoolean("blocks.custom-model-data", true)) {
             meta.setCustomModelData(BlockManager.itemModelData(number, variant));
         }
+        LoreWrap.fix(meta);   // lore a capo, tasti -> icone
         stack.setItemMeta(meta);
         return stack;
     }

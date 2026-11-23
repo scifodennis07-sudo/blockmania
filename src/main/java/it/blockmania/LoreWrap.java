@@ -18,7 +18,8 @@ import java.util.regex.Pattern;
  * spezzate a meta' (unico caso).
  * <p>
  * Le righe di ISTRUZIONE (tasti/click: "&eclicca per aprire  &8|  &cQ per eliminare", "&eclick destro: ...")
- * non vengono MAI spezzate, anche se piu' lunghe del limite: vedi {@link #isInstruction(String)}.
+ * non vengono MAI spezzate, anche se piu' lunghe del limite: vedi {@link #isInstruction(String)}. In queste righe le
+ * parole dei tasti diventano icone del pack ({@link KeyIcons#iconize(String)}): "&f[L] &eapri &8| &f[Q] &celimina".
  * <p>
  * Versione stringa (legacy, prima di plugin.text) e versione Component (dopo plugin.text: passa dal testo legacy §).
  * Nomi: {@link #name(String)} / {@link #name(Component)} accorciano con "..." oltre {@link #NAME_LIMIT}.
@@ -44,7 +45,7 @@ public final class LoreWrap {
     // ------------------------------------------------------------------
 
     /** Segni "chiave" di BlockMania (tolti da plugin.color): invisibili. */
-    private static boolean isMark(char c) {
+    static boolean isMark(char c) {
         return c == '' || c == '' || c == '';
     }
 
@@ -56,7 +57,7 @@ public final class LoreWrap {
      * Lunghezza del codice colore che inizia in i (0 = non e' un codice): &a / §a (2), &#rrggbb (8),
      * §x§r§r§g§g§b§b (14).
      */
-    private static int codeLength(String s, int i) {
+    static int codeLength(String s, int i) {
         int n = s.length();
         char c = s.charAt(i);
         if ((c != '&' && c != '§') || i + 1 >= n) {
@@ -91,7 +92,7 @@ public final class LoreWrap {
     }
 
     /** Nuovo stato (colore + formati attivi) dopo il codice. */
-    private static String advance(String state, String code) {
+    static String advance(String state, String code) {
         char k = Character.toLowerCase(code.charAt(1));
         if (k == 'r') {
             return "";
@@ -114,7 +115,10 @@ public final class LoreWrap {
                 i += cl;
                 continue;
             }
-            if (!isMark(s.charAt(i))) {
+            char ch = s.charAt(i);
+            if (KeyIcons.isIcon(ch)) {
+                count += KeyIcons.chars(ch);   // icona dei tasti: conta quanto e' larga (circa 6 px a lettera)
+            } else if (!isMark(ch)) {
                 count++;
             }
             i++;
@@ -130,13 +134,15 @@ public final class LoreWrap {
     private static final Pattern KEYWORD = Pattern.compile(
             "\\b(clicca\\w*|click\\w*|premi|tasto|tasti|shift|trascina\\w*|q\\s+(per|su))\\b"
                     + "|\\b(destro|sinistro)\\s*:");
-    /** Riga che COMINCIA con un'istruzione ("clicca per...", "click destro: ...", "tasto Q per ...", "Q su ..."). */
+    /** Riga che COMINCIA con un'istruzione ("clicca per...", "click destro: ...", "tasto Q per ...", "Q su ...",
+     *  "sinistro apre ...", "destro per ..."). */
     private static final Pattern STARTS = Pattern.compile(
             "^[^a-z0-9]*(clicca\\w*|click\\w*|premi|tasto|tasti|shift|trascina\\w*|q\\s+(per|su)"
-                    + "|destro\\s*:|sinistro\\s*:)");
+                    + "|destro\\b|sinistro\\b|doppio\\s+click|rotella\\b)");
     /** Legenda dei tasti a meta' riga: "Testa: click destro = ...", "Carta: click: ...". */
     private static final Pattern LEGEND = Pattern.compile(
-            "\\b(clicca|click|tasto|shift)(\\s+(destro|sinistro|centrale|q))?\\s*[=:]");
+            "\\b(clicca|click|tasto|shift)(\\s+(destro|sinistro|centrale|q))?\\s*[=:]"
+                    + "|[:=]\\s*(destro|sinistro)\\b");   // "sanzioni: destro cronologia"
 
     /** Testo visibile (senza codici colore e segni chiave). */
     private static String plain(String s) {
@@ -171,7 +177,16 @@ public final class LoreWrap {
         if (legacy == null) {
             return false;
         }
-        String text = plain(legacy).toLowerCase(Locale.ROOT);
+        String raw = plain(legacy);
+        if (KeyIcons.hasIcon(raw)) {
+            return true;   // gia' con le icone dei tasti (KeyIcons.iconize)
+        }
+        // il testo delle GUI arriva gia' in "tiny text" (piccole maiuscole): si confronta con le lettere normali
+        StringBuilder un = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            un.append(Tiny.untiny(raw.charAt(i)));
+        }
+        String text = un.toString().toLowerCase(Locale.ROOT);
         if (text.isBlank()) {
             return false;
         }
@@ -246,6 +261,7 @@ public final class LoreWrap {
 
     /** Spezza una riga senza "\n"; ritorna lo stato colore finale. */
     private static String wrapOne(String line, int limit, List<String> out) {
+        line = KeyIcons.iconize(line);   // righe di istruzione: parole dei tasti -> icone
         if (visibleLength(line) <= limit || isInstruction(line)) {   // istruzioni: sempre intere
             out.add(line);
             return stateAfter("", line);
@@ -383,11 +399,20 @@ public final class LoreWrap {
             out.add(Component.empty());
             return out;
         }
-        if (PLAIN.serialize(line).length() <= limit || unsafe(line)) {
+        if (unsafe(line)) {
             out.add(line);
             return out;
         }
         String legacy = LEGACY.serialize(line);
+        String icons = KeyIcons.iconize(legacy);   // righe di istruzione: parole dei tasti -> icone
+        if (!icons.equals(legacy)) {
+            legacy = icons;
+            line = fromLegacy(icons);
+        }
+        if (visibleLength(legacy) <= limit) {
+            out.add(line);
+            return out;
+        }
         if (isInstruction(legacy) && !legacy.contains("\n")) {   // istruzione: resta identica
             out.add(line);
             return out;
@@ -479,9 +504,15 @@ public final class LoreWrap {
             return false;
         }
         for (Component c : lore) {
-            if (c != null && PLAIN.serialize(c).length() > LIMIT && !unsafe(c)
-                    && !isInstruction(LEGACY.serialize(c))) {
+            if (c == null || unsafe(c)) {
+                continue;
+            }
+            String legacy = LEGACY.serialize(c);
+            if (PLAIN.serialize(c).length() > LIMIT && !isInstruction(legacy)) {
                 return true;
+            }
+            if (!KeyIcons.iconize(legacy).equals(legacy)) {
+                return true;   // parole dei tasti da trasformare in icone
             }
         }
         return false;

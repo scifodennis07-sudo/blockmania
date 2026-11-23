@@ -172,6 +172,7 @@ public final class ShopManager implements Listener {
                 lore.add(plugin.text(line));
             }
             meta.lore(lore);
+            LoreWrap.fix(meta);   // lore a capo, tasti -> icone
             item.setItemMeta(meta);
         }
         return item;
@@ -643,7 +644,8 @@ public final class ShopManager implements Listener {
         }
         List<Component> parts = new ArrayList<>();
         for (String line : lines) {
-            parts.add(plugin.text(line,
+            // righe di istruzione ("clicca per acquistare...") -> icone dei tasti (LORE: righe normali del testo)
+            parts.add(plugin.text(KeyIcons.iconize(line),
                     "%price%", String.valueOf(priceFor(player, type, ammoType, missing == 0
                             ? ammo.getAmmoMax(player, ammoType) : missing)),
                     "%ball%", plugin.tiny(ammoType),

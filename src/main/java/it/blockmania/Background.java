@@ -202,7 +202,8 @@ public final class Background {
                 }
             }
             Integer iconWidth = iconWidths.get(c);
-            int w = iconWidth != null ? iconWidth : FontMetrics.width(c);
+            int keyWidth = KeyIcons.advance(c);   // icone dei tasti (font default, KEY_ICONS.md)
+            int w = iconWidth != null ? iconWidth : keyWidth > 0 ? keyWidth : FontMetrics.width(c);
             if (w < 0) {
                 w = unknownWidth;
             }

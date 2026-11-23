@@ -88,6 +88,7 @@ public final class BlockEdit implements Listener {
             meta.setCustomModelData(c.getInt("blockwand.custom-model-data"));
         }
         meta.getPersistentDataContainer().set(wandKey, PersistentDataType.BYTE, (byte) 1);
+        LoreWrap.fix(meta);   // lore a capo, tasti -> icone
         stack.setItemMeta(meta);
         return stack;
     }

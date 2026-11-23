@@ -332,6 +332,7 @@ public final class UserProfilePowers implements Listener {
         im.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
         im.displayName(Component.text(s.initial.isEmpty() ? " " : s.initial));
         im.lore(lore(List.of("&eclicca per annullare")));
+        LoreWrap.fix(im);   // tasti -> icone
         in.setItemMeta(im);
         view.setItem(0, in);
         view.setItem(1, pane("&e" + s.title, List.of("&7massimo: &f50 caratteri", "&7più lungo: &fscambio e chat", "", "&eclicca il verde per inviare")));
