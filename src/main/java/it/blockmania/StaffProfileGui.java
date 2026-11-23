@@ -234,10 +234,18 @@ public final class StaffProfileGui implements Listener {
         drawDimmedBackground(g, target, 0);
     }
 
-    /** Come sopra, per la pagina indicata (0 = pagina 1, 1 = pagina 2). */
+    /**
+     * Come sopra, per la pagina indicata (0 = pagina 1, 1 = pagina 2), con il titolo "STAFF nome" nella barra in alto
+     * (lo scurisce il popup insieme al resto: i popup non scrivono un loro titolo).
+     */
     public void drawDimmedBackground(GuiTitle g, UUID target, int page) {
         scene(g, target, data(target), Math.max(0, Math.min(PAGES - 1, page)), true);
+        UserProfilePowers.topTitleDim(plugin, g, "staff " + UserProfilePowers.nameOf(target));
+        UserProfilePowers.invVariant(g, STAFF_INV);
     }
+
+    /** Variante di inv_full per lo sfondo staffprofile (pagine 1 e 2, INV_FULL.md). */
+    private static final char STAFF_INV = UserProfilePowers.INV_STAFF;
 
     /** Aggiorna le GUI aperte su questo target (es. faccia caricata). */
     public void refresh(UUID target) {
@@ -609,9 +617,9 @@ public final class StaffProfileGui implements Listener {
         setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
         boolean hasPrev = h.page > 0;
         boolean hasNext = h.page < PAGES - 1;
-        setAll(h, S_PREV, pane(hasPrev ? "&epagina precedente" : "&8pagina precedente", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+        setAll(h, S_PREV, pane(hasPrev ? "&epagina precedente" : "&8pagina precedente", List.of("&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES)),
                 hasPrev ? "pg:prev" : null);
-        setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+        setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES)),
                 hasNext ? "pg:next" : null);
         // riquadro testa: slot 9 = testa 2D grande (sborda su 10/18/19), gli altri pane invisibili con lo stesso nome/lore
         ItemStack headPane = headItem(target, d);
@@ -628,14 +636,9 @@ public final class StaffProfileGui implements Listener {
             return;
         }
         setAll(h, S_INFO, pane("&6informazioni", List.of(
-                "&7Profilo staff: attivita' e valutazioni.", "",
-                "&fStelle: &7media dei voti dei ticket gestiti",
-                "&7(ultimi 30 giorni, ultimi 7 giorni, generale).",
-                "&fOrologio: &7primo accesso, playtime, grado.",
-                "&fCarta: &7click = carriera staff.",
-                "&fMute, warn, ban, blacklist, ticket, cuffie:",
-                "&7click = elenco delle azioni.",
-                "&fFreccia destra: &7pagina 2 (grado, ruoli, warn,", "&7depex, sospensioni, tutor).")), null);
+                "&7pagina: &f1&8/&f" + PAGES,
+                "&7stelle: &fvoti dei ticket",
+                "&7pagina 2: &fgrado, warn, tutor")), null);
 
         setAll(h, S_CLOCK, infoItem(d.info()), null);
         setAll(h, S_CAREER, careerItem(d.careerKinds()), "career");
@@ -691,13 +694,13 @@ public final class StaffProfileGui implements Listener {
     private ItemStack infoItem(StaffStats.Info i) {
         List<String> lore = new ArrayList<>();
         lore.add("&7primo accesso: &f" + (i.firstJoin() > 0 ? date(i.firstJoin()) : "n/d"));
-        lore.add("&7playtime totale: &f" + (i.playMs() < 0 ? "n/d" : minutes(i.playMs() / 60000L)));
+        lore.add("&7playtime: &f" + (i.playMs() < 0 ? "n/d" : minutes(i.playMs() / 60000L)));
         if (i.staffSince() > 0) {
             lore.add("&7staffer da: &f" + date(i.staffSince()) + " &8(" + dur(System.currentTimeMillis() - i.staffSince()) + ")");
         } else {
             lore.add("&7staffer da: &8mai");
         }
-        lore.add("&7grado attuale: &f" + (i.role() == null || i.role().isEmpty() ? "nessuno" : i.role()));
+        lore.add("&7grado: &f" + (i.role() == null || i.role().isEmpty() ? "nessuno" : i.role()));
         return pane("&binfo staffer", lore);
     }
 
@@ -708,7 +711,7 @@ public final class StaffProfileGui implements Listener {
         lore.add("&7depex: &f" + k[2]);
         lore.add("&7ripex: &f" + k[3]);
         lore.add("");
-        lore.add("&eclick: apre la carriera");
+        lore.add("&eclicca per aprire");
         return pane("&6carriera staff", lore);
     }
 
@@ -719,11 +722,10 @@ public final class StaffProfileGui implements Listener {
         lore.add("&7annullati: &f" + c.undone() + undoneHint(cat));
         lore.add("&7modificati: &f" + c.modified());
         if (cat == StaffStats.Cat.VOICE) {
-            lore.add("");
-            lore.add("&8funzione non ancora disponibile");
+            lore.add("&7stato: &8in arrivo");
         }
         lore.add("");
-        lore.add("&eclick: apre l'elenco");
+        lore.add("&eclicca per aprire");
         return pane(color + cat.label().toLowerCase(Locale.ROOT), lore);
     }
 
@@ -739,9 +741,8 @@ public final class StaffProfileGui implements Listener {
 
     private ItemStack starItem(String label, double avg, int n) {
         List<String> lore = new ArrayList<>();
-        lore.add("&7valutazione media dei ticket gestiti");
         if (avg < 0) {
-            lore.add("&7media: &8nessuna valutazione");
+            lore.add("&7media: &8nessuna");
         } else {
             lore.add("&7media: &f" + valText(avg) + "&8/&f5");
         }
@@ -937,7 +938,7 @@ public final class StaffProfileGui implements Listener {
             lore.add("&7" + (cat == StaffStats.Cat.TICKET ? "ticket di" : "giocatore") + ": &f" + clean(e.who()));
             lore.add("&7azione: &f" + singular);
             lore.add("&7quando: &f" + date(e.ts()));
-            for (String line : wrap(clean(e.text()), 34)) {
+            for (String line : wrap(clean(e.text()), LoreWrap.LIMIT)) {
                 lore.add("&f" + line);
             }
             out.add(row(color + cat.label().toLowerCase(Locale.ROOT) + " &7- " + color + singular + " &7- &f" + date(e.ts()), lore, icon));
@@ -946,8 +947,8 @@ public final class StaffProfileGui implements Listener {
             // funzione non ancora esistente: una voce fissa al posto della lista vuota
             ItemStack none = new ItemStack(Material.BARRIER);
             ItemMeta meta = none.getItemMeta();
-            meta.displayName(plugin.text("&7Nessuna assistenza vocale"));
-            meta.lore(List.of(plugin.text("&8Funzione non ancora disponibile.")));
+            meta.displayName(plugin.text("&7nessuna assistenza vocale"));
+            meta.lore(List.of(plugin.text("&7stato: &8in arrivo")));
             LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             none.setItemMeta(meta);
             out.add(new ProfileLists.Row(none));
@@ -1052,14 +1053,9 @@ public final class StaffProfileGui implements Listener {
 
     private void fillPage2(Holder h, UUID target, Data d) {
         setAll(h, S_INFO, pane("&6informazioni", List.of(
-                "&7Profilo staff: pagina &f2&8/&f" + PAGES + "&7.", "",
-                "&fBarra: &7grado staff (colore del ruolo).",
-                "&fPezzetti: &7ruoli aggiuntivi (dev, texture, builder).",
-                "&fWarn, depex, sospendi: &7click sinistro = azione",
-                "&7con una regola staff (/adminmania staffrules),",
-                "&7click destro = elenco con reset e cancella voce.",
-                "&fTutor: &7assegna o togli il tutor.",
-                "&fRuolo / promuovi: &7popup con le frecce.")), null);
+                "&7pagina: &f2&8/&f" + PAGES,
+                "&7barra: &fgrado staff",
+                "&7pezzetti: &fruoli aggiuntivi")), null);
 
         StaffRoles roles = plugin.getStaffRoles();
         String role = roles == null ? null : roles.roleOf(target);
@@ -1071,27 +1067,23 @@ public final class StaffProfileGui implements Listener {
         List<String> rl = new ArrayList<>();
         rl.add("&7grado staff: &f" + (role == null ? "nessuno" : roleLabel(role)));
         if (role == null && !subs.isEmpty()) {
-            rl.add("&8nessun grado della scala: si vede il ruolo aggiuntivo");
         }
         rl.add("&7ruoli aggiuntivi: &f" + (subs.isEmpty() ? "nessuno" : subsText(subs)));
         if (suspended) {
             rl.add("");
-            rl.add("&csospeso &7fino al &f" + date(disc.suspendedUntil(target)));
+            rl.add("&7sospeso fino al: &c" + date(disc.suspendedUntil(target)));
         }
         setAll(h, S_ROLE, pane("&f" + (role == null ? (subs.isEmpty() ? "nessun grado" : roleLabel(subs.get(0))) : roleLabel(role)), rl), null);
 
         // pezzetti dei ruoli aggiuntivi: 0 = nessuno (riga intera grigia), 1 = riga intera, 2 = meta', 3 = terzi
         if (subs.isEmpty()) {
-            setAll(h, S_SUB, pane("&7nessun ruolo aggiuntivo", List.of("&7Ruoli aggiuntivi: dev, texture, builder.", "",
-                    "&eusa 'aggiungi/modifica ruolo' per darne uno")), null);
+            setAll(h, S_SUB, pane("&7nessun ruolo aggiuntivo", List.of("&7possibili: &fdev, texture, builder")), null);
         } else {
             int n = subs.size();
             int per = S_SUB.length / n;
             for (int i = 0; i < S_SUB.length; i++) {
                 String id = subs.get(Math.min(n - 1, i / per));
-                set(h, S_SUB[i], pane("&b" + roleLabel(id), List.of("&7ruolo aggiuntivo di &f" + nameOf(target),
-                        "&7ruoli aggiuntivi: &f" + subsText(subs), "",
-                        "&eusa 'aggiungi/modifica ruolo' per cambiarli")), null);
+                set(h, S_SUB[i], pane("&b" + roleLabel(id), List.of("&7ruoli aggiuntivi: &f" + subsText(subs))), null);
             }
         }
 
@@ -1101,38 +1093,32 @@ public final class StaffProfileGui implements Listener {
 
         setAll(h, S_DEPEX, pane("&cdepex staff", List.of(
                 "&7depex ricevuti: &f" + nDepex,
-                "&7grado attuale: &f" + (role == null ? "nessuno" : roleLabel(role)),
-                "&8toglie il grado staff, i ruoli aggiuntivi restano", "",
-                "&esinistro: depexa con una regola staff",
-                "&edestro: elenco dei depex (reset e cancella voce)")), "d:DEPEX");
+                "&7grado: &f" + (role == null ? "nessuno" : roleLabel(role)), "",
+                "&esinistro depex &8| &edestro elenco")), "d:DEPEX");
         setAll(h, S_DWARN, pane("&ewarn staff", List.of(
                 "&7warn ricevuti: &f" + nWarn, "",
-                "&esinistro: warna con una regola staff",
-                "&edestro: elenco dei warn (reset e cancella voce)")), "d:WARN");
+                "&esinistro warn &8| &edestro elenco")), "d:WARN");
         setAll(h, S_SPECIAL, pane("&baggiungi/modifica ruolo", List.of(
                 "&7ruoli aggiuntivi: &f" + (subs.isEmpty() ? "nessuno" : subsText(subs)), "",
-                "&esinistro: scegli dev, texture o builder con le frecce",
-                "&8se ce l'ha gia', confermando lo togli")), "special");
+                "&eclicca per scegliere")), "special");
         List<String> sl = new ArrayList<>();
         sl.add("&7sospensioni ricevute: &f" + nSusp);
         if (suspended) {
-            sl.add("&7stato: &csospeso &7fino al &f" + date(disc.suspendedUntil(target)));
-            sl.add("&8niente permessi staff finche' e' sospeso");
+            sl.add("&7stato: &csospeso");
+            sl.add("&7fino al: &f" + date(disc.suspendedUntil(target)));
             sl.add("");
-            sl.add("&esinistro: togli la sospensione");
+            sl.add("&esinistro togli &8| &edestro elenco");
         } else {
             sl.add("&7stato: &anon sospeso");
             sl.add("");
-            sl.add("&esinistro: sospendi con una regola staff");
+            sl.add("&esinistro sospendi &8| &edestro elenco");
         }
-        sl.add("&edestro: elenco delle sospensioni (reset e cancella voce)");
         setAll(h, S_SUSPEND, pane("&6sospendi staff", sl), "d:SUSPEND");
 
         UUID tutor = disc == null ? null : disc.tutorOf(target);
         List<UUID> pupils = disc == null ? List.of() : disc.pupilsOf(target);
         List<String> tl = new ArrayList<>();
-        tl.add("&7tutor assegnato: " + (tutor == null ? "&8nessuno" : "&f" + nameOf(tutor)));
-        tl.add("&8(un solo tutor per staffer)");
+        tl.add("&7tutor: " + (tutor == null ? "&8nessuno" : "&f" + nameOf(tutor)));
         tl.add("&7allievi: &f" + pupils.size());
         for (int i = 0; i < Math.min(5, pupils.size()); i++) {
             tl.add("&8- &f" + nameOf(pupils.get(i)));
@@ -1141,13 +1127,12 @@ public final class StaffProfileGui implements Listener {
             tl.add("&8... e altri " + (pupils.size() - 5));
         }
         tl.add("");
-        tl.add(tutor == null ? "&eclicca per assegnare un tutor" : "&eclicca per cambiare o togliere il tutor");
+        tl.add(tutor == null ? "&eclicca per assegnare" : "&eclicca per cambiare");
         setAll(h, S_TUTOR, pane("&dassegna tutor", tl), "tutor");
 
         setAll(h, S_PROMOTE, pane("&apromuovi/degrada staff", List.of(
-                "&7grado attuale: &f" + (role == null ? "nessuno" : roleLabel(role)), "",
-                "&esinistro: scegli il grado con le frecce",
-                "&8si parte dal grado attuale")), "promote");
+                "&7grado: &f" + (role == null ? "nessuno" : roleLabel(role)), "",
+                "&eclicca per scegliere")), "promote");
     }
 
     private String subsText(List<String> subs) {
@@ -1415,19 +1400,23 @@ public final class StaffProfileGui implements Listener {
             if (e.kind() == StaffDiscipline.Kind.SUSPEND) {
                 lore.add("&7durata: &f" + dur(e.durationMs()));
                 if (live) {
-                    lore.add("&7stato: &cin corso &7fino al &f" + date(e.until()));
+                    lore.add("&7stato: &cin corso");
+                    lore.add("&7fino al: &f" + date(e.until()));
                 } else {
-                    lore.add("&7stato: &afinita" + (e.endedAt() > 0 ? " &7il &f" + date(e.endedAt()) : ""));
+                    lore.add("&7stato: &afinita");
+                    if (e.endedAt() > 0) {
+                        lore.add("&7finita il: &f" + date(e.endedAt()));
+                    }
                 }
             }
             if (e.message() != null && !e.message().isBlank()) {
                 lore.add("&7messaggio:");
-                for (String line : wrap(clean(e.message()), 34)) {
+                for (String line : wrap(clean(e.message()), LoreWrap.LIMIT)) {
                     lore.add("&f" + line);
                 }
             }
             lore.add("");
-            lore.add("&etasto Q per eliminare la voce");
+            lore.add("&cQ per eliminare");
             ItemStack it = new ItemStack(Material.PAPER);
             ItemMeta meta = it.getItemMeta();
             meta.displayName(plugin.text(color + kindLabel(kind) + " &7- &f" + date(e.ts()) + (live ? " &c(in corso)" : "")));
@@ -1447,7 +1436,7 @@ public final class StaffProfileGui implements Listener {
         s.rows = rows;
         s.reset = true;
         s.buttonName = "&breset " + kindPlural(kind);
-        s.buttonLore = List.of("&7azzera tutto: " + kindPlural(kind) + " di " + nameOf(target), "&eclicca per resettare (chiede conferma)");
+        s.buttonLore = List.of("&7azzera: &f" + kindPlural(kind), "", "&eclicca per resettare");
         s.background = bg2(target);
         s.onBack = () -> {
             back2(p, target);
@@ -1525,8 +1514,7 @@ public final class StaffProfileGui implements Listener {
             ItemStack none = new ItemStack(Material.BARRIER);
             ItemMeta meta = none.getItemMeta();
             meta.displayName(plugin.text("&cnessun tutor"));
-            meta.lore(List.of(plugin.text("&7Toglie il tutor a &f" + nameOf(target) + "&7."),
-                    plugin.text("&7tutor attuale: &f" + (current == null ? "nessuno" : nameOf(current))),
+            meta.lore(List.of(plugin.text("&7tutor: &f" + (current == null ? "nessuno" : nameOf(current))),
                     plugin.color(" "), plugin.text("&eclicca per togliere")));
             LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             none.setItemMeta(meta);
@@ -1540,8 +1528,12 @@ public final class StaffProfileGui implements Listener {
             lore.add("&7grado: &f" + (r == null ? "nessuno" : roleLabel(r)));
             lore.add("&7allievi: &f" + disc.pupilsOf(id).size());
             lore.add("&7stato: " + (Bukkit.getPlayer(id) != null ? "&aonline" : "&8offline"));
-            lore.add("");
-            lore.add(cur ? "&ae' gia' il tutor" : "&eclicca per sceglierlo come tutor");
+            if (cur) {
+                lore.add("&7stato: &agià tutor");
+            } else {
+                lore.add("");
+                lore.add("&eclicca per sceglierlo");
+            }
             rows.add(new PRow(pane((cur ? "&a" : "&f") + nameOf(id) + (cur ? " &a(attuale)" : ""), lore), -1, id, id.toString()));
         }
         Popup s = new Popup();
@@ -1551,8 +1543,7 @@ public final class StaffProfileGui implements Listener {
         s.rows = rows;
         s.reset = false;
         s.buttonName = "&einformazioni";
-        s.buttonLore = List.of("&7tutor attuale: &f" + (current == null ? "nessuno" : nameOf(current)),
-                "&7clicca uno staffer per assegnarlo,", "&7oppure 'nessun tutor' per toglierlo.");
+        s.buttonLore = List.of("&7tutor: &f" + (current == null ? "nessuno" : nameOf(current)));
         s.background = bg2(target);
         s.onBack = () -> {
             back2(p, target);
@@ -1682,7 +1673,7 @@ public final class StaffProfileGui implements Listener {
     private static final char P_BAR_SH = '';
     private static final String P_BAR_FONT = "minecraft:tiny3";
     private static final int P_BAR_CX = 95;
-    private static final int P_BAR_MAX = 70;
+    private static final int P_BAR_MAX = 64;   // barra allargata (BAR_WIDTH.md)
     private static final int P_PER_PAGE = 21;
     private static final int[] P_X = {1, 2};
     private static final int[] P_BTN = {6, 7};
@@ -1750,7 +1741,7 @@ public final class StaffProfileGui implements Listener {
         inv.setItem(P_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(P_NEXT, pane("&7pagina successiva", List.of()));
         if (s.rows.isEmpty()) {
-            inv.setItem(pGridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
+            inv.setItem(pGridSlot(10), pane("&7nessuna voce", List.of()));
         } else {
             for (int i = 0; i < P_PER_PAGE; i++) {
                 int idx = s.page * P_PER_PAGE + i;
@@ -1799,7 +1790,10 @@ public final class StaffProfileGui implements Listener {
         }
         popupBar(g, s.bar);
         popupNav(g, s.page + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, s.title);
+        if (s.background == null) {
+            UserProfilePowers.topTitle(plugin, g, s.title);
+        }
+        // popup: nella barra in alto resta "STAFF nome", scurito dentro s.background (drawDimmedBackground)
         return g.build();
     }
 

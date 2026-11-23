@@ -30,7 +30,7 @@ import java.util.function.Function;
 /**
  * Popup lista generico delle pagine 2/3 del profilo (cronologia movimenti, sanzioni, acquisti).
  * Grafica: userprofile-26 (U+E119, font minecraft:userprofile3), griglia 7x3 come RulePopups/UserProfileHistory,
- * frecce sotto NON circolari, X = onBack, barra titolo = filtro corrente (click = filtro successivo), info blu = aiuto in chat.
+ * frecce sotto NON circolari, X = onBack, barra titolo = filtro corrente (pulsante filtro: sinistro = precedente, destro = successivo), info blu = aiuto in chat.
  * Non e' live: i dati sono quelli del momento dell'apertura (o del cambio filtro).
  */
 public final class ProfileLists implements Listener {
@@ -77,7 +77,7 @@ public final class ProfileLists implements Listener {
     private static final char BAR_SHADOW = '\uf600';
     private static final String BAR_FONT = "minecraft:tiny3";
     private static final int BAR_CX = 95;
-    private static final int BAR_MAX = 70;
+    private static final int BAR_MAX = 64;   // barra allargata U+E119 (BAR_WIDTH.md)
 
     private static final int SIZE = 54;
     private static final int PER_PAGE = 21;
@@ -160,7 +160,7 @@ public final class ProfileLists implements Listener {
 
     public void openPurchases(Player staff, UUID target, Consumer<GuiTitle> background, Runnable back) {
         open(staff, "cronologia acquisti", List.of(),
-                key -> List.of(new Row(item(Material.BARRIER, "&7Nessun acquisto", List.of("&8Lo store non e' ancora attivo.")))),
+                key -> List.of(new Row(item(Material.BARRIER, "&7nessun acquisto", List.of("&7stato: &8in arrivo")))),
                 background, back);
     }
 
@@ -189,12 +189,11 @@ public final class ProfileLists implements Listener {
         for (MovementLog.Entry e : list) {
             Material m = Material.matchMaterial(e.type().icon());
             List<String> lore = new ArrayList<>();
-            lore.add("&7tipo: &f" + e.type().label());
             lore.add("&7quando: &f" + date(e.ts()));
-            for (String line : wrap(clean(e.text()), 34)) {
+            for (String line : wrap(clean(e.text()), LoreWrap.LIMIT)) {
                 lore.add("&f" + line);
             }
-            out.add(new Row(item(m == null ? Material.PAPER : m, "&e" + e.type().label() + " &7- &f" + date(e.ts()), lore),
+            out.add(new Row(item(m == null ? Material.PAPER : m, "&e" + e.type().label(), lore),
                     iconIndex(e.type().name())));
         }
         return out;
@@ -306,7 +305,10 @@ public final class ProfileLists implements Listener {
         drawIcons(g, s);
         barText(g, s.filters.get(s.filterIdx).label());
         navText(g, s.page + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, s.title);   // es. "cronologia sanzioni", come "lista ticket" in Tickets
+        if (s.background == null) {
+            UserProfilePowers.topTitle(plugin, g, s.title);   // es. "cronologia sanzioni", solo se non e' un popup
+        }
+        // popup: nella barra in alto resta il titolo della GUI di sotto, scurito dentro s.background
         return g.build();
     }
 
@@ -415,21 +417,19 @@ public final class ProfileLists implements Listener {
         inv.setItem(SLOT_X, pane(back, List.of()));
         Filter f = s.filters.get(s.filterIdx);
         {
-            // stesso formato di Tickets.openList: "filtra per" / "scegli cosa vedere:" / opzioni (selezionata "&a» ") / "clicca per cambiare"
+            // stesso formato di Tickets.openList: "filtra per" / "scegli cosa vedere:" / opzioni (selezionata "&a» ") / sinistro-destro
             List<String> fl = new ArrayList<>();
-            fl.add("&7scegli cosa vedere:");
-            fl.add(" ");
             for (int i = 0; i < s.filters.size(); i++) {
                 fl.add(i == s.filterIdx ? "&a» " + s.filters.get(i).label() : "&8" + s.filters.get(i).label());
             }
-            fl.add(" ");
-            fl.add("&eclicca per cambiare");
+            fl.add("");
+            fl.add("&esinistro su &8| &edestro giù");
             inv.setItem(SLOT_FILTER, pane("&bfiltra per", fl));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
         if (s.rows.isEmpty()) {
-            inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
+            inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of()));
             return;
         }
         for (int i = 0; i < PER_PAGE; i++) {
@@ -568,9 +568,12 @@ public final class ProfileLists implements Listener {
             return;
         }
         if (slot == SLOT_FILTER) {
-            if (s.filters.size() > 1) {
+            org.bukkit.event.inventory.ClickType fc = event.getClick();
+            if (s.filters.size() > 1 && (fc.isLeftClick() || fc.isRightClick())) {
                 plugin.guiClick(p);
-                int next = (s.filterIdx + 1) % s.filters.size();
+                // sinistro = filtro precedente (su), destro = filtro successivo (giu')
+                int n = s.filters.size();
+                int next = fc.isLeftClick() ? (s.filterIdx - 1 + n) % n : (s.filterIdx + 1) % n;
                 Bukkit.getScheduler().runTask(plugin, () -> show(s, next, 0));
             }
             return;

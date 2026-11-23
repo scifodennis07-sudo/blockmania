@@ -202,9 +202,8 @@ rewards-gui:
   info:
     name: "&6informazioni"
     lore:
-      - "&7completa i livelli per ricevere ricompense"
-      - "&7sempre piu' forti"
-      - "&8ogni ricompensa ritirata da' exp al battlepass"
+      - "&7ricompense: &fcompleta i livelli"
+      - "&7battlepass: &f+exp a ogni ritiro"
   page:
     name: "&7pagina &f%page%&8/&f%pages%"
   page-prev:
@@ -212,16 +211,15 @@ rewards-gui:
   page-next:
     name: "&7pagina successiva"
   level-info-lore:
-    - "&7livello raggiunto: &f%level%&8/&f%max%"
+    - "&7livello: &f%level%&8/&f%max%"
     - "&7ritirati: &f%claimed%"
     - "&7da ritirare: &e%unclaimed%"
     - "&7prossimo livello: &f%have_text%&8/&f%next_text%"
   pass:
     info-lore:
       - "&7exp: &f%exp%"
-      - "&7livello raggiunto: &f%level%&8/&f%max%"
-      - "&7ogni livello servono &f%exp_level%&7 exp"
-      - "&7si ottengono ritirando le ricompense"
+      - "&7livello: &f%level%&8/&f%max%"
+      - "&7exp per livello: &f%exp_level%"
       - "&7da ritirare: &e%unclaimed%"
   types:
     broken:
@@ -230,7 +228,7 @@ rewards-gui:
       base: 100
       growth: 0.05
       lore:
-        - "&7ne hai spaccati &f%have%"
+        - "&7spaccati: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -241,7 +239,7 @@ rewards-gui:
       base: 150
       growth: 0.05
       lore:
-        - "&7ne hai colpiti &f%have%"
+        - "&7colpiti: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -252,7 +250,7 @@ rewards-gui:
       base: 100
       growth: 0.05
       lore:
-        - "&7ne hai guadagnati &f%have%"
+        - "&7guadagnati: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -263,7 +261,7 @@ rewards-gui:
       base: 100
       growth: 0.05
       lore:
-        - "&7ne hai spesi &f%have%"
+        - "&7spesi: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -274,7 +272,7 @@ rewards-gui:
       base: 100
       growth: 0.05
       lore:
-        - "&7ne hai guadagnati &f%have%"
+        - "&7guadagnati: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -285,7 +283,7 @@ rewards-gui:
       base: 100
       growth: 0.05
       lore:
-        - "&7ne hai spesi &f%have%"
+        - "&7spesi: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -297,7 +295,7 @@ rewards-gui:
       base: 1
       growth: 0
       lore:
-        - "&7ne hai platinate &f%have%"
+        - "&7platinate: &f%have%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -311,7 +309,7 @@ rewards-gui:
       list: [60, 360, 720, 1440, 2880]
       after-step: 2880
       lore:
-        - "&7hai giocato &f%have_text%"
+        - "&7giocato: &f%have_text%"
         - "&7livello: &f%level%&8/&f%max%"
         - "&7da ritirare: &e%unclaimed%"
         - ""
@@ -332,54 +330,51 @@ rewards-gui:
     locked:
       name: "&7livello &e%number%"
       lore:
-        - ""
         - "&7ricompense:"
-        - "&8 - &e%reward_lines%"
+        - "&8- &e%reward_lines%"
+        - ""
         - "&7serve: %need_text%"
-        - "&8ti manca: &f%missing_text%"
-        - "&8bloccato"
+        - "&7manca: &f%missing_text%"
+        - "&7stato: &cbloccato"
     ready:
       name: "&alivello &e%number% &acompletato"
       lore:
-        - ""
         - "&7ricompense:"
-        - "&8 - &e%reward_lines%"
+        - "&8- &e%reward_lines%"
         - ""
         - "&eclicca per ritirare"
     claimed:
       name: "&8livello &e%number% &8ritirato"
       lore:
-        - ""
         - "&7ricompense:"
-        - "&8 - &e%reward_lines%"
+        - "&8- &e%reward_lines%"
+        - ""
+        - "&7stato: &8ritirato"
   daily:
     coin: 25
     minutes: 30                 # minuti giocati (non AFK) prima di poter ritirare
     yes: "SI"
     no: "NO"
     info-lore:
-      - "&7gioca &f%need%&7 minuti per ritirarla"
-      - "&7ne puoi ritirare una al giorno"
+      - "&7serve: &f%need% minuti di gioco"
+      - "&7limite: &funa al giorno"
     states:
       wait:
         name: "&fricompensa giornaliera"
         lore:
-          - ""
           - "&7ricompensa: &e%coin_reward% coin"
-          - "&7gioca ancora &f%left%&7 minuti"
-          - "&8giocati &f%minutes%&8/&f%need%"
+          - "&7giocati: &f%minutes%&8/&f%need% minuti"
+          - "&7mancano: &f%left% minuti"
       ready:
         name: "&aricompensa giornaliera"
         lore:
-          - ""
           - "&7ricompensa: &e%coin_reward% coin"
           - ""
           - "&eclicca per ritirare"
       claimed:
-        name: "&cgia' ritirata"
+        name: "&cgià ritirata"
         lore:
-          - ""
-          - "&7torna domani dopo mezzanotte"
+          - "&7prossima: &fdomani dopo mezzanotte"
   # ricompense per livello (su 100 livelli: negli altri si scala). Ogni fascia ("upto" = fino a questo livello) da' piu'
   # premi insieme (items): "amount" = quanti al primo livello della fascia, "step" = quanti in piu' a ogni livello
   # successivo. Tipi: coin, blockcoin, cheque_<tipo> (standardball, doubleball, ghostball, explosionball, coin,
@@ -1684,20 +1679,16 @@ upgrade-gui:
   previous:
     name: "&7pagina precedente"
     lore:
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   next:
     name: "&7pagina successiva"
     lore:
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   info:
     name: "&6informazioni"
     lore:
-      - ""
-      - "&7qui potenzi il tuo lanciapalle"
-      - "&7pagando con i tuoi coin"
-      - ""
-      - "&8• &7coin &a%coin%"
-      - "&8• &7miniera &f%mine%"
+      - "&7coin: &a%coin%"
+      - "&7miniera: &f%mine%"
 
   # i tre tasti: cmd 1 = verde (si puo' potenziare), 2 = rosso (serve la miniera dopo),
   # 3 = grigio (potenziamento che non esiste ancora). "maxed" = livello massimo raggiunto (rosso).
@@ -1707,9 +1698,8 @@ upgrade-gui:
       cmd: 1
       name: "&alivello &f%level% &8→ &f%next_level%"
       lore:
-        - ""
-        - "&8• &7%label% &f%current% &8→ &a%next%"
-        - "&8• &7costo &e%cost% &7%currency%"
+        - "&7%label%: &f%current% &8→ &a%next%"
+        - "&7costo: &e%cost% %currency%"
         - ""
         - "&eclicca per potenziare"
     locked:
@@ -1717,34 +1707,27 @@ upgrade-gui:
       cmd: 2
       name: "&clivello &f%level% &8→ &f%next_level%"
       lore:
-        - ""
-        - "&7per continuare devi sbloccare"
-        - "&7la miniera successiva"
-        - ""
-        - "&8• &7miniera attuale &f%mine%"
+        - "&7miniera: &f%mine%"
+        - "&7serve: &cminiera successiva"
     none:
       material: GLASS_PANE
       cmd: 3
       name: "&8in arrivo"
-      lore:
-        - ""
-        - "&7qui arrivera un nuovo potenziamento"
+      lore: []
     maxed:
       material: GLASS_PANE
       cmd: 2
       name: "&clivello massimo"
       lore:
-        - ""
-        - "&8• &7%label% &f%current%"
-        - ""
-        - "&7hai gia il massimo"
+        - "&7%label%: &f%current%"
+        - "&7stato: &alivello massimo"
 
   # lore delle icone (se un'icona non ne ha una sua)
   icon-lore:
     - "&7%description%"
     - ""
-    - "&8• &7livello &f%level%&8/&f%max%"
-    - "&8• &7%label% attuale &f%current%"
+    - "&7livello: &f%level%&8/&f%max%"
+    - "&7%label%: &f%current%"
 
   # le icone: il quadrato di ogni potenziamento. cmd = modello nel pack (le puoi cambiare quando le disegni)
   icons:
@@ -1762,32 +1745,32 @@ upgrade-gui:
       material: GLASS_PANE
       cmd: 403
       name: "&f%label%"
-      description: "le palle viaggiano piu veloci"
+      description: "le palle viaggiano più veloci"
     capacity:
       material: GLASS_PANE
       cmd: 404
       name: "&f%label%"
-      description: "puoi portare piu blockshell"
+      description: "puoi portare più blockshell"
     capacity_standardball:
       material: GLASS_PANE
       cmd: 408
       name: "&f%label%"
-      description: "puoi portare piu standardball"
+      description: "puoi portare più standardball"
     capacity_doubleball:
       material: GLASS_PANE
       cmd: 405
       name: "&f%label%"
-      description: "puoi portare piu doubleball"
+      description: "puoi portare più doubleball"
     capacity_ghostball:
       material: GLASS_PANE
       cmd: 406
       name: "&f%label%"
-      description: "puoi portare piu ghostball"
+      description: "puoi portare più ghostball"
     capacity_explosionball:
       material: GLASS_PANE
       cmd: 407
       name: "&f%label%"
-      description: "puoi portare piu explosionball"
+      description: "puoi portare più explosionball"
 
   # TITOLO. title.text e' il testo/sfondo disegnato (i caratteri del tuo font); {shift:N} sposta di N pixel
   # (negativo = indietro). I numeri delle pagine stanno in title.page e restano fermi
@@ -1801,7 +1784,7 @@ upgrade-gui:
       "\u3c03": 179
     advance: 0                 # 0 = calcolato da solo. Se metti un numero, vale sempre quello
     page:
-      text: "%page%/%pages%"   # vuoto = niente numeri
+      text: "%page%/%pages%"   # il numero c'e' sempre (anche 1/1): vuoto = "%page%/%pages%"
       set: main                # quale set di numeri (vedi "glyphs")
       shadow: true             # true = numeri con l'ombra
       shadow-set: main-shadow
@@ -1904,60 +1887,54 @@ mines-gui:
   previous:
     name: "&7pagina precedente"
     lore:
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   next:
     name: "&7pagina successiva"
     lore:
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   info:
     name: "&6informazioni"
     lore:
-      - ""
-      - "&7le miniere si comprano con i blockcoin"
-      - ""
-      - "&8• &7blockcoin &e%blockcoin%"
-      - "&8• &7miniera &f%mine%"
+      - "&7blockcoin: &e%blockcoin%"
+      - "&7miniera: &f%mine%"
 
   states:
     owned:
       material: GLASS_PANE
       name: "&aminiera %number%"
       lore:
+        - "&7scavati: &e%broken%&8/&a%blocks%"
+        - "&7in tutto: &b%total%"
+        - "&7rifatta: &d%runs%&8/&d%max_runs%"
         - ""
-        - "&8• &7blocchi da scavare &a%blocks%"
-        - "&8• &7scavati ora &e%broken%&8/&e%blocks%"
-        - "&8• &7scavati in tutto &b%total%"
-        - "&8• &7rifatta &d%runs%&8/&d%max_runs%"
+        - "%action%"
     locked:
       material: GLASS_PANE
       name: "&cminiera %number%"
       lore:
-        - ""
-        - "&8• &7prezzo &e%price% &7blockcoin"
-        - "&8• &7blocchi da scavare &a%blocks%"
+        - "&7prezzo: &e%price% blockcoin"
+        - "&7blocchi: &a%blocks%"
         - ""
         - "%action%"
     platinum:
       material: GLASS_PANE
       name: "&bminiera %number% &8(platino)"
       lore:
+        - "&7in tutto: &b%total%"
+        - "&7rifatta: &d%runs%&8/&d%max_runs%"
+        - "&7stato: &bplatinata"
         - ""
-        - "&8• &7blocchi da scavare &a%blocks%"
-        - "&8• &7scavati in tutto &b%total%"
-        - "&8• &7rifatta &d%runs%&8/&d%max_runs%"
-        - ""
-        - "&bminiera platinata, non si rifa piu"
+        - "%action%"
     empty:
       material: GLASS_PANE
       name: "&8miniera non disponibile"
       lore:
-        - ""
-        - "&7presto arrivera una nuova miniera"
+        - "&7stato: &8in arrivo"
 
   # riga "%action%" della lore delle miniere bloccate: buy = e' la prossima e si puo comprare, far = ce ne sono altre prima
   actions:
     buy: "&eclicca per acquistare"
-    far: "&7sblocca prima la miniera precedente"
+    far: "&7serve: &cminiera precedente"
     owned: "&eclicca per entrare"
     platinum: "&eclicca per entrare"
 
@@ -2028,41 +2005,38 @@ items-gui:
   up:
     name: "&7pagina precedente"
     lore:
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   page:
     name: "&7pagina &f%page%&8/&f%pages%"
     lore:
-      - "&8%category%: &f%count% &8oggetti"
+      - "&7%category%: &f%count% oggetti"
   down:
     name: "&7pagina successiva"
     lore:
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   info:
     name: "&f%category%"
     lore:
-      - "&8%count% oggetti"
-      - "&8pagina &f%page%&8/&f%pages%"
+      - "&7oggetti: &f%count%"
+      - "&7pagina: &f%page%&8/&f%pages%"
   empty-category:
     name: "&8in arrivo"
     lore:
-      - ""
-      - "&7questa categoria non e' ancora pronta"
+      - "&7stato: &8in arrivo"
   selected-line: "&a► aperta"
   click-line: "&eclicca per aprire"
 
   # nella categoria dei note block: clic destro apre le varianti del blocco
   block-lore:
     - ""
-    - "&6clic destro &7apre le varianti"
-    - "&6clic sinistro &7ne ricevi 1"
-    - "&6shift + clic &7ricevi uno stack"
+    - "&esinistro 1 &8| &eshift stack"
+    - "&edestro per le varianti"
 
   # come si vede un oggetto nella lista (se non e' un lanciapalle o un blocco)
   item-name: "&f%material% &8cmd &f%cmd%"
   item-lore:
     - ""
-    - "&6clic &7ne ricevi 1"
-    - "&6shift + clic &7ricevi uno stack"
+    - "&eclicca per 1 &8| &eshift stack"
 
   # LE CATEGORIE (la barra in alto, una per slot di "categories").
   #   type: blocks = i note block custom (solo la variante 1 di ognuno)
@@ -2074,40 +2048,40 @@ items-gui:
       type: blocks
       name: "&fnote block"
       lore:
+        - "&7contiene: &fblocchi custom"
         - ""
-        - "&7tutti i blocchi custom"
     - id: stick
       type: items
       material: STICK
       cmds: "1-9"
       name: "&fstick"
       lore:
+        - "&7contiene: &fmodelli dello stick"
         - ""
-        - "&7oggetti con il modello dello stick"
     - id: feather
       type: items
       material: FEATHER
       cmds: "1-53"
       name: "&fpiuma"
       lore:
+        - "&7contiene: &fmodelli della piuma"
         - ""
-        - "&7oggetti con il modello della piuma"
     - id: glass_pane
       type: items
       material: GLASS_PANE
       cmds: "1-20,501-514,999"
       name: "&fpannello"
       lore:
+        - "&7contiene: &fpannelli e icone"
         - ""
-        - "&7pannelli di vetro con modelli e icone"
     - id: snowball
       type: items
       material: SNOWBALL
       cmds: "1-4"
       name: "&fpalla di neve"
       lore:
+        - "&7contiene: &fpalle custom"
         - ""
-        - "&7palle con il modello custom"
 
   # TITOLO: sfondo disegnato + numero pagina (1/5) nella barra in alto
   title:
@@ -2159,8 +2133,8 @@ variants-gui:
   info:
     name: "&fblocco %number%"
     lore:
-      - "&8vita &f%health%"
-      - "&8le varianti sono le fasi di danno del blocco"
+      - "&7vita: &f%health%"
+      - "&7varianti: &ffasi di danno"
   previous:
     name: "&7blocco precedente"
     lore: []
@@ -2172,8 +2146,7 @@ variants-gui:
     lore: []
   item-lore:
     - ""
-    - "&6clic &7ne ricevi 1"
-    - "&6shift + clic &7ricevi uno stack"
+    - "&eclicca per 1 &8| &eshift stack"
 
   title:
     text: "&f{shift:-15}\u3c30"

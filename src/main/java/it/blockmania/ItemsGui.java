@@ -318,6 +318,12 @@ public final class ItemsGui implements Listener {
         int per = perPage();
         int page = Math.max(0, (number - 1) / per);
         int pages = Math.max(1, (plugin.getMaxBlock() + per - 1) / per);
+        // nome della lista nella barra grigia in alto: lo stesso di title() (testo e posizione), scurito come lo sfondo.
+        // Il popup (varianti) non scrive un suo titolo. Inventario: shopitem-2 lo ha gia' a colori pieni, niente inv_full.
+        GuiTitle under = new GuiTitle(plugin);
+        String catName = blocksCategoryName();
+        UpgradeManager.barTitle(plugin, under, catName.isBlank() ? "OGGETTI" : "OGGETTI " + catName, "OGGETTI");
+        t.atComponent(0, MinesGui.tint(under.build(), null), under.cursor());
         // numero pagina della lista (barra in alto), scurito
         String plain = (page + 1) + "/" + pages;
         String set = c.getString(P + "title.number.set", "main");
@@ -354,6 +360,16 @@ public final class ItemsGui implements Listener {
                     .decoration(TextDecoration.ITALIC, false);
             t.atComponent(x + IMG, glyph, NB_ADVANCE);
         }
+    }
+
+    /** Nome (senza colori) della categoria dei note block, come lo usa title(); "" se non c'e'. */
+    private String blocksCategoryName() {
+        for (Map<?, ?> cat : categories()) {
+            if (str(cat.get("type"), "items").equalsIgnoreCase("blocks")) {
+                return BlockMania.stripCodes(str(cat.get("name"), ""));
+            }
+        }
+        return "";
     }
 
     /** Oggetto invisibile (clic e descrizione restano) al posto di quello vero, quando il disegno lo fa il font. */

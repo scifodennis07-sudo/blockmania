@@ -98,25 +98,30 @@ public final class UserProfileRewards implements Listener {
     /** Righe di lore per l'icona exp del profilo (exp totale, livello pass, quanto manca, ritiri). */
     public List<String> expLore(Player target) {
         if (target == null) {
-            return List.of("&7Exp: &fgiocatore offline");
+            return List.of("&7exp: &coffline");
         }
         return rewards().staffExpLines(target);
     }
 
     /** Popup comandi sull'exp del pass: aggiungi, rimuovi, setta, azzera. */
     public void openExp(Player staff, Player target, Runnable onBack) {
+        openExp(staff, target, onBack, null);
+    }
+
+    /** Come sopra; background = sfondo della GUI da cui si apre (con il suo titolo), scurito sotto il popup. */
+    public void openExp(Player staff, Player target, Runnable onBack, java.util.function.Consumer<GuiTitle> background) {
         if (target == null || !target.isOnline()) {
             GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire i suoi exp.");
             return;
         }
         final UUID id = target.getUniqueId();
         ui.openCommands(staff, "EXP", List.of("give", "remove", "set", "reset"),
-                cmd -> later(() -> runExp(staff, id, cmd, onBack)),
+                cmd -> later(() -> runExp(staff, id, cmd, onBack, background)),
                 () -> {
                     if (onBack != null) {
                         later(onBack);
                     }
-                }, false, null);
+                }, false, null, background);
     }
 
     // ------------------------------------------------------------------
@@ -189,12 +194,12 @@ public final class UserProfileRewards implements Listener {
         if (confirmImage != null) {
             // conferma nell'immagine: contano solo i due bottoni
             for (int slot : SLOTS_YES) {
-                inv.setItem(slot, pane("&aconferma", List.of("&7Azzera tutte le ricompense di &f" + target.getName() + "&7.",
-                        "", "&eclicca per confermare")));
+                inv.setItem(slot, pane("&aconferma", List.of("&7azzera: &ftutte le ricompense",
+                        "&7di: &f" + target.getName(), "", "&eclicca per confermare")));
                 s.actions.put(slot, "yes");
             }
             for (int slot : SLOTS_NO) {
-                inv.setItem(slot, pane("&cannulla", List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare")));
+                inv.setItem(slot, pane("&cannulla", List.of("&eclicca per annullare")));
                 s.actions.put(slot, "no");
             }
         } else {
@@ -308,7 +313,10 @@ public final class UserProfileRewards implements Listener {
     private java.util.function.Consumer<GuiTitle> rewardsBg(Player t, Session s) {
         final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images());
-        return g -> g.atComponent(0, v.title(), v.cursor());
+        return g -> {
+            g.atComponent(0, v.title(), v.cursor());   // con il nome nella barra in alto: resta uguale, scurito
+            UserProfilePowers.invVariant(g, UserProfilePowers.INV_LOW);   // ricompense
+        };
     }
 
     /** Conferma che lascia dietro, scurita, la GUI ricompense da cui si arriva (stessa pagina, stesso titolo). */
@@ -319,9 +327,11 @@ public final class UserProfileRewards implements Listener {
         }
         final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images());
-        // lo scurimento lo fa confirmOver; il nome nella barra e' quello della conferma
-        ui.confirmOver(staff, text, g -> g.atComponent(0, v.title(), v.cursor()),
-                onYes, () -> later(() -> show(staff, s)));
+        // lo scurimento lo fa confirmOver; nella barra in alto resta (scurito) il nome della GUI ricompense
+        ui.confirmOver(staff, text, g -> {
+            g.atComponent(0, v.title(), v.cursor());
+            UserProfilePowers.invVariant(g, UserProfilePowers.INV_LOW);   // ricompense
+        }, onYes, () -> later(() -> show(staff, s)));
     }
 
     private void later(Runnable r) {
@@ -502,7 +512,7 @@ public final class UserProfileRewards implements Listener {
     //  Exp del pass
     // ------------------------------------------------------------------
 
-    private void runExp(Player staff, UUID id, String cmd, Runnable onBack) {
+    private void runExp(Player staff, UUID id, String cmd, Runnable onBack, java.util.function.Consumer<GuiTitle> background) {
         Player t = Bukkit.getPlayer(id);
         if (t == null) {
             GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
@@ -519,7 +529,7 @@ public final class UserProfileRewards implements Listener {
         }
         AmmoManager a = plugin.getAmmo();
         final int now = a.getCounter(t, "rw_exp");
-        final Runnable again = () -> later(() -> openExp(staff, Bukkit.getPlayer(id), onBack));
+        final Runnable again = () -> later(() -> openExp(staff, Bukkit.getPlayer(id), onBack, background));
         switch (cmd) {
             case "give" -> ui.askNumber(staff, "aggiungi exp", "AGGIUNGI EXP " + now, 1, 1_000_000_000L,
                     v -> later(() -> setExp(staff, id, (long) expOf(id) + v, again)), again);

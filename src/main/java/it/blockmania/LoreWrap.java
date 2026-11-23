@@ -8,12 +8,17 @@ import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Lore corte: spezza le righe troppo lunghe (oltre {@link #LIMIT} caratteri VISIBILI) andando a capo tra le parole,
  * cosi' il riquadro dell'item non diventa largo un chilometro. I codici colore (&a, §a, &#rrggbb, §x§r§r§g§g§b§b)
  * non contano e la riga successiva riprende il colore/formato attivo. Le parole piu' lunghe del limite vengono
  * spezzate a meta' (unico caso).
+ * <p>
+ * Le righe di ISTRUZIONE (tasti/click: "&eclicca per aprire  &8|  &cQ per eliminare", "&eclick destro: ...")
+ * non vengono MAI spezzate, anche se piu' lunghe del limite: vedi {@link #isInstruction(String)}.
  * <p>
  * Versione stringa (legacy, prima di plugin.text) e versione Component (dopo plugin.text: passa dal testo legacy §).
  * Nomi: {@link #name(String)} / {@link #name(Component)} accorciano con "..." oltre {@link #NAME_LIMIT}.
@@ -118,6 +123,88 @@ public final class LoreWrap {
     }
 
     // ------------------------------------------------------------------
+    //  Righe di istruzione (mai spezzate)
+    // ------------------------------------------------------------------
+
+    /** Parole dei tasti/click: clicca, click, premi, tasto, shift, trascina, "Q per/su", "destro:"/"sinistro:". */
+    private static final Pattern KEYWORD = Pattern.compile(
+            "\\b(clicca\\w*|click\\w*|premi|tasto|tasti|shift|trascina\\w*|q\\s+(per|su))\\b"
+                    + "|\\b(destro|sinistro)\\s*:");
+    /** Riga che COMINCIA con un'istruzione ("clicca per...", "click destro: ...", "tasto Q per ...", "Q su ..."). */
+    private static final Pattern STARTS = Pattern.compile(
+            "^[^a-z0-9]*(clicca\\w*|click\\w*|premi|tasto|tasti|shift|trascina\\w*|q\\s+(per|su)"
+                    + "|destro\\s*:|sinistro\\s*:)");
+    /** Legenda dei tasti a meta' riga: "Testa: click destro = ...", "Carta: click: ...". */
+    private static final Pattern LEGEND = Pattern.compile(
+            "\\b(clicca|click|tasto|shift)(\\s+(destro|sinistro|centrale|q))?\\s*[=:]");
+
+    /** Testo visibile (senza codici colore e segni chiave). */
+    private static String plain(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); ) {
+            int cl = codeLength(s, i);
+            if (cl > 0) {
+                i += cl;
+                continue;
+            }
+            char ch = s.charAt(i);
+            if (!isMark(ch)) {
+                sb.append(ch);
+            }
+            i++;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Riga di istruzione (tasti/click) da tenere SEMPRE intera su una riga:
+     * <ul>
+     *     <li>contiene il separatore " | " e una parola dei tasti (es. "clicca per aprire | Q per eliminare");</li>
+     *     <li>il primo testo visibile e' giallo (&e) - colore delle istruzioni;</li>
+     *     <li>e' rossa (&c) e contiene una parola dei tasti (es. "&cclick destro o Q per eliminare");</li>
+     *     <li>comincia con una parola dei tasti (clicca/click/premi/tasto/shift/trascina/Q per/destro:/sinistro:)
+     *     o e' una legenda ("Testa: click destro = ...").</li>
+     * </ul>
+     * Le frasi descrittive (grigie) che nominano "clicca" a meta' ("Nella cartella clicca prendi...") vanno a capo.
+     */
+    public static boolean isInstruction(String legacy) {
+        if (legacy == null) {
+            return false;
+        }
+        String text = plain(legacy).toLowerCase(Locale.ROOT);
+        if (text.isBlank()) {
+            return false;
+        }
+        boolean keyword = KEYWORD.matcher(text).find();
+        if (keyword && text.contains(" | ")) {
+            return true;   // "clicca per aprire | Q per eliminare" (un motivo "[R1] testo | staff: ..." va a capo)
+        }
+        // colore attivo sul primo carattere visibile
+        String state = "";
+        for (int i = 0; i < legacy.length(); ) {
+            int cl = codeLength(legacy, i);
+            if (cl > 0) {
+                state = advance(state, legacy.substring(i, i + cl));
+                i += cl;
+                continue;
+            }
+            char ch = legacy.charAt(i);
+            if (!isMark(ch) && !Character.isWhitespace(ch)) {
+                break;
+            }
+            i++;
+        }
+        char color = state.length() >= 2 ? Character.toLowerCase(state.charAt(1)) : ' ';
+        if (color == 'e') {
+            return true;
+        }
+        if (color == 'c' && keyword) {
+            return true;
+        }
+        return STARTS.matcher(text.trim()).find() || LEGEND.matcher(text).find();
+    }
+
+    // ------------------------------------------------------------------
     //  Stringhe legacy (&a...)
     // ------------------------------------------------------------------
 
@@ -159,7 +246,7 @@ public final class LoreWrap {
 
     /** Spezza una riga senza "\n"; ritorna lo stato colore finale. */
     private static String wrapOne(String line, int limit, List<String> out) {
-        if (visibleLength(line) <= limit) {
+        if (visibleLength(line) <= limit || isInstruction(line)) {   // istruzioni: sempre intere
             out.add(line);
             return stateAfter("", line);
         }
@@ -300,7 +387,12 @@ public final class LoreWrap {
             out.add(line);
             return out;
         }
-        for (String s : wrap(LEGACY.serialize(line), limit)) {
+        String legacy = LEGACY.serialize(line);
+        if (isInstruction(legacy) && !legacy.contains("\n")) {   // istruzione: resta identica
+            out.add(line);
+            return out;
+        }
+        for (String s : wrap(legacy, limit)) {
             out.add(fromLegacy(s));
         }
         return out;
@@ -387,7 +479,8 @@ public final class LoreWrap {
             return false;
         }
         for (Component c : lore) {
-            if (c != null && PLAIN.serialize(c).length() > LIMIT && !unsafe(c)) {
+            if (c != null && PLAIN.serialize(c).length() > LIMIT && !unsafe(c)
+                    && !isInstruction(LEGACY.serialize(c))) {
                 return true;
             }
         }

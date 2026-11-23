@@ -94,10 +94,10 @@ public final class Tickets implements Listener {
     private static final String FONT_TINY2 = "minecraft:tiny2";
     private static final char NAV2 = '\uF700';
     private static final char NAV2_SH = '\uF710';
-    /** Larghezza massima (pixel) del testo nella barra dei popup: oltre esce dal riquadro. */
+    /** Larghezza massima (pixel) del testo nella barra dei popup: interno 64..125 (62 px) - 4 (BAR_WIDTH.md). */
     private static final int BAR_MAX = 58;
-    /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5. */
-    private static final int POPUP_CX = 94;
+    /** Centro (pixel immagine) di barra e numero pagina nei popup ticket-5: barra 64..125, centro 94.5 -> 95 (BAR_WIDTH.md). */
+    private static final int POPUP_CX = 95;
     /** Fondo (pixel immagine) delle etichette di stato/sezione nella barra del ticket. */
     private static final int CHIP_BOTTOM = 50;
 
@@ -129,7 +129,7 @@ public final class Tickets implements Listener {
 
     private static final String[] STATUS_MODEL = {"ticket_open", "ticket_wait", "ticket_closed"};
 
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault());
 
     /** Data e ora complete (fuso Europe/Rome) per le info dello staff nel ticket. */
     private static final DateTimeFormatter DATE_FULL = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.of("Europe/Rome"));
@@ -931,20 +931,20 @@ public final class Tickets implements Listener {
         } else {
             names = String.join(", ", t.repliers.values()) + (t.repliersUnavailable ? " &7(altri non disponibili)" : "");
         }
-        out.add("&7staffer che hanno risposto: &f" + names);
+        out.add("&7risposto da: &f" + names);
         out.add("&7aperto il: &f" + DATE_FULL.format(Instant.ofEpochMilli(t.created)));
         if (!t.open) {
             out.add("&7chiuso il: &f" + (t.closedAt > 0 ? DATE_FULL.format(Instant.ofEpochMilli(t.closedAt)) : "non disponibile"));
         }
         String rate;
         if (t.open) {
-            rate = "&7non ancora valutato";
+            rate = "&8no";
         } else if (t.rating > 0) {
             rate = starsLore(t.rating) + " &7(" + t.rating + "/5" + (t.ratedAuto ? ", automatica" : "") + ")";
         } else if (t.rating == 0) {
-            rate = "&7in attesa del voto del player";
+            rate = "&ein attesa";
         } else {
-            rate = "&7non richiesta";
+            rate = "&8non richiesta";
         }
         out.add("&7valutazione: " + rate);
         return out;
@@ -1276,20 +1276,16 @@ public final class Tickets implements Listener {
 
         put(h, 0, pane("&cchiudi", List.of()), "close");
         put(h, 1, pane("&cchiudi", List.of()), "close");
-        List<String> info = new ArrayList<>(List.of("&7Qui puoi chiedere aiuto allo staff.", "",
-                "&fAssistenza generale: &7domande e dubbi",
-                "&fSegnala bug: &7errori e problemi di acquisto",
-                "&fSegnala player: &7chi infrange le regole", "",
-                "&7Puoi avere &fun solo ticket aperto&7 alla volta.",
-                "&7Per contestare un ban scrivi sul nostro Discord o Telegram."));
+        List<String> info = new ArrayList<>(List.of("&7ticket aperti: &fmassimo 1",
+                "&7contestare un ban: &fDiscord o Telegram"));
         put(h, 7, pane("&6informazioni", info), null);
         put(h, 8, pane("&6informazioni", info), null);
 
         String[] names = {"&bassistenza generale", "&dsegnala bug", "&6segnala player"};
         String[][] lores = {
-                {"&7Hai una domanda o non sai come fare qualcosa?", "&7Chiedi aiuto allo staff.", "", "&eclicca per aprire un ticket"},
-                {"&7Hai trovato un errore o un problema con un acquisto?", "&7Raccontacelo.", "", "&eclicca per aprire un ticket"},
-                {"&7Un giocatore sta infrangendo le regole?", "&7Scrivi chi e cosa ha fatto.", "", "&eclicca per aprire un ticket"}};
+                {"&7per: &fdomande e dubbi", "", "&eclicca per aprire un ticket"},
+                {"&7per: &ferrori e acquisti", "", "&eclicca per aprire un ticket"},
+                {"&7per: &fchi infrange le regole", "", "&eclicca per aprire un ticket"}};
         for (int c = 0; c < 3; c++) {
             for (int r = 1; r <= 3; r++) {
                 for (int k = 0; k < 3; k++) {
@@ -1301,15 +1297,13 @@ public final class Tickets implements Listener {
             List<String> lore = new ArrayList<>();
             lore.add("&7stato: &f" + STATUS_NAME[statusOf(last)]);
             lore.add("&7sezione: &f" + CAT_LABEL[catIndex(last.category)]);
-            lore.add("&7ultimo messaggio: &f" + DATE.format(Instant.ofEpochMilli(Math.max(last.updated, last.created))));
+            lore.add("&7ultimo: &f" + DATE.format(Instant.ofEpochMilli(Math.max(last.updated, last.created))));
             int un = unread(last, id, false);
             if (un > 0) {
-                lore.add("");
-                lore.add("&e" + un + (un == 1 ? " messaggio non letto" : " messaggi non letti"));
+                lore.add("&7non letti: &e" + un);
             }
             if (!last.open && last.rating == 0) {
-                lore.add("");
-                lore.add("&6devi ancora valutare il ticket");
+                lore.add("&7valutazione: &6da fare");
             }
             lore.add("");
             lore.add("&eclicca per aprire la chat");
@@ -1317,7 +1311,7 @@ public final class Tickets implements Listener {
                 put(h, s, pane("&fil tuo ultimo ticket &7#" + last.id, lore), "last");
             }
         }
-        List<String> mine = List.of("&7Tutti i ticket che hai aperto.", "", "&eclicca per vederli");
+        List<String> mine = List.of("&eclicca per aprire");
         for (int s = 47; s <= 51; s++) {
             put(h, s, pane("&bi miei ticket", mine), "list");
         }
@@ -1381,13 +1375,11 @@ public final class Tickets implements Listener {
 
         put(h, 1, pane("&cindietro", List.of()), "back");
         List<String> fl = new ArrayList<>();
-        fl.add("&7scegli cosa vedere:");
-        fl.add(" ");
         for (int i = 0; i < FILTERS.length; i++) {
             fl.add(i == filter ? "&a» " + FILTERS[i] : "&8" + FILTERS[i]);
         }
-        fl.add(" ");
-        fl.add("&eclicca per cambiare");
+        fl.add("");
+        fl.add("&esinistro su &8| &edestro giù");
         put(h, 7, pane("&bfiltra per", fl), "filter");
         put(h, 38, pane("&7pagina precedente", List.of()), "page:-1");
         put(h, 42, pane("&7pagina successiva", List.of()), "page:1");
@@ -1558,9 +1550,9 @@ public final class Tickets implements Listener {
             dimClipX0 = Integer.MAX_VALUE;
         }
         GuiTitle g = new GuiTitle(plugin);
+        // il codice nella barra del titolo lo scrive chatTitleG dentro c: resta quello della chat, scurito con il resto.
+        // Niente inventario a colori pieni: ticket-3..8 sono a tutta altezza (inventario nascosto, INV_FULL.md)
         g.atComponent(0, pop.build().append(tint(c.build(), null)), c.cursor());
-        // il codice nella barra del titolo sta SOPRA il popup (non coperta): colori pieni, non scuriti
-        tinyText(g, t.code, 94, true, '', '');
         return g;
     }
 
@@ -1574,9 +1566,8 @@ public final class Tickets implements Listener {
         // etichette sempre disegnate (scurite sotto i popup, come il resto dello sfondo)
         g.at(37 + IMG, "&f" + (char) (0x3f20 + si), "", CHIP_W[si] + 1);
         g.at(37 + CHIP_W[si] + 2 + IMG, "&f" + (char) (0x3f20 + ci), "", CHIP_W[ci] + 1);
-        if (clip == null) {
-            tinyText(g, t.code, 94, true, '', '');
-        }
+        // codice sempre: sotto un popup (clip != null) viene scurito insieme al resto (popupOverChat)
+        tinyText(g, t.code, 94, true, '', '');
 
         List<Line> lines = layout(t, viewer.getUniqueId(), staffView);
         // faccia 2D del player nel primo slot della barra
@@ -1630,7 +1621,9 @@ public final class Tickets implements Listener {
             }
             sb.append(bubbleChar(ln.side(), variant, 1)).append('');
             g.atComponent(xb + IMG, glyph(sb.toString(), tk(yb), 0xFFFFFF), bw);
-            g.atComponent(xb + 3 + IMG, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
+            // messaggi di sistema (side 2, riquadro giallo al centro): ogni riga centrata nel riquadro; gli altri a sinistra
+            int tx = ln.side() == 2 ? xb + 3 + Math.max(0, tw - own) / 2 : xb + 3;
+            g.atComponent(tx + IMG, glyph(ln.text(), tk(yb + 2), TEXT_RGB[ln.side()]), own);
             if (ln.side() == 0 && ln.idx() == 0) {
                 drawFace(g, faceOf(ln.m().author), VX0 + 1, yb + 2, 1);
             }
@@ -1669,31 +1662,28 @@ public final class Tickets implements Listener {
         headLore.add("&eclicca per aprire il profilo");
         put(h, 0, pane("&f" + t.ownerName, headLore), "profile");
         for (int s : SLOTS_UP) {
-            put(h, s, pane("&7sali", List.of("&7messaggi piu vecchi")), "scroll:1");
+            put(h, s, pane("&7sali", List.of("&eclicca per salire")), "scroll:1");
         }
         for (int s : SLOTS_DOWN) {
-            put(h, s, pane("&7scendi", List.of("&7messaggi piu recenti")), "scroll:-1");
+            put(h, s, pane("&7scendi", List.of("&eclicca per scendere")), "scroll:-1");
         }
-        List<String> wl = List.of("&eclick sinistro:", t.open ? "&fscrivi un messaggio" : "&cticket chiuso",
-                "&eclick destro:", "&flink del ticket");
+        List<String> wl = t.open ? List.of("&esinistro scrivi &8| &edestro link")
+                : List.of("&7stato: &cchiuso", "", "&edestro per i link");
         for (int s : SLOTS_WRITE) {
             put(h, s, pane(t.open ? "&fscrivi messaggio" : "&7ticket chiuso", wl), "write");
         }
         if (staffView) {
             // funzioni dello staff: ogni icona occupa 2 slot (uno sopra e uno sotto)
-            List<String> closeLore = List.of("&7Chiude il ticket.", "&7Il player viene avvisato e deve valutarlo.", "", "&eclicca per chiudere");
+            List<String> closeLore = List.of("&eclicca per chiudere");
             placeBottom(h, p, 0, pane("&cchiudi ticket", closeLore), t.open ? "closeticket" : null);
-            placeBottom(h, p, 1, pane("&dcambia sezione", List.of("&7Sposta il ticket in un'altra sezione,", "&7per esempio da Bug ad Assistenza.", "", "&eclicca per scegliere")), "cat");
-            placeBottom(h, p, 2, pane("&6tagga staffer", List.of("&7Dai accesso al ticket a un altro staffer.", "&7Devi scrivergli un messaggio.", "", "&eclicca per scegliere")), "tag");
+            placeBottom(h, p, 1, pane("&dcambia sezione", List.of("&7sezione: &f" + CAT_LABEL[catIndex(t.category)], "", "&eclicca per scegliere")), "cat");
+            placeBottom(h, p, 2, pane("&6tagga staffer", List.of("&eclicca per scegliere")), "tag");
             for (int i = 0; i < CANNED.length; i++) {
                 String key = CANNED[i];
                 List<String> lore = new ArrayList<>();
-                lore.add("&7messaggio che viene inviato:");
-                lore.add(" ");
-                lore.add("&f" + fillCanned(key, t));
+                lore.add("&7messaggio: &f" + fillCanned(key, t));
                 if (key.equals("chiusura")) {
-                    lore.add("");
-                    lore.add("&7Se il player non risponde entro &f" + autoCloseHours() + "h&7 il ticket si chiude da solo.");
+                    lore.add("&7chiusura auto: &f" + autoCloseHours() + "h");
                 }
                 lore.add("");
                 lore.add("&eclicca per inviare");
@@ -1711,8 +1701,8 @@ public final class Tickets implements Listener {
         int sel = stars.getOrDefault(p.getUniqueId(), 0);
 
         List<String> lockLore = t.open
-                ? List.of("&7Chiude il ticket.", "&7Dopo dovrai valutarlo da 1 a 5 stelle", "&7prima di poterne aprire un altro.", "", "&eclicca per chiudere")
-                : List.of("&7Questo ticket e chiuso.");
+                ? List.of("&7dopo: &fvaluti da 1 a 5", "", "&eclicca per chiudere")
+                : List.of("&7stato: &cchiuso");
         ItemStack lock = pane(t.open ? "&cchiudi ticket" : "&7ticket chiuso", lockLore);
         for (int s : new int[]{63, 64, 72, 73}) {
             put(h, s, lock, t.open ? "closeticket" : null);
@@ -1721,13 +1711,13 @@ public final class Tickets implements Listener {
             ItemStack star;
             if (pending) {
                 star = pane("&e" + (k + 1) + (k == 0 ? " stella" : " stelle"),
-                        List.of("&7Valuta il ticket con &e" + (k + 1) + "&7 su 5.", "", "&eclicca per scegliere"));
+                        List.of("&eclicca per scegliere"));
             } else if (t.open) {
-                star = pane("&7valutazione", List.of("&7Potrai valutare il ticket", "&7quando sara chiuso."));
+                star = pane("&7valutazione", List.of("&7stato: &8dopo la chiusura"));
             } else if (t.rating > 0) {
-                star = pane("&7valutazione: &e" + t.rating + " su 5", List.of(t.ratedAuto ? "&7assegnata in automatico" : "&7grazie per aver valutato!"));
+                star = pane("&7valutazione: &e" + t.rating + " su 5", List.of(t.ratedAuto ? "&7voto: &fautomatico" : "&7voto: &adato"));
             } else {
-                star = pane("&7valutazione", List.of("&7non richiesta per questo ticket"));
+                star = pane("&7valutazione", List.of("&7stato: &8non richiesta"));
             }
             String action = pending ? "star:" + k : null;
             put(h, 66 + k, star, action);
@@ -1736,10 +1726,10 @@ public final class Tickets implements Listener {
         ItemStack check;
         if (pending) {
             check = pane("&aconferma valutazione", sel > 0
-                    ? List.of("&7Stelle scelte: &e" + sel + " su 5", "", "&eclicca per confermare")
-                    : List.of("&7Scegli prima le stelle da 1 a 5."));
+                    ? List.of("&7stelle: &e" + sel + "&8/&e5", "", "&eclicca per confermare")
+                    : List.of("&7stelle: &cnessuna"));
         } else {
-            check = pane("&7valutazione", List.of(t.open ? "&7Disponibile dopo la chiusura." : "&7Gia valutato."));
+            check = pane("&7valutazione", List.of(t.open ? "&7stato: &8dopo la chiusura" : "&7stato: &agià valutato"));
         }
         for (int s : new int[]{71, 80}) {
             put(h, s, check, pending ? "rate" : null);
@@ -1958,9 +1948,9 @@ public final class Tickets implements Listener {
         h.inventory = Bukkit.createInventory(h, SIZE, popupOverChat(p, t, scroll, staffView ? IMG_CONF_STAFF : IMG_CONF_PLAYER).build());
         hideInventory(p);
         List<String> yes = what.equals("close")
-                ? List.of("&7Il ticket viene chiuso.", staffView ? "&7Il player viene avvisato e deve valutarlo." : "&7Dopo dovrai valutarlo con le stelle.", "", "&eclicca per confermare")
-                : List.of("&7Valutazione: &e" + stars.getOrDefault(id, 0) + " su 5 stelle", "&7Dopo non potrai cambiarla.", "", "&eclicca per confermare");
-        List<String> no = List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare");
+                ? List.of("&7ticket: &fsi chiude", staffView ? "&7player: &fdeve valutarlo" : "&7dopo: &fvaluti con le stelle", "", "&eclicca per confermare")
+                : List.of("&7stelle: &e" + stars.getOrDefault(id, 0) + "&8/&e5", "&7dopo: &fnon si cambia", "", "&eclicca per confermare");
+        List<String> no = List.of("&eclicca per annullare");
         for (int s : new int[]{46, 47, 48}) {
             put(h, s, pane("&aconferma", yes), "yes");
         }
@@ -1981,15 +1971,14 @@ public final class Tickets implements Listener {
         h.inventory = Bukkit.createInventory(h, SIZE, popupOverChat(p, t, chatScroll.getOrDefault(p.getUniqueId(), 0), IMG_CAT).build());
         hideInventory(p);
         put(h, 19, pane("&cindietro", List.of()), "chat");
-        put(h, 25, pane("&6filtro", List.of("&7Sposta il ticket in un'altra sezione,",
-                "&7per esempio da Bug ad Assistenza.", "&7Nella chat compare un avviso.")), null);
+        put(h, 25, pane("&6filtro", List.of("&7sezione: &f" + CAT_LABEL[catIndex(t.category)])), null);
         int[][] cols = {{1, 2}, {3, 4, 5}, {6, 7}};
         for (int i = 0; i < 3; i++) {
             boolean cur = CATS[i].equals(t.category);
             for (int r = 3; r <= 5; r++) {
                 for (int c : cols[i]) {
                     put(h, r * 9 + c, pane((cur ? "&a" : "&f") + CAT_LABEL[i],
-                            List.of(cur ? "&7sezione attuale" : "&eclicca per spostare qui")), cur ? null : "setcat:" + CATS[i]);
+                            List.of(cur ? "&7stato: &aattuale" : "&eclicca per spostare qui")), cur ? null : "setcat:" + CATS[i]);
                 }
             }
         }
@@ -2013,10 +2002,15 @@ public final class Tickets implements Listener {
                 ? popupOverChat(p, chatTicket, chatScroll.getOrDefault(p.getUniqueId(), 0), IMG_ITEMS)
                 : popupTitle(bg, IMG_ITEMS);
         if (chatTicket == null || bg == null) {
-            UserProfilePowers.topTitle(plugin, g, kind.equals("stafflist") ? "lista staff" : "ticket");
+            // sotto c'e' la GUI ticket senza chat (es. lista staff da comando): nella barra in alto resta il suo nome,
+            // scurito come lo sfondo (ticket-5 e' opaco e lo copre, quindi si scrive dopo); il popup non scrive il suo.
+            // Inventario: ticket-5 e' a tutta altezza (inventario nascosto), niente inv_full.
+            GuiTitle under = new GuiTitle(plugin);
+            UserProfilePowers.topTitle(plugin, under, "ticket");
+            g.atComponent(0, tint(under.build(), null), under.cursor());
         }
         tinyText(g, bar, POPUP_CX, true, BAR, BAR_SH);
-        navText(g, page + 1, pages, POPUP_CX + 1, NAV2, NAV2_SH);
+        navText(g, page + 1, pages, POPUP_CX, NAV2, NAV2_SH);   // sempre, anche 1/1
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         if (hide) {
             hideInventory(p);
@@ -2043,6 +2037,9 @@ public final class Tickets implements Listener {
     private static final java.util.regex.Pattern URL = java.util.regex.Pattern.compile("https?://[^\\s]+");
 
     private static final String[] LINK_FILTERS = {"tutti", "mandati dal player", "mandati dallo staff"};
+
+    /** Filtri della lista staff, nell'ordine della lore (click sinistro = su, destro = giu). */
+    private static final List<String> STAFF_MODES = List.of("open", "mine", "closed");
 
     private void openLinks(Player p, Ticket t, int page) {
         openLinks(p, t, page, 0);
@@ -2071,17 +2068,15 @@ public final class Tickets implements Listener {
         int pages = Math.max(1, (all.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
         Holder h = popup(p, "links", t.id, "link", page, pages, "chat", "&cindietro",
-                List.of("&7I link scritti nei messaggi del ticket.", "&7Clicca un link per aprirlo."), true, staffView ? IMG_CHAT : IMG_PCHAT);
+                List.of("&7link: &f" + all.size()), true, staffView ? IMG_CHAT : IMG_PCHAT);
         h.links = all;
         h.filter = filter;
         List<String> fl = new ArrayList<>();
-        fl.add("&7scegli cosa vedere:");
-        fl.add(" ");
         for (int i = 0; i < LINK_FILTERS.length; i++) {
             fl.add(i == filter ? "&a» " + LINK_FILTERS[i] : "&8" + LINK_FILTERS[i]);
         }
-        fl.add(" ");
-        fl.add("&eclicca per cambiare");
+        fl.add("");
+        fl.add("&esinistro su &8| &edestro giù");
         put(h, 16, pane("&bfiltra per", fl), "linkfilter");
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
@@ -2093,8 +2088,8 @@ public final class Tickets implements Listener {
             for (int k = 0; k < url.length(); k += 28) {
                 lore.add("&7" + url.substring(k, Math.min(url.length(), k + 28)).replace('&', ' '));
             }
-            lore.add(" ");
-            lore.add("&eclicca per aprirlo");
+            lore.add("");
+            lore.add("&eclicca per aprire");
             put(h, gridSlot(i), linkItem("&blink &7#" + (idx + 1), lore), "openlink:" + idx);
         }
         open(p, h);
@@ -2111,7 +2106,7 @@ public final class Tickets implements Listener {
         int pages = Math.max(1, (cand.size() + 20) / 21);
         page = Math.max(0, Math.min(page, pages - 1));
         Holder h = popup(p, "tag", t.id, "tag staff", page, pages, "chat", "&cindietro",
-                List.of("&7Dai accesso al ticket a un altro staffer.", "&7Poi gli scrivi un messaggio."), true, IMG_CHAT);
+                List.of(), true, IMG_CHAT);
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
             if (idx >= cand.size()) {
@@ -2125,9 +2120,10 @@ public final class Tickets implements Listener {
             OfflinePlayer off = Bukkit.getOfflinePlayer(u);
             meta.setOwningPlayer(off);
             meta.displayName(plugin.text((full ? "&c" : "&f") + staffSeen.get(u)));
-            meta.lore(loreComponents(List.of("&7ticket aperti: &f" + cnt + "/" + maxStaffOpen(),
-                    Bukkit.getPlayer(u) != null ? "&aonline" : "&7offline", " ",
-                    full ? "&cha gia troppi ticket aperti" : "&eclicca per taggarlo")));
+            meta.lore(loreComponents(full ? List.of("&7ticket: &f" + cnt + "&8/&f" + maxStaffOpen(),
+                    Bukkit.getPlayer(u) != null ? "&7stato: &aonline" : "&7stato: &8offline", "&7posti: &cpieno")
+                    : List.of("&7ticket: &f" + cnt + "&8/&f" + maxStaffOpen(),
+                    Bukkit.getPlayer(u) != null ? "&7stato: &aonline" : "&7stato: &8offline", "", "&eclicca per taggarlo")));
             LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
             head.setItemMeta(meta);
             put(h, gridSlot(i), head, full ? "deny" : "tagpick:" + u);
@@ -2188,16 +2184,15 @@ public final class Tickets implements Listener {
             default -> "aperti";
         };
         Holder h = popup(p, "stafflist", 0, bar, page, pages, "close", "&cchiudi",
-                List.of("&7Ticket: &f" + list.size(), "&7Max &f" + maxStaffOpen() + "&7 ticket tuoi alla volta."), true, IMG_CHAT);
+                List.of("&7ticket: &f" + list.size(), "&7massimo tuoi: &f" + maxStaffOpen()), true, IMG_CHAT);
         h.mode = mode;
-        String next = mode.equals("open") ? "mine" : mode.equals("mine") ? "closed" : "open";
-        List<String> modes = List.of("&7scegli cosa vedere:", " ",
+        List<String> modes = List.of(
                 (mode.equals("open") ? "&a» " : "&8") + "tutti gli aperti",
                 (mode.equals("mine") ? "&a» " : "&8") + "i tuoi aperti",
-                (mode.equals("closed") ? "&a» " : "&8") + "chiusi da te", " ",
-                "&7ticket: &f" + list.size(), " ", "&eclicca per cambiare");
+                (mode.equals("closed") ? "&a» " : "&8") + "chiusi da te", "",
+                "&esinistro su &8| &edestro giù");
         for (int s = 12; s <= 16; s++) {
-            put(h, s, pane("&bfiltra per", modes), "mode:" + next);
+            put(h, s, pane("&bfiltra per", modes), "mode");
         }
         for (int i = 0; i < 21; i++) {
             int idx = page * 21 + i;
@@ -2210,7 +2205,7 @@ public final class Tickets implements Listener {
             lore.add("&7player: &f" + t.ownerName);
             lore.add("&7sezione: &f" + CAT_LABEL[catIndex(t.category)]);
             lore.add("&7stato: &f" + STATUS_NAME[st]);
-            lore.add("&7ultimo messaggio: &f" + DATE.format(Instant.ofEpochMilli(t.updated)));
+            lore.add("&7ultimo: &f" + DATE.format(Instant.ofEpochMilli(t.updated)));
             if (!t.staff.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
                 for (UUID u : t.staff) {
@@ -2224,7 +2219,7 @@ public final class Tickets implements Listener {
             lore.addAll(staffInfoLines(t));
             int un = unread(t, me, true);
             if (un > 0) {
-                lore.add("&e" + un + " non letti");
+                lore.add("&7non letti: &e" + un);
             }
             lore.add("");
             lore.add("&eclicca per aprire");
@@ -2247,9 +2242,9 @@ public final class Tickets implements Listener {
         AnvilView view = MenuType.ANVIL.builder().title(at.build()).build(p);
         s.view = view;
         // oggetti invisibili: l'immagine dell'incudine disegna le icone (casa, scambio, invia)
-        view.setItem(0, pane(" ", List.of("&ctorna indietro")));
+        view.setItem(0, pane(" ", List.of("&eclicca per annullare")));
         view.setItem(1, pane("&escrivi in chat",
-                List.of("&7Per i messaggi lunghi: scrivi in chat", "&7(oppure scrivi &fannulla&7 per tornare indietro).")));
+                List.of("&7annulla: &fscrivi annulla", "", "&eclicca per scrivere in chat")));
         anvils.put(id, s);
         switching.add(id);
         try {
@@ -2339,7 +2334,7 @@ public final class Tickets implements Listener {
                 plugin.guiClick(p);
                 s.done = true;
                 p.closeInventory();
-                Bukkit.getScheduler().runTask(plugin, s.onCancel);
+                Bukkit.getScheduler().runTask(plugin, () -> s.onCancel.run());
             }
             return;
         }
@@ -2358,6 +2353,13 @@ public final class Tickets implements Listener {
         plugin.guiClick(p);
         if (action.equals("write") && event.isRightClick()) {
             action = "links";
+        }
+        if (action.equals("filter") || action.equals("linkfilter") || action.equals("mode")) {
+            // filtri: click sinistro = voce sopra, click destro = voce sotto (gli altri click non fanno niente)
+            if (!event.isLeftClick() && !event.isRightClick()) {
+                return;
+            }
+            action = action + ":" + (event.isRightClick() ? 1 : -1);
         }
         handle(p, h, action);
     }
@@ -2400,8 +2402,9 @@ public final class Tickets implements Listener {
             }
         } else if (action.equals("list")) {
             openList(p, 0, 0);
-        } else if (action.equals("filter")) {
-            openList(p, 0, (h.filter + 1) % FILTERS.length);
+        } else if (action.startsWith("filter:")) {
+            int d = Integer.parseInt(action.substring(7));
+            openList(p, 0, Math.floorMod(h.filter + d, FILTERS.length));
         } else if (action.startsWith("page:")) {
             int d = Integer.parseInt(action.substring(5));
             // nessun giro: ai limiti non succede niente (niente riapertura, niente flash)
@@ -2426,7 +2429,9 @@ public final class Tickets implements Listener {
             }
             openChat(p, tid, 0);
         } else if (action.startsWith("mode:")) {
-            openStaffList(p, action.substring(5), 0);
+            int d = Integer.parseInt(action.substring(5));
+            int cur = Math.max(0, STAFF_MODES.indexOf(h.mode == null ? "open" : h.mode));
+            openStaffList(p, STAFF_MODES.get(Math.floorMod(cur + d, STAFF_MODES.size())), 0);
         } else if (action.startsWith("scroll:")) {
             if (t != null) {
                 openChat(p, t.id, h.scroll + Integer.parseInt(action.substring(7)));
@@ -2442,8 +2447,9 @@ public final class Tickets implements Listener {
             }
         } else if (action.equals("links")) {
             openLinks(p, t, 0);
-        } else if (action.equals("linkfilter")) {
-            openLinks(p, t, 0, (h.filter + 1) % LINK_FILTERS.length);
+        } else if (action.startsWith("linkfilter:")) {
+            int d = Integer.parseInt(action.substring(11));
+            openLinks(p, t, 0, Math.floorMod(h.filter + d, LINK_FILTERS.length));
         } else if (action.startsWith("openlink:")) {
             int li = Integer.parseInt(action.substring(9));
             if (li >= 0 && li < h.links.size()) {
@@ -2547,7 +2553,7 @@ public final class Tickets implements Listener {
             }
             anvils.remove(id);
             if (!s.done) {
-                Bukkit.getScheduler().runTask(plugin, s.onCancel);
+                Bukkit.getScheduler().runTask(plugin, () -> s.onCancel.run());
             }
             return;
         }

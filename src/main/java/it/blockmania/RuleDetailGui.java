@@ -548,13 +548,19 @@ public final class RuleDetailGui implements Listener {
         GuiTitle g = new GuiTitle(plugin);
         scene(g, r, scroll, false);
         strip(g, r);
-        UserProfilePowers.topTitle(plugin, g, r.title() == null || r.title().isBlank() ? "regola " + r.code() : r.title());
+        UserProfilePowers.topTitle(plugin, g, topText(r));
         return g.build();
+    }
+
+    /** Testo della barra grigia in alto (uguale nel dettaglio e, scurito, sotto i popup). */
+    private static String topText(Rules.Rule r) {
+        return r.title() == null || r.title().isBlank() ? "regola " + r.code() : r.title();
     }
 
     /**
      * Sfondo per i popup (da scurire con MinesGui.tint, come in UserProfilePowers.confirmOver): immagine,
-     * icona grande, testo della striscia e bolle della chat (scroll 0), tutto con avanzamento reale 186.
+     * icona grande, testo della striscia e bolle della chat (scroll 0), tutto con avanzamento reale 186, e il titolo in alto
+     * (scurito insieme al resto: i popup non scrivono un loro titolo).
      */
     public void drawDimmedBackground(GuiTitle g, Rules.Rule r) {
         drawBackground(g, r, 0);
@@ -568,6 +574,8 @@ public final class RuleDetailGui implements Listener {
     private void drawBackground(GuiTitle g, Rules.Rule r, int scroll) {
         scene(g, r, scroll, true);
         strip(g, r, IMG + 7);
+        UserProfilePowers.topTitleDim(plugin, g, topText(r));
+        UserProfilePowers.invVariant(g, UserProfilePowers.INV_LOW);   // regole-3 (dettaglio)
     }
 
     /** Chiave del titolo: se cambia serve un inventario nuovo. */
@@ -629,41 +637,41 @@ public final class RuleDetailGui implements Listener {
             put(h, slot, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()), () -> back(s));
         }
         List<String> orange = new ArrayList<>();
-        orange.add("&7Tipo: " + colorOf(r.type()) + rules.label(r.type()));
-        orange.add("&7Tempo: &f" + Rules.timeLabel(r));
+        orange.add("&7tipo: " + colorOf(r.type()) + rules.label(r.type()));
+        orange.add("&7tempo: &f" + Rules.timeLabel(r));
         for (int slot : SLOTS_ORANGE) {
             put(h, slot, pane("&6sanzione", orange), null);
         }
         List<String> sq = new ArrayList<>();
-        sq.add("&7Regola &f" + code);
-        sq.add("&7Tipo: " + colorOf(r.type()) + rules.label(r.type()));
+        sq.add("&7codice: &f" + code);
+        sq.add("&7tipo: " + colorOf(r.type()) + rules.label(r.type()));
         for (int slot : SLOTS_SQUARE) {
             put(h, slot, pane("&f" + (r.title() == null || r.title().isBlank() ? "Regola " + code : r.title()), sq), null);
         }
         for (int slot : SLOTS_UP) {
-            put(h, slot, pane("&7sali", List.of("&7testo piu' in alto")), s.scroll > 0 ? () -> scroll(s, -1) : null);
+            put(h, slot, pane("&7sali", List.of("&eclicca per salire")), s.scroll > 0 ? () -> scroll(s, -1) : null);
         }
         for (int slot : SLOTS_DOWN) {
-            put(h, slot, pane("&7scendi", List.of("&7testo piu' in basso")), s.scroll < max ? () -> scroll(s, 1) : null);
+            put(h, slot, pane("&7scendi", List.of("&eclicca per scendere")), s.scroll < max ? () -> scroll(s, 1) : null);
         }
 
-        put(h, SLOT_DELETE, pane("&celimina regola", List.of("&7Elimina la regola " + code + ".", "", "&eclicca per eliminare")),
+        put(h, SLOT_DELETE, pane("&celimina regola", List.of("&7regola: &f" + code, "", "&cclicca per eliminare")),
                 () -> askDelete(s));
-        put(h, SLOT_EDIT, pane("&emodifica regola", List.of("&7Cambia codice, titolo, descrizione", "&7o sanzione della regola.", "", "&eclicca per modificare")),
+        put(h, SLOT_EDIT, pane("&emodifica regola", List.of("&eclicca per modificare")),
                 () -> edit(s));
         List<String> info = new ArrayList<>();
-        info.add("&7Creata da: &f" + nameOr(r.createdByName()) + " &7il &f" + (r.createdAt() > 0 ? date(r.createdAt()) : "data sconosciuta"));
+        info.add("&7creata da &f" + nameOr(r.createdByName()) + " &7il &f" + (r.createdAt() > 0 ? date(r.createdAt()) : "data sconosciuta"));
         if (r.editedAt() > 0) {
-            info.add("&7Ultima modifica: &f" + nameOr(r.editedByName()) + " &7il &f" + date(r.editedAt()));
+            info.add("&7modificata da &f" + nameOr(r.editedByName()) + " &7il &f" + date(r.editedAt()));
         } else {
-            info.add("&7Ultima modifica: &fmai modificata");
+            info.add("&7modificata: &fmai");
         }
         info.add("");
         info.add("&eclicca per la cronologia");
         put(h, SLOT_INFO, pane("&binformazioni", info), () -> history(s));
         put(h, SLOT_HITS, pane(rules.isStaff() ? "&6staffer sanzionati" : "&6player sanzionati",
-                List.of("&7" + (rules.isStaff() ? "Staffer sanzionati: &f" : "Player sanzionati: &f") + rules.hitCount(code), "",
-                        "&eclicca per la lista")), () -> hits(s));
+                List.of("&7sanzionati: &f" + rules.hitCount(code), "",
+                        "&eclicca per aprire")), () -> hits(s));
     }
 
     private static String nameOr(String n) {

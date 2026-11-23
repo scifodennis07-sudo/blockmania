@@ -84,8 +84,8 @@ public final class BlockVariantsGui implements Listener {
         var c = plugin.getConfig();
         GuiTitle t = new GuiTitle(plugin);
         t.text(c.getString(P + "title.text", "&8varianti"), c.getString(P + "title.font", ""), P + "title");
-        // nome della GUI centrato nella barra grigia in alto
-        UpgradeManager.barTitle(plugin, t, "VARIANTI BLOCCO " + number, "VARIANTI");
+        // niente nome del popup nella barra grigia in alto: resta quello della lista sotto (OGGETTI ...), scurito,
+        // scritto da drawDimmedBackdrop
         String plain = number + "/" + max;
         String set = c.getString(P + "title.number.set", "bar");
         String shadowSet = c.getString(P + "title.number.shadow-set", "bar-shadow");
@@ -93,7 +93,8 @@ public final class BlockVariantsGui implements Listener {
         int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
         t.number(start, set, shadowSet, c.getBoolean(P + "title.number.shadow", true), plain,
                 c.getString(P + "title.number.font", ""));
-        // la lista dei note block resta DIETRO al popup, scurita (il popup e' opaco: si scrive dopo)
+        // la lista dei note block resta DIETRO al popup, scurita (il popup e' opaco: si scrive dopo), con il suo titolo
+        // e il suo numero pagina. shopitem-2 ha gia' l'inventario a colori pieni: niente inv_full
         plugin.getItemsGui().drawDimmedBackdrop(t, number, ItemsGui.VARIANTS_POPUP);
         return t.build();
     }

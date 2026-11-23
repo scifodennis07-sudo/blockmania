@@ -220,10 +220,10 @@ public final class RulePopups implements Listener {
                 boolean created = field.equals("creata");
                 List<String> lore = new ArrayList<>();
                 if (!created) {
-                    lore.add("&7da: &f" + clean(c.oldValue()));
-                    lore.add("&7a: &f" + clean(c.newValue()));
+                    lore.add("&7prima: &f" + clean(c.oldValue()));
+                    lore.add("&7dopo: &f" + clean(c.newValue()));
                 }
-                lore.add((created ? "&7creata da: &f" : "&7di: &f") + name(c.byName()));
+                lore.add((created ? "&7creata da: &f" : "&7da: &f") + name(c.byName()));
                 lore.add("&7il: &f" + date(c.time()));
                 list.add(pane("&f" + field, lore));
                 faces.add(resolve(c.by(), c.byName()));
@@ -444,7 +444,10 @@ public final class RulePopups implements Listener {
         // base lista solo-pannello userprofile-23 (U+E116, font userprofile2): lo sfondo custom resta visibile
         g.at(-15, "&f", "minecraft:userprofile2", DEF_ADV);
         navText(g, s.page + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, s.title);
+        if (s.background == null) {
+            UserProfilePowers.topTitle(plugin, g, s.title);
+        }
+        // popup: nella barra in alto resta il titolo della GUI di sotto, scurito dentro s.background
         return g.build();
     }
 
@@ -474,7 +477,7 @@ public final class RulePopups implements Listener {
             inv.setItem(b, pane("&einformazioni", List.of()));
         }
         if (s.entries.isEmpty()) {
-            inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of("&8La lista e' vuota.")));
+            inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of()));
             return;
         }
         for (int i = 0; i < PER_PAGE; i++) {

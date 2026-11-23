@@ -576,19 +576,21 @@ public final class UpgradeManager implements Listener {
         t.text(c.getString(GUI + "title.text", "&8potenziamenti"), c.getString(GUI + "title.font", ""),
                 GUI + "title");
         barTitle(plugin, t, "POTENZIAMENTI");
+        // il numero "N/M" c'e' SEMPRE (anche 1/1): se title.page.text e' vuoto si usa quello di default
         String pageRaw = c.getString(GUI + "title.page.text", "");
-        if (pageRaw != null && !pageRaw.isBlank()) {
-            String plain = BlockMania.stripCodes(pageRaw)
-                    .replace("%page%", String.valueOf(page + 1))
-                    .replace("%pages%", String.valueOf(pages))
-                    .replace("%slash%", "/");
-            String set = c.getString(GUI + "title.page.set", "main");
-            String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
-            int center = c.getInt(GUI + "title.page.center", 73);
-            int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
-            t.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
-                    c.getString(GUI + "title.page.font", ""));
+        if (pageRaw == null || pageRaw.isBlank()) {
+            pageRaw = "%page%/%pages%";
         }
+        String plain = BlockMania.stripCodes(pageRaw)
+                .replace("%page%", String.valueOf(page + 1))
+                .replace("%pages%", String.valueOf(Math.max(1, pages)))
+                .replace("%slash%", "/");
+        String set = c.getString(GUI + "title.page.set", "main");
+        String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
+        int center = c.getInt(GUI + "title.page.center", 73);
+        int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
+        t.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
+                c.getString(GUI + "title.page.font", ""));
         return t;
     }
 

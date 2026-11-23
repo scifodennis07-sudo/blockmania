@@ -52,9 +52,12 @@ public final class UserProfileHistory implements Listener {
     /** Base dei numeri pagina (come Tickets.NAV2). */
     private static final char DEF_NAV_BASE = '';
     private static final char DEF_NAV_SHADOW = '';
-    /** Centro (pixel immagine) di barra e numero pagina; IMG = offset immagine/titolo, ADV = avanzamento immagine. */
-    private static final int DEF_BAR_CX = 94;
-    private static final int DEF_NAV_CX = 94;
+    /**
+     * Centro (pixel immagine) di barra e numero pagina; IMG = offset immagine/titolo, ADV = avanzamento immagine.
+     * Barra di userprofile-14: bordi neri x 63 e 126, interno 64..125 (62 px), centro 94.5 -> 95; BAR_MAX = 62 - 4 (BAR_WIDTH.md).
+     */
+    private static final int DEF_BAR_CX = 95;
+    private static final int DEF_NAV_CX = 95;
     private static final int DEF_IMG = -22;
     private static final int DEF_ADV = 179;
     private static final int BAR_MAX = 58;
@@ -166,20 +169,33 @@ public final class UserProfileHistory implements Listener {
         return v.isEmpty() ? def : v.charAt(0);
     }
 
-    /** Sfondo della cronologia per la conferma (immagine intera, advance reale 186). */
-    private void drawBg(GuiTitle c) {
-        c.at(-15, "&f" + cfg("image", DEF_IMAGE), cfg("image-font", DEF_IMAGE_FONT), 186);
+    /**
+     * Sfondo della cronologia per la conferma: la GUI intera com'e' (immagine, barra, numero pagina e titolo in alto),
+     * che confirmOver scurisce tutta insieme; cursore finale REALE (186) come vuole confirmOver. L'inventario a colori
+     * pieni lo ridisegna drawDimmed con la variante dichiarata qui (userprofile*: U+E001, INV_FULL.md).
+     */
+    private void drawBg(GuiTitle c, UUID target, SanctionManager.Kind kind, int page, int pages) {
+        int adv = drawPage(c, target, kind, page, pages);
+        c.atComponent(c.cursor(), net.kyori.adventure.text.Component.empty(), 186 - adv);   // cursore di nuovo reale
+        UserProfilePowers.invVariant(c, UserProfilePowers.INV_LOW);   // U+E001
     }
 
-    private net.kyori.adventure.text.Component title(Session s, int pages) {
+    /** Disegna la GUI cronologia (convenzione IMG: cursore dopo l'immagine = adv dichiarato). Ritorna adv. */
+    private int drawPage(GuiTitle g, UUID target, SanctionManager.Kind kind, int page, int pages) {
         int img = plugin.getConfig().getInt("userprofile.history.img-offset", DEF_IMG);
         int adv = plugin.getConfig().getInt("userprofile.history.image-advance", DEF_ADV);
-        GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + cfg("image", DEF_IMAGE), cfg("image-font", DEF_IMAGE_FONT), adv);
         String bar = "cronologia";
         barText(g, bar, plugin.getConfig().getInt("userprofile.history.bar-x", DEF_BAR_CX), img);
-        navText(g, s.page + 1, pages, plugin.getConfig().getInt("userprofile.history.nav-x", DEF_NAV_CX), img);
-        UserProfilePowers.topTitle(plugin, g, "cronologia " + kindName(s.kind) + " " + UserProfilePowers.nameOf(s.target));
+        // numero pagina sempre, anche 1/1
+        navText(g, page + 1, Math.max(1, pages), plugin.getConfig().getInt("userprofile.history.nav-x", DEF_NAV_CX), img);
+        UserProfilePowers.topTitle(plugin, g, "cronologia " + kindName(kind) + " " + UserProfilePowers.nameOf(target));
+        return adv;
+    }
+
+    private net.kyori.adventure.text.Component title(Session s, int pages) {
+        GuiTitle g = new GuiTitle(plugin);
+        drawPage(g, s.target, s.kind, s.page, pages);
         return g.build();
     }
 
@@ -276,13 +292,13 @@ public final class UserProfileHistory implements Listener {
         s.bySlot.clear();
         inv.setItem(SLOT_X, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()));
         inv.setItem(SLOT_X2, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()));
-        List<String> resetLore = List.of("&7azzera tutto: " + kindName(s.kind), "&eclicca per resettare (chiede conferma)");
+        List<String> resetLore = List.of("&7azzera: &f" + kindName(s.kind), "", "&eclicca per resettare");
         inv.setItem(SLOT_RESET, pane("&breset " + kindName(s.kind), resetLore));
         inv.setItem(SLOT_RESET2, pane("&breset " + kindName(s.kind), resetLore));
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
         if (all.isEmpty()) {
-            inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of("&8La cronologia e' vuota.")));
+            inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of()));
             return;
         }
         for (int i = 0; i < PER_PAGE; i++) {
@@ -329,7 +345,7 @@ public final class UserProfileHistory implements Listener {
             lore.add(plugin.text("&7nota: &f" + e.note().replace('&', ' ')));
         }
         lore.add(plugin.text(" "));
-        lore.add(plugin.text("&etasto Q per eliminare la voce"));
+        lore.add(plugin.text("&cQ per eliminare"));
         meta.lore(lore);
         LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
         stack.setItemMeta(meta);
@@ -415,8 +431,9 @@ public final class UserProfileHistory implements Listener {
             final UUID target = s.target;
             final SanctionManager.Kind kind = s.kind;
             final int page = s.page;
+            final int pages = pageCount(entries(s).size());
             final Runnable back = s.onBack;
-            Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Azzerare tutta la cronologia: " + kindName(kind) + "?", c -> drawBg(c), () -> {
+            Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Azzerare tutta la cronologia: " + kindName(kind) + "?", c -> drawBg(c, target, kind, page, pages), () -> {
                 switch (kind) {
                     case BAN -> sm.resetBan(target, p.getUniqueId());
                     case MUTE -> sm.resetMute(target, p.getUniqueId());
@@ -450,8 +467,9 @@ public final class UserProfileHistory implements Listener {
         final UUID target = s.target;
         final SanctionManager.Kind kind = s.kind;
         final int page = s.page;
+        final int pages = pageCount(entries(s).size());
         final Runnable back = s.onBack;
-        Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Eliminare questa voce della cronologia?", c -> drawBg(c), () -> {
+        Bukkit.getScheduler().runTask(plugin, () -> ui.confirmOver(p, "Eliminare questa voce della cronologia?", c -> drawBg(c, target, kind, page, pages), () -> {
             sm.deleteEntry(entryId, p.getUniqueId());
             Bukkit.getScheduler().runTask(plugin, () -> open(p, target, kind, page, back));
         }, () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, target, kind, page, back))));

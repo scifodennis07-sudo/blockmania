@@ -332,7 +332,8 @@ public final class MinesGui implements Listener {
 
     /**
      * Titolo completo della GUI miniere. staffReset: pulsante reset blu al posto dell'info; dim: sfondo scurito
-     * e pannello di conferma sopra; top: nome nella barra in alto; showPage: numero pagina.
+     * e pannello di conferma sopra (nome e numero pagina della GUI restano, scuriti con lo sfondo; il popup non ha un suo
+     * titolo); top: nome nella barra in alto; showPage: ignorato, il numero pagina c'e' sempre.
      * Tutte le immagini a immagine intera avanzano 186 (reali): dopo l'ultima si mette il cursore 7 px indietro
      * (convenzione dei ticket: IMG = -22), cosi' titolo e numero pagina cadono dove cadevano nelle GUI originali.
      */
@@ -358,34 +359,54 @@ public final class MinesGui implements Listener {
             }
             content.at(POS_X[i], "&f" + (char) (G_CUBE + cubes[i]), POS_ROW[i] == 1 ? F_R1 : F_R2, 30);
         }
+        if (dim) {
+            // sotto il popup titolo e numero pagina della GUI restano gli stessi (testo e posizione), scuriti con lo sfondo:
+            // si scrivono nel contenuto con la stessa convenzione del titolo normale (cursore 7 px indietro), poi si torna al reale
+            content.atComponent(content.cursor(), Component.empty(), -7);
+            topAndPage(plugin, content, top, page, pages, showPage);
+            content.atComponent(content.cursor(), Component.empty(), 7);
+        }
         GuiTitle g = new GuiTitle(plugin);
         Component body = content.build();
         g.atComponent(0, dim ? tint(body, null) : body, content.cursor());
         if (dim) {
+            // inventario del player a colori pieni (mines.png: inventario 1 px piu' in basso), poi il pannello
+            UserProfilePowers.drawInventoryFull(plugin, g, UserProfilePowers.INV_LOW);
             g.at(-15, "&f" + (confirmText != null ? UserProfilePowers.CONFIRM_EMPTY : G_CONFIRM), F_MINES, 186);
         }
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro rispetto al reale
-        if (top != null && !top.isBlank()) {
-            UserProfilePowers.topTitle(plugin, g, top);
-        }
-        var c = plugin.getConfig();
-        String pageRaw = c.getString(GUI + "title.page.text", "");
-        if (showPage && pageRaw != null && !pageRaw.isBlank()) {
-            String plain = BlockMania.stripCodes(pageRaw)
-                    .replace("%page%", String.valueOf(page + 1))
-                    .replace("%pages%", String.valueOf(pages))
-                    .replace("%slash%", "/");
-            String set = c.getString(GUI + "title.page.set", "main");
-            String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
-            int center = c.getInt(GUI + "title.page.center", 73);
-            int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
-            g.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
-                    c.getString(GUI + "title.page.font", ""));
+        if (!dim) {
+            topAndPage(plugin, g, top, page, pages, showPage);
         }
         if (dim && confirmText != null) {
             UserProfilePowers.drawDescription(plugin, g, confirmText);   // per ultima: un errore di larghezza non sposta altro
         }
         return g.build();
+    }
+
+    /**
+     * Nome nella barra in alto e numero pagina "N/M" (SEMPRE, anche 1/1: la barra a frecce c'e' sempre; sotto un popup
+     * viene scurito con lo sfondo), col cursore 7 px indietro (IMG = -22). showPage resta per compatibilita', ignorato.
+     */
+    private static void topAndPage(BlockMania plugin, GuiTitle g, String top, int page, int pages, boolean showPage) {
+        if (top != null && !top.isBlank()) {
+            UserProfilePowers.topTitle(plugin, g, top);
+        }
+        var c = plugin.getConfig();
+        String pageRaw = c.getString(GUI + "title.page.text", "%page%/%pages%");
+        if (pageRaw == null || pageRaw.isBlank()) {
+            pageRaw = "%page%/%pages%";   // il numero pagina c'e' sempre
+        }
+        String plain = BlockMania.stripCodes(pageRaw)
+                .replace("%page%", String.valueOf(page + 1))
+                .replace("%pages%", String.valueOf(Math.max(1, pages)))
+                .replace("%slash%", "/");
+        String set = c.getString(GUI + "title.page.set", "main");
+        String shadowSet = c.getString(GUI + "title.page.shadow-set", "main-shadow");
+        int center = c.getInt(GUI + "title.page.center", 73);
+        int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
+        g.number(start, set, shadowSet, c.getBoolean(GUI + "title.page.shadow", true), plain,
+                c.getString(GUI + "title.page.font", ""));
     }
 
     private Component title(Player player, int page, int pages) {

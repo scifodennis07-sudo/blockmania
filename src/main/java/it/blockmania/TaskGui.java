@@ -3,12 +3,14 @@ package it.blockmania;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
@@ -36,8 +38,11 @@ import java.util.function.IntConsumer;
  * (solo nell'anteprima: una task salvata non si allunga, si possono solo togliere ordini non completati). Cliccando "prendi" o un ramo lo staffer PRENDE IN CARICO l'ordine
  * (StaffTasks.take: bossbar con timer 5 minuti, le azioni le fa a mano con userprofile / adminmania).
  * Tutti gli item usano le icone del pack (blockmania:task_*, ItemMeta.setItemModel); nomi e lore passano da LoreWrap.
- * Popup: si chiudono solo con conferma/annulla (gli altri click non fanno niente). Q sull'item di una task nella lista =
- * elimina (solo creatore o admin+). Sfondo dei popup = schermata task scurita. Il popup "continuare in chat?" quando
+ * Popup: si chiudono solo con conferma/annulla (gli altri click non fanno niente). ELIMINARE si fa SOLO col tasto Q (sempre
+ * con conferma): Q su una task nella lista o sul pulsante della cartella = elimina la task (solo creatore o admin+), Q su un
+ * ordine = toglilo, Q sul "+" dell'anteprima o su "crea task" = butta l'anteprima. Niente altri tasti/pulsanti per eliminare.
+ * Sfondo dei popup = schermata task scurita, col titolo "TASK" (scurito) nella barra in alto: i popup non scrivono il
+ * proprio titolo. Il popup "continuare in chat?" quando
  * l'incudine e' piena e' quello generico di UserProfilePowers.askText. Niente istruzioni in chat: i suggerimenti sono
  * nella GUI (nome/lore dell'incudine e degli item).
  */
@@ -60,6 +65,14 @@ public final class TaskGui implements Listener {
     private static final int[] S_CREATE = {12, 13, 14, 21, 22, 23, 30, 31, 32};
     private static final int[] S_TRASH = {15, 16, 17, 24, 25, 26, 33, 34, 35, 44};
     private static final int[] S_LOG = {37, 38, 39, 40, 41, 42, 43, 46, 47, 48, 49, 50, 51, 52};
+    /**
+     * Numero pagina nella barra frecce della schermata principale (sempre, anche "1/1"): stessi glifi di RulesGui (font tiny5,
+     * U+F700 cifre / U+F70A "/", ombra U+F710, ascent -5 = y33 come pagnum-*.png), centro 94 come pagnum (x86..103).
+     */
+    private static final String M_NAV_FONT = "minecraft:tiny5";
+    private static final char M_NAV = '\uf700';
+    private static final char M_NAV_SH = '\uf710';
+    private static final int M_NAV_CX = 94;
 
     // ---------- popup scelta con frecce (userprofile-30, U+E11D: barra x62..127 y51..62) ----------
     /** U+E11F = popup frecce con barra SENZA la scritta fissa (POPUP_GLYPHS.md): la descrizione la scrive choose. */
@@ -76,7 +89,7 @@ public final class TaskGui implements Listener {
     private static final int[] CH_NO = {32, 33, 34};
     private static final String CH_BAR_FONT = "minecraft:tiny2";
     private static final int CH_BAR_CX = 95;
-    private static final int CH_BAR_MAX = 58;
+    private static final int CH_BAR_MAX = 62;   // BAR_WIDTH.md: interno 62..127 (66 px), max = interno - 4
 
     // ---------- popup lista (ProfileLists, U+E119) e cartella (userprofile-31, U+E11E, stessa struttura) ----------
     private static final String L_IMAGE = "\ue119";
@@ -89,11 +102,14 @@ public final class TaskGui implements Listener {
     private static final int L_NAV_CX = 96;
     private static final char L_NAV = '\ue4a0';
     private static final char L_NAV_SH = '\ue4b0';
+    /** Larghezza massima del numero pagina tra le frecce (cifre da 6 px): oltre, solo il numero della pagina. */
+    private static final int L_NAV_MAX = 40;
     private static final char BAR_BASE = '\uf500';
     private static final char BAR_SHADOW = '\uf600';
     private static final String L_BAR_FONT = "minecraft:tiny3";
+    /** Barra descrittiva di U+E119 / U+E11E (BAR_WIDTH.md: interno 61..128 = 68 px, centro 95, max = interno - 4). */
     private static final int L_BAR_CX = 95;
-    private static final int L_BAR_MAX = 70;
+    private static final int L_BAR_MAX = 64;
     private static final int L_PER_PAGE = 21;
     private static final int GRID_COLS = 7;
     private static final int GRID_ROWS = 3;
@@ -112,9 +128,21 @@ public final class TaskGui implements Listener {
     private static final int ROW_M = 1;
     private static final int ROW_R = 2;
 
+    // ---------- pulsanti disegnati dell'anteprima ai lati delle frecce pagina (font task_btn, Sara: docs/TASK_BTN.md) ----------
+    // Glifi a pagina intera (256x256, ascent 28) come le barre task_row (TASK_BTN.md): stessa x del popup U+E11E, cioe' -15
+    // col cursore reale = L_IMG (-22) nel titolo normale (come drawSpan), advance REALE 48 / 156. Centrati nelle celle 37/43
+    // e sull'interno della barra pagina (y 107..122).
+    private static final String BTN_FONT = "minecraft:task_btn";
+    private static final String BTN_MOT = "\ue000";    // motivazione (fumetto), slot F_LEFT
+    private static final String BTN_SAVE = "\ue001";   // salva (dischetto), slot F_RIGHT
+    private static final int BTN_MOT_X = L_IMG;
+    private static final int BTN_MOT_ADV = 48;
+    private static final int BTN_SAVE_X = L_IMG;
+    private static final int BTN_SAVE_ADV = 156;
+
     private static final ZoneId ROME = ZoneId.of("Europe/Rome");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ROME);
-    private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ROME);
+    private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ROME);   // sempre con l'anno
 
     // ---------- tipi interni ----------
 
@@ -146,6 +174,16 @@ public final class TaskGui implements Listener {
     private record Filter(String label, String key) {
     }
 
+    /**
+     * Filtro avanzato (Q sul pulsante filtro): una task (taskId) oppure un player (uuid e/o nome, quello piu' simile a
+     * quanto scritto). Vive finche' la GUI task resta aperta (i popup non contano), poi sparisce.
+     */
+    private record Adv(String label, String taskId, UUID player, String name) {
+    }
+
+    /** Prefisso della chiave dei filtri avanzati nella lista dei filtri: "ADV" + indice in adv(p, kind). */
+    private static final String ADV = "ADV";
+
     /** Pezzo di barra di una riga della cartella: riga 0..2, colonna di partenza 0..6, quante celle, continua da/su altre righe. */
     private record Span(int row, int col, int len, boolean fromPrev, boolean toNext) {
     }
@@ -164,6 +202,8 @@ public final class TaskGui implements Listener {
 
     private final BlockMania plugin;
     private final Map<UUID, Draft> drafts = new HashMap<>();
+    /** Filtri avanzati per player e per lista ("list", "trash", "log"), in ordine di creazione. */
+    private final Map<UUID, Map<String, List<Adv>>> advFilters = new HashMap<>();
 
     public TaskGui(BlockMania plugin) {
         this.plugin = plugin;
@@ -222,6 +262,7 @@ public final class TaskGui implements Listener {
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + IMAGE, FONT, IMG_ADV);
         UserProfilePowers.topTitle(plugin, g, "task");
+        navText(g, 1, 1, M_NAV_FONT, M_NAV, M_NAV_SH, M_NAV_CX, 0);   // una sola pagina: sempre "1/1"
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         UUID me = p.getUniqueId();
@@ -249,12 +290,12 @@ public final class TaskGui implements Listener {
         put(h, S_CLOSE, pane("&cchiudi", List.of()), () -> {
             p.closeInventory();
         });
-        put(h, S_PREV, pane("&8pagina precedente", List.of("&7C'e' una sola pagina.")), null);
-        put(h, S_NEXT, pane("&8pagina successiva", List.of("&7C'e' una sola pagina.")), null);
+        put(h, S_PREV, pane("&8pagina precedente", List.of()), null);
+        put(h, S_NEXT, pane("&8pagina successiva", List.of()), null);
         List<String> barLore = new ArrayList<>();
         barLore.add("&7task aperte: &f" + open.size());
         barLore.add("&7ordini aperti: &f" + openOrders);
-        barLore.add("&7ordini che puoi prendere: &f" + free);
+        barLore.add("&7puoi prendere: &f" + free);
         barLore.add("");
         if (ch != null) {
             StaffTasks.Action next = t.nextAction(ch);
@@ -264,7 +305,7 @@ public final class TaskGui implements Listener {
             barLore.add("");
             barLore.add("&eclicca per aprire la task");
         } else {
-            barLore.add("&7Nessun incarico: prendi un ordine dalla lista.");
+            barLore.add("&7incarico: &8nessuno");
         }
         put(h, S_BAR, pane(ch != null ? "&eil tuo incarico" : "&ftask staff", barLore), ch == null ? null : () -> {
             viewTask(p, ch.taskId(), 0, () -> {
@@ -272,42 +313,38 @@ public final class TaskGui implements Listener {
             });
         });
         put(h, S_INFO, pane("&6info", List.of(
-                "&7Una task si crea scrivendo una frase, es.",
-                "&f\"dai 20 palle standard a mario e toglile a luigi\"",
-                "&7Anche con condizioni: &f\"se ha la miniera 5 toglila, se invece non ce l'ha non fare niente\"",
-                "&7Serve sempre la motivazione.",
-                "&7Nella cartella clicca &fprendi&7 o il &framo&7 giusto per prendere in carico l'ordine:",
-                "&7hai 5 minuti (bossbar) per fare le azioni a mano con lo userprofile o /adminmania.",
-                "&7Un solo incarico alla volta.",
-                "&7Q su una task nella lista = elimina (chi l'ha creata o gli admin).")), null);
+                "&7crea: &funa frase + motivo",
+                "&7es.: &fdai 20 palle a mario",
+                "&7prendi: &fun ordine, 5 minuti",
+                "&7incarichi: &funo alla volta")), null);
         put(h, S_LIST, pane("&elista task", List.of(
                 "&7task aperte: &f" + open.size(),
                 "&7create da te: &f" + mine,
-                "&7ordini che puoi prendere: &f" + free,
+                "&7puoi prendere: &f" + free,
                 "",
                 "&eclicca per aprire")), () -> {
             openList(p, 0, 0);
         });
         Draft d = drafts.get(me);
         if (!create) {
-            put(h, S_CREATE, pane("&8crea task", List.of("&7Le task le creano gli helper in su.", "", "&cnon puoi creare task")), null);
+            put(h, S_CREATE, pane("&8crea task", List.of()), null);
         } else if (d != null) {
             put(h, S_CREATE, pane("&acrea task", List.of(
-                    "&7Anteprima aperta: &f" + d.orders.size() + " ordini",
+                    "&7anteprima: &f" + d.orders.size() + " ordini",
                     "",
-                    "&eclick sinistro: riprendi l'anteprima",
-                    "&eclick destro: scrivi una nuova task (l'anteprima si perde)")), () -> {
+                    "&eclicca per riprendere &8| &cQ elimina")), () -> {
                 openPreview(p, 0);
             });
-            putRight(h, S_CREATE, () -> {
-                drafts.remove(me);
-                startCreate(p);
-            });
+            for (int s : S_CREATE) {
+                h.dropActions.put(s, () -> {
+                    confirmDropDraft(p, () -> {
+                        open(p);
+                    });
+                });
+            }
         } else {
             put(h, S_CREATE, pane("&acrea task", List.of(
-                    "&7Scrivi cosa fare in una frase, es.",
-                    "&f\"dai 20 palle standard a mario\"",
-                    "&7Poi la motivazione e l'anteprima.",
+                    "&7es.: &fdai 20 palle a mario",
                     "",
                     "&eclicca per scrivere")), () -> {
                 startCreate(p);
@@ -318,15 +355,15 @@ public final class TaskGui implements Listener {
                     "&7task eliminate: &f" + safe(t.list(StaffTasks.Status.ELIMINATA)).size(),
                     "",
                     "&eclicca per aprire")), () -> {
-                openTrash(p, 0);
+                openTrash(p, 0, 0);
             });
         } else {
-            put(h, S_TRASH, pane("&8cestino", List.of("&csolo admin")), null);
+            put(h, S_TRASH, pane("&8cestino", List.of()), null);
         }
         List<StaffTasks.LogEntry> log = safe(t.log(admin ? null : me));
         put(h, S_LOG, pane("&bresoconto task", List.of(
                 "&7voci nel registro: &f" + log.size(),
-                admin ? "&7Vedi tutto il registro." : "&7Vedi solo le voci delle tue task.",
+                admin ? "&7mostra: &ftutto" : "&7mostra: &fle tue task",
                 "",
                 "&eclicca per aprire")), () -> {
             openLog(p, 0, 0);
@@ -334,8 +371,16 @@ public final class TaskGui implements Listener {
         p.openInventory(h.inventory);
     }
 
+    /**
+     * Schermata task a colori pieni come sfondo dei popup (lo scurisce drawDimmed / confirmOver), CON il titolo "TASK" nella
+     * barra in alto (topTitleDim, cursore reale) e il numero pagina "1/1": i popup non scrivono il proprio titolo, resta quello della GUI di sotto
+     * scurito, anche per i popup sopra altri popup (riusano questo sfondo). Inventario a colori pieni: variante "task".
+     */
     private void background(GuiTitle g) {
         g.at(-15, "&f" + IMAGE, FONT, IMG_REAL);
+        UserProfilePowers.topTitleDim(plugin, g, "task");
+        navText(g, 1, 1, M_NAV_FONT, M_NAV, M_NAV_SH, M_NAV_CX, 7);   // "1/1" anche nello sfondo (cursore reale: +7)
+        UserProfilePowers.invVariant(g, UserProfilePowers.INV_HIGH);   // U+E000 (INV_FULL.md: task.png)
     }
 
     private Consumer<GuiTitle> bg() {
@@ -515,19 +560,18 @@ public final class TaskGui implements Listener {
             }
             int orderIdx = oi;
             List<Row> cells = new ArrayList<>();
-            // cella testo: destro = togli l'ordine dall'anteprima
+            // cella testo: sinistro = riscrivi, Q = togli l'ordine dall'anteprima (con conferma)
             List<String> tl = new ArrayList<>();
             tl.add("&7tipo: &f" + typeLabel(o.type()));
             tl.add("&7frase: &f" + clean(o.text()));
             String why = u ? null : invalidReason(p, o);
             if (u) {
-                tl.add("&eda chiarire: clicca le parti gialle");
+                tl.add("&7stato: &eda chiarire");
             } else if (why != null) {
                 tl.add("&c" + why);
             }
             tl.add("");
-            tl.add("&eclick sinistro: riscrivi questo ordine");
-            tl.add("&eclick destro: toglilo");
+            tl.add("&eclicca per riscrivere &8| &cQ toglie");
             String color = u ? "&e" : o.type() == StaffTasks.OrderType.CUSTOM ? "&d" : "&a";
             cells.add(new Row(icon(o.type() == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo",   // foglio (viola se custom): il "?" solo sui rami/azioni incerti
                     color + "ordine " + (oi + 1), tl), () -> {
@@ -536,17 +580,22 @@ public final class TaskGui implements Listener {
                     cur.replace = orderIdx;
                     askSentence(p, cur.orders.get(orderIdx).text());
                 }
-            }, () -> {
-                Draft cur = drafts.get(p.getUniqueId());
-                if (cur != null && orderIdx < cur.orders.size()) {
-                    cur.orders.remove(orderIdx);
-                }
-                openPreview(p, page);
+            }, null, () -> {
+                TaskParser.ParsedOrder target = o;
+                plugin.getProfileUi().confirmOver(p, "Togliere l'ordine " + (orderIdx + 1) + " dall'anteprima?", bgHere(p), () -> {
+                    Draft cur = drafts.get(p.getUniqueId());
+                    if (cur != null && orderIdx < cur.orders.size() && cur.orders.get(orderIdx) == target) {
+                        cur.orders.remove(orderIdx);
+                    }
+                    openPreview(p, page);
+                }, () -> {
+                    openPreview(p, page);
+                });
             }));
             List<TaskParser.ParsedBranch> branches = safe(o.branches());
             if (o.type() == StaffTasks.OrderType.CUSTOM) {
                 cells.add(new Row(icon("task_custom", "&dda verificare a mano", List.of(
-                        "&7Nessuna azione automatica:", "&7chi la prende in carico controlla", "&7e la segna come fatta.")), null, null));
+                        "&7azioni: &fa mano")), null, null));
             }
             for (int bi = 0; o.type() != StaffTasks.OrderType.CUSTOM && bi < branches.size(); bi++) {
                 cells.add(previewBranchCell(p, o, orderIdx, bi, branches.get(bi), page));
@@ -561,7 +610,7 @@ public final class TaskGui implements Listener {
         List<String> btnLore = new ArrayList<>();
         btnLore.add("&7ordini: &f" + d.orders.size() + (unsure > 0 ? " &8(&e" + unsure + " da chiarire&8)" : ""));
         btnLore.add("");
-        btnLore.add("&eclicca per scrivere un altro ordine");
+        btnLore.add("&eclicca per scrivere &8| &cQ elimina");
         Runnable add = () -> {
             d.replace = -1;
             askSentence(p, "");
@@ -581,24 +630,43 @@ public final class TaskGui implements Listener {
         };
         Map<Integer, Row> extra = new HashMap<>();
         {
-            extra.put(F_LEFT, new Row(icon("task_motivazione", "&fmotivazione", List.of(
-                    noReason ? "&cmanca" : "&f" + clean(d.reason), "", "&eclicca per cambiarla")), () -> {
+            extra.put(F_LEFT, new Row(pane("&fmotivazione", List.of(
+                    "&7motivo: " + (noReason ? "&cmanca" : "&f" + clean(d.reason)), "", "&eclicca per cambiarla")), () -> {
                 askMotivation(p, d.reason);
             }, null));
         }
         boolean ready = !d.orders.isEmpty() && unsure == 0 && !noReason;
-        extra.put(F_RIGHT, new Row(icon("task_salva", ready ? "&asalva" : "&8salva", List.of(
-                "&7Salva la task.",
-                ready ? "" : "&7Prima chiarisci le parti gialle e scrivi la motivazione.",
-                ready ? "&eclicca per salvare" : "")), save, null));
-        folder(p, "anteprima task", "anteprima", fp, pg, pages.size(), pgn -> {
+        extra.put(F_RIGHT, new Row(pane(ready ? "&asalva" : "&8salva", ready ? List.of("&eclicca per salvare")
+                : List.of("&7manca: &cparti gialle o motivo")), save, null));
+        // X = indietro: l'anteprima resta (si riprende da "crea task"); si butta solo con Q (sul "+" o su "crea task")
+        Holder h = folder(p, "anteprima", fp, pg, pages.size(), pgn -> {
             openPreview(p, pgn);
         }, () -> {
-            drafts.remove(p.getUniqueId());
-            GuiMsg.send(plugin, p, "&7task annullata.");
             open(p);
-        }, "&cannulla", List.of("&7Butta l'anteprima e torna alla schermata task."),
-                pane("&a+ altro ordine", btnLore), add, null, extra);
+        }, "&cindietro", List.of("&7anteprima: &fresta salvata"),
+                pane("&a+ altro ordine", btnLore), add, extra, true, ready);
+        if (h != null) {
+            for (int s : L_BTN) {
+                h.dropActions.put(s, () -> {
+                    confirmDropDraft(p, () -> {
+                        openPreview(p, pg);
+                    });
+                });
+            }
+        }
+    }
+
+    /** Q su "crea task" o sul "+" dell'anteprima: butta l'anteprima (con conferma). onNo = torna dove eri. */
+    private void confirmDropDraft(Player p, Runnable onNo) {
+        if (!drafts.containsKey(p.getUniqueId())) {
+            onNo.run();
+            return;
+        }
+        plugin.getProfileUi().confirmOver(p, "Eliminare l'anteprima? Gli ordini scritti si perdono.", bgHere(p), () -> {
+            drafts.remove(p.getUniqueId());
+            GuiMsg.send(plugin, p, "&7anteprima eliminata.");
+            open(p);
+        }, onNo);
     }
 
     private String invalidReason(Player p, TaskParser.ParsedOrder o) {
@@ -613,7 +681,7 @@ public final class TaskGui implements Listener {
     private Row previewBranchCell(Player p, TaskParser.ParsedOrder o, int oi, int bi, TaskParser.ParsedBranch b, int page) {
         if (b.nothing()) {
             return new Row(icon("task_nulla", "&7non fare nulla", List.of(
-                    b.condition() == null ? "&7Se nessun caso vale, non si fa niente." : "&7se " + clean(b.condition()) + ": non fare niente")), null, null);
+                    b.condition() == null ? "&7se: &fnessun caso vale" : "&7se: &f" + clean(b.condition()))), null, null);
         }
         List<String> lore = new ArrayList<>();
         if (b.condition() != null && !b.condition().isBlank()) {
@@ -642,7 +710,7 @@ public final class TaskGui implements Listener {
             iconName = "task_dubbio";
             name = "&e" + (cond ? "ramo " + (bi + 1) : "azioni") + " da chiarire";
             lore.add("");
-            lore.add("&eclicca: intendevi...?");
+            lore.add("&eclicca per chiarire");
         } else if (cond) {
             iconName = "task_ramo";
         } else {
@@ -693,7 +761,7 @@ public final class TaskGui implements Listener {
             opts.add(new Opt(String.valueOf(i), clean(c.label()), List.of(
                     "&7intendevi: &f" + clean(c.label()) + "&7?",
                     "&7parte da chiarire: &f" + fieldLabel(pa.field()),
-                    "&7scritto: &8" + clean(pa.sourceText()))));
+                    "&7scritto: &f" + clean(pa.sourceText()))));
         }
         choose(p, "intendevi", opts, 0, bgHere(p), key -> {
             int ci = Integer.parseInt(key);
@@ -800,10 +868,12 @@ public final class TaskGui implements Listener {
             });
             return;
         }
-        int fi = Math.max(0, Math.min(filterIdx, LIST_FILTERS.size() - 1));
+        List<Filter> filters = withAdv(p, "list", LIST_FILTERS);
+        int fi = Math.max(0, Math.min(filterIdx, filters.size() - 1));
         StaffTasks t = tasks();
         UUID me = p.getUniqueId();
-        String key = LIST_FILTERS.get(fi).key();
+        String key = filters.get(fi).key();
+        Adv adv = advOf(p, "list", key);
         List<Row> rows = new ArrayList<>();
         for (StaffTasks.Task k : safe(t.list(StaffTasks.Status.APERTA))) {
             int can = 0;
@@ -816,6 +886,9 @@ public final class TaskGui implements Listener {
                 continue;
             }
             if ("MIE".equals(key) && !me.equals(k.createdBy())) {
+                continue;
+            }
+            if (adv != null && !matchesTask(adv, k)) {
                 continue;
             }
             StaffTasks.Counts c = StaffTasks.counts(k);
@@ -836,7 +909,7 @@ public final class TaskGui implements Listener {
                 confirmDelete(p, id, back, back);
             } : null));
         }
-        listPanel(p, "lista task", LIST_FILTERS, fi, page, rows, (f, pg) -> {
+        listPanel(p, "lista task", "list", filters, fi, page, rows, (f, pg) -> {
             openList(p, f, pg);
         }, () -> {
             open(p);
@@ -850,7 +923,7 @@ public final class TaskGui implements Listener {
 
     /**
      * Lore della cartella (uguale in lista, cestino e pulsante della cartella), es.
-     * "creata da DoppiaX il 19/11 14:52" / "motivo: ..." / "" / "ordinarie: 2 (1/2 completate)" / "custom: ..." / "stato: da fare".
+     * "creata da DoppiaX il 19/11/2026 14:52" / "motivo: ..." / "" / "ordinarie: 2 (1/2 completate)" / "custom: ..." / "stato: da fare".
      * Mai nomi dei player degli ordini (solo chi l'ha creata).
      */
     private List<String> folderLore(StaffTasks.Task k, StaffTasks.Counts c) {
@@ -913,19 +986,19 @@ public final class TaskGui implements Listener {
         List<FolderPage> pages = layout(blocks);
         int pg = Math.max(0, Math.min(page, pages.size() - 1));
         // task salvata: niente "+" (gli ordini si aggiungono solo nell'anteprima); il pulsante verde mostra le info.
-        // Creatore o admin+ (canDelete): click destro / Q = elimina la task; click destro su un ordine aperto = toglilo.
+        // Creatore o admin+ (canDelete): SOLO Q = elimina la task (sul pulsante) / togli l'ordine (sulla cella testo).
         boolean del = k.status() != StaffTasks.Status.ELIMINATA && t.canDelete(p, k);
         List<String> btnLore = folderLore(k, StaffTasks.counts(k));
         if (del) {
             btnLore.add("");
-            btnLore.add("&cclick destro o Q per eliminare la task");
+            btnLore.add("&cQ per eliminare la task");
         }
         Runnable delete = del ? () -> {
             confirmDelete(p, taskId, back, self);
         } : null;
-        Holder h = folder(p, "task " + k.id(), "task " + k.id(), pages.get(pg), pg, pages.size(), pgn -> {
+        Holder h = folder(p, "task " + k.id(), pages.get(pg), pg, pages.size(), pgn -> {
             viewTask(p, taskId, pgn, back);
-        }, back, "&cindietro", List.of(), pane(folderName(k), btnLore), null, delete, Map.of());
+        }, back, "&cindietro", List.of(), pane(folderName(k), btnLore), null, Map.of(), false, false);
         if (h != null && delete != null) {
             for (int s : L_BTN) {
                 h.dropActions.put(s, delete);
@@ -958,22 +1031,22 @@ public final class TaskGui implements Listener {
         Runnable textClick = null;
         if (type == StaffTasks.OrderType.CUSTOM && mine) {
             tl.add("");
-            tl.add("&eclicca quando hai finito: segna come fatto");
+            tl.add("&eclicca quando hai finito");
             textClick = () -> {
                 finishCustom(p, self);
             };
         }
-        // togliere un ordine non completato: solo creatore o admin+ (con conferma)
+        // togliere un ordine non completato: solo creatore o admin+, SOLO col tasto Q (con conferma)
         Runnable removeOrder = null;
         if (!done && !deleted && t.canDelete(p, k)) {
             tl.add("");
-            tl.add("&cclick destro per togliere questo ordine");
+            tl.add("&cQ per togliere");
             removeOrder = () -> {
                 confirmRemoveOrder(p, k.id(), o.id(), oi + 1, self);
             };
         }
         String textIcon = type == StaffTasks.OrderType.CUSTOM ? "task_custom" : "task_testo";   // sempre un foglio (viola se custom)
-        cells.add(new Row(icon(textIcon, (done ? "&a" : "&f") + "ordine " + (oi + 1), tl), textClick, removeOrder));
+        cells.add(new Row(icon(textIcon, (done ? "&a" : "&f") + "ordine " + (oi + 1), tl), textClick, null, removeOrder));
 
         List<StaffTasks.Branch> branches = safe(o.branches());
         if (type != StaffTasks.OrderType.CONDIZIONALE) {
@@ -983,7 +1056,7 @@ public final class TaskGui implements Listener {
                 addActions(lore, branches.get(0));
             }
             if (type == StaffTasks.OrderType.CUSTOM) {
-                lore.add("&7Da verificare a mano, poi segnare come fatto.");
+                lore.add("&7azioni: &fa mano");
             }
             String iconName;
             String name;
@@ -995,8 +1068,9 @@ public final class TaskGui implements Listener {
             } else if (mine && type == StaffTasks.OrderType.CUSTOM) {
                 iconName = "task_salva";
                 name = "&asegna come fatto";
+                lore.add("&7in carico: &ate");
+                lore.add("&7mancano: &f" + mmss(StaffTasks.remainingMs(charge)));
                 lore.add("");
-                lore.add("&ain carico a te: mancano " + mmss(StaffTasks.remainingMs(charge)));
                 lore.add("&eclicca quando hai finito");
                 click = () -> {
                     finishCustom(p, self);
@@ -1004,13 +1078,17 @@ public final class TaskGui implements Listener {
             } else if (charge != null) {
                 iconName = "task_in_carico";
                 name = mine ? "&ain carico a te" : "&6in carico";
-                lore.add("");
-                lore.add((mine ? "&ain carico a te" : "&7in carico a &f" + staffName(charge.staff())) + "&7: mancano &f" + mmss(StaffTasks.remainingMs(charge)));
+                lore.add("&7in carico: " + (mine ? "&ate" : "&f" + staffName(charge.staff())));
+                lore.add("&7mancano: &f" + mmss(StaffTasks.remainingMs(charge)));
             } else {
                 iconName = "task_prendi";
                 name = "&eprendi in carico";
-                lore.add("");
-                lore.add(takeWhy == null && !deleted ? "&eclicca per prenderlo in carico (5 minuti)" : "&8non disponibile");
+                if (takeWhy == null && !deleted) {
+                    lore.add("");
+                    lore.add("&eclicca per prenderlo (5 min)");
+                } else {
+                    lore.add("&7stato: &8non disponibile");
+                }
                 if (takeWhy == null && !deleted) {
                     click = () -> {
                         confirmTake(p, k, o, 0, branches.isEmpty() ? "" : StaffTasks.describe(branches.get(0)), self);
@@ -1030,7 +1108,7 @@ public final class TaskGui implements Listener {
                 lore.add("&7se: &f" + clean(b.condition()));
             }
             if (b.nothing()) {
-                lore.add("&7Non fare niente: completa l'ordine.");
+                lore.add("&7azione: &fnessuna");
             } else {
                 addActions(lore, b);
             }
@@ -1045,11 +1123,15 @@ public final class TaskGui implements Listener {
                 }
             } else if (chargedHere) {
                 iconName = "task_in_carico";
-                lore.add("");
-                lore.add((mine ? "&ain carico a te" : "&7in carico a &f" + staffName(charge.staff())) + "&7: mancano &f" + mmss(StaffTasks.remainingMs(charge)));
+                lore.add("&7in carico: " + (mine ? "&ate" : "&f" + staffName(charge.staff())));
+                lore.add("&7mancano: &f" + mmss(StaffTasks.remainingMs(charge)));
             } else if (charge == null && takeWhy == null && !deleted) {
                 lore.add("");
-                lore.add(b.nothing() ? "&eclicca se non va fatto niente" : "&eclicca se vale questo caso: lo prendi in carico (5 minuti)");
+                if (b.nothing()) {
+                    lore.add("&eclicca se non va fatto niente");
+                } else {
+                    lore.add("&eclicca per prenderlo (5 min)");
+                }
                 int branch = bi;
                 click = () -> {
                     confirmTake(p, k, o, branch, StaffTasks.describe(b), self);
@@ -1184,7 +1266,9 @@ public final class TaskGui implements Listener {
     //  CESTINO (admin)
     // ------------------------------------------------------------------
 
-    private void openTrash(Player p, int page) {
+    private static final List<Filter> TRASH_FILTERS = List.of(new Filter("Eliminate", ""));
+
+    private void openTrash(Player p, int filterIdx, int page) {
         if (!guard(p)) {
             return;
         }
@@ -1192,18 +1276,24 @@ public final class TaskGui implements Listener {
             deny(p, "il cestino e' solo per gli admin.");
             return;
         }
+        List<Filter> filters = withAdv(p, "trash", TRASH_FILTERS);
+        int fi = Math.max(0, Math.min(filterIdx, filters.size() - 1));
+        Adv adv = advOf(p, "trash", filters.get(fi).key());
         StaffTasks t = tasks();
         List<Row> rows = new ArrayList<>();
         for (StaffTasks.Task k : safe(t.list(StaffTasks.Status.ELIMINATA))) {
+            if (adv != null && !matchesTask(adv, k)) {
+                continue;
+            }
             List<String> lore = folderLore(k, StaffTasks.counts(k));
             lore.add("");
-            lore.add("&eclick sinistro: ripristina");
-            lore.add("&eclick destro: apri la cartella");
+            lore.add("&esinistro ripristina &8| &edestro apri");
             String id = k.id();
             Runnable back = () -> {
-                openTrash(p, page);
+                openTrash(p, fi, page);
             };
-            rows.add(new Row(icon("task_elimina", "&c&lTask #" + k.id(), lore), () -> {
+            StaffTasks.Counts kc = StaffTasks.counts(k);
+            rows.add(new Row(icon(kc.total() == 0 ? "task_cartella_vuota" : "task_cartella", "&c&lTask #" + k.id(), lore), () -> {
                 plugin.getProfileUi().confirmOver(p, "Ripristinare la task #" + id + "?", bgHere(p), () -> {
                     if (!guard(p)) {
                         return;
@@ -1219,8 +1309,8 @@ public final class TaskGui implements Listener {
                 viewTask(p, id, 0, back);
             }));
         }
-        listPanel(p, "cestino task", List.of(new Filter("Eliminate", "")), 0, page, rows, (f, pg) -> {
-            openTrash(p, pg);
+        listPanel(p, "cestino task", "trash", filters, fi, page, rows, (f, pg) -> {
+            openTrash(p, f, pg);
         }, () -> {
             open(p);
         });
@@ -1245,13 +1335,18 @@ public final class TaskGui implements Listener {
         if (!guard(p)) {
             return;
         }
-        int fi = Math.max(0, Math.min(filterIdx, LOG_FILTERS.size() - 1));
-        String key = LOG_FILTERS.get(fi).key();
+        List<Filter> filters = withAdv(p, "log", LOG_FILTERS);
+        int fi = Math.max(0, Math.min(filterIdx, filters.size() - 1));
+        String key = filters.get(fi).key();
+        Adv adv = advOf(p, "log", key);
         StaffTasks t = tasks();
         List<Row> rows = new ArrayList<>();
         for (StaffTasks.LogEntry e : safe(t.log(t.isAdmin(p) ? null : p.getUniqueId()))) {
             String ev = e.event() == null ? "" : e.event().toUpperCase(Locale.ROOT);
-            if (!key.isEmpty() && !key.equals(ev)) {
+            if (adv == null && !key.isEmpty() && !key.equals(ev)) {
+                continue;
+            }
+            if (adv != null && !matchesLog(adv, e)) {
                 continue;
             }
             String iconName;
@@ -1289,7 +1384,7 @@ public final class TaskGui implements Listener {
             // nome corto: evento e task, i dettagli stanno nella lore
             rows.add(new Row(icon(iconName, color + ev.toLowerCase(Locale.ROOT) + " &7- &ftask #" + e.taskId(), lore), null, null));
         }
-        listPanel(p, "resoconto task", LOG_FILTERS, fi, page, rows, (f, pg) -> {
+        listPanel(p, "resoconto task", "log", filters, fi, page, rows, (f, pg) -> {
             openLog(p, f, pg);
         }, () -> {
             open(p);
@@ -1396,12 +1491,14 @@ public final class TaskGui implements Listener {
     }
 
     /**
-     * Popup cartella (U+E11E): barre unite dietro le celle (font task_row), celle, X, pulsante verde (sinistro/destro),
-     * frecce pagina e celle extra (slot 37/43). Ritorna l'holder (per aggiungere azioni Q).
+     * Popup cartella (U+E11E) sopra la schermata task scurita (titolo in alto = "TASK" scurito, niente titolo del popup):
+     * barre unite dietro le celle (font task_row), celle, X, pulsante verde, frecce pagina e celle extra (slot 37/43).
+     * btns = pulsanti disegnati motivazione/salva dell'anteprima (font task_btn; salva grigio se !saveReady).
+     * Ritorna l'holder (per aggiungere azioni Q).
      */
-    private Holder folder(Player p, String title, String barText, FolderPage fp, int pg, int pages, IntConsumer reopenPage,
+    private Holder folder(Player p, String barText, FolderPage fp, int pg, int pages, IntConsumer reopenPage,
                           Runnable onBack, String backName, List<String> backLore, ItemStack button, Runnable btnLeft,
-                          Runnable btnRight, Map<Integer, Row> extra) {
+                          Map<Integer, Row> extra, boolean btns, boolean saveReady) {
         Holder h = new Holder();
         GuiTitle g = new GuiTitle(plugin);
         UserProfilePowers.drawDimmed(plugin, g, bg());
@@ -1409,34 +1506,37 @@ public final class TaskGui implements Listener {
         for (Span s : fp.spans()) {
             drawSpan(g, s, L_IMG);
         }
+        if (btns) {
+            drawButtons(g, 0, saveReady);
+        }
         smallText(g, barText, L_BAR_FONT, L_BAR_CX, L_BAR_MAX);
         navText(g, pg + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, title);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
-        // sfondo dei popup aperti dalla cartella/anteprima: schermata task + cartella con le barre (advance reale, testi esclusi)
+        // sfondo dei popup aperti dalla cartella/anteprima: schermata task (con "TASK") + cartella con barre e pulsanti
+        // disegnati (advance reale, testi del pannello esclusi)
         h.under = u -> {
             background(u);
             u.at(-15, "&f" + F_IMAGE, F_FONT, F_ADV + 7);
             for (Span s : fp.spans()) {
                 drawSpan(u, s, L_IMG + 7);
             }
+            if (btns) {
+                drawButtons(u, 7, saveReady);
+            }
         };
 
         put(h, L_X, pane(backName, backLore), onBack);
         put(h, L_BTN, button, btnLeft);
-        if (btnRight != null) {
-            putRight(h, L_BTN, btnRight);
-        }
-        put(h, new int[]{L_PREV}, pane("&7pagina precedente", List.of("&7Pagina &f" + (pg + 1) + "&8/&f" + pages)), pg > 0 ? () -> {
+        put(h, new int[]{L_PREV}, pane("&7pagina precedente", List.of("&7pagina: &f" + (pg + 1) + "&8/&f" + pages)), pg > 0 ? () -> {
             reopenPage.accept(pg - 1);
         } : null);
-        put(h, new int[]{L_NEXT}, pane("&7pagina successiva", List.of("&7Pagina &f" + (pg + 1) + "&8/&f" + pages)), pg < pages - 1 ? () -> {
+        put(h, new int[]{L_NEXT}, pane("&7pagina successiva", List.of("&7pagina: &f" + (pg + 1) + "&8/&f" + pages)), pg < pages - 1 ? () -> {
             reopenPage.accept(pg + 1);
         } : null);
         Map<Integer, Row> all = new HashMap<>(fp.cells());
         all.putAll(extra);
         if (fp.cells().isEmpty()) {
-            h.inventory.setItem(gridSlot(10), icon("task_cartella_vuota", "&7nessun ordine", List.of("&8La cartella e' vuota.")));
+            h.inventory.setItem(gridSlot(10), icon("task_cartella_vuota", "&7nessun ordine", List.of()));
         }
         for (Map.Entry<Integer, Row> e : all.entrySet()) {
             Row r = e.getValue();
@@ -1451,6 +1551,16 @@ public final class TaskGui implements Listener {
         }
         p.openInventory(h.inventory);
         return h;
+    }
+
+    /**
+     * Pulsanti motivazione (fumetto) e salva (dischetto) dell'anteprima, disegnati nel titolo (font task_btn, docs/TASK_BTN.md)
+     * allineati alla barra pagina; negli slot F_LEFT/F_RIGHT ci sono pane invisibili con nome e lore. dx = 0 nel titolo
+     * normale (cursore 7 px indietro, convenzione IMG = -22), 7 nello sfondo dei popup (advance reale).
+     */
+    private void drawButtons(GuiTitle g, int dx, boolean saveReady) {
+        g.at(BTN_MOT_X + dx, "&f" + BTN_MOT, BTN_FONT, BTN_MOT_ADV);
+        g.at(BTN_SAVE_X + dx, (saveReady ? "&f" : "&7") + BTN_SAVE, BTN_FONT, BTN_SAVE_ADV);
     }
 
     /**
@@ -1478,7 +1588,10 @@ public final class TaskGui implements Listener {
     //  Popup scelta con frecce (come RoleGui, immagine con la barra)
     // ------------------------------------------------------------------
 
-    /** under = sfondo (colori pieni) da scurire: quello del pannello da cui si apre, fisso anche quando si scorre con le frecce. */
+    /**
+     * under = sfondo (colori pieni, col titolo "TASK") da scurire: quello del pannello da cui si apre, fisso anche quando si
+     * scorre con le frecce. title non si disegna (decide solo la descrizione).
+     */
     private void choose(Player p, String title, List<Opt> opts, int index, Consumer<GuiTitle> under, Consumer<String> onPick, Runnable onBack) {
         int n = opts.size();
         if (n == 0) {
@@ -1492,9 +1605,9 @@ public final class TaskGui implements Listener {
         UserProfilePowers.drawDimmed(plugin, g, under);
         g.at(-15, "&f" + CH_IMAGE, CH_FONT, CH_ADV);
         smallText(g, cur.label().toUpperCase(Locale.ROOT), CH_BAR_FONT, CH_BAR_CX, CH_BAR_MAX);
-        UserProfilePowers.topTitle(plugin, g, title);
+        // niente titolo del popup: in alto resta quello della GUI di sotto ("TASK" scurito, dentro under)
         // descrizione per ultima (un errore di larghezza dei glifi non sposta il resto)
-        smallText(g, "intendevi".equals(title) ? "Cosa intendevi? Scegli con le frecce." : "Scegli con le frecce.",
+        smallText(g, "intendevi".equals(title) ? "Cosa intendevi?" : "Scegli con le frecce.",   // 1 riga: deve stare in CH_DESC_MAX
                 CH_DESC_FONT, CH_BAR_CX, CH_DESC_MAX);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
@@ -1516,7 +1629,7 @@ public final class TaskGui implements Listener {
         put(h, CH_YES, pane("&aconferma", List.of("&7Scelta: &f" + cur.label(), "", "&eclicca per confermare")), () -> {
             onPick.accept(key);
         });
-        put(h, CH_NO, pane("&cannulla", List.of("&7Torna indietro.", "", "&eclicca per annullare")), onBack);
+        put(h, CH_NO, pane("&cannulla", List.of("&eclicca per annullare")), onBack);
         p.openInventory(h.inventory);
     }
 
@@ -1528,17 +1641,25 @@ public final class TaskGui implements Listener {
         void open(int filterIdx, int page);
     }
 
-    private void listPanel(Player p, String title, List<Filter> filters, int fi, int page, List<Row> rows, Reopen reopen, Runnable onBack) {
+    /**
+     * Popup lista. Pulsante filtro: click sinistro = filtro precedente (su), destro = successivo (giu'), Q = filtro avanzato
+     * (incudine: codice task o nick, vedi askAdvanced) che si aggiunge in fondo ai filtri, gia' selezionato.
+     * kind = chiave dei filtri avanzati di questa lista ("list", "trash", "log").
+     */
+    private void listPanel(Player p, String title, String kind, List<Filter> filters, int fi, int page, List<Row> rows, Reopen reopen,
+                           Runnable onBack) {
         List<String> fl = new ArrayList<>();
-        fl.add("&7scegli cosa vedere:");
-        fl.add(" ");
         for (int i = 0; i < filters.size(); i++) {
             fl.add(i == fi ? "&a» " + filters.get(i).label() : "&8" + filters.get(i).label());
         }
-        fl.add(" ");
-        fl.add("&eclicca per cambiare");
-        Runnable cycle = filters.size() > 1 ? () -> {
-            reopen.open((fi + 1) % filters.size(), 0);
+        fl.add("");
+        fl.add(filters.size() > 1 ? "&esinistro su &8| &edestro giù &8| &eQ cerca" : "&eQ cerca per task o nick");
+        int n = filters.size();
+        Runnable up = n > 1 ? () -> {
+            reopen.open(Math.floorMod(fi - 1, n), 0);
+        } : null;
+        Runnable down = n > 1 ? () -> {
+            reopen.open((fi + 1) % n, 0);
         } : null;
         int pages = Math.max(1, (rows.size() + L_PER_PAGE - 1) / L_PER_PAGE);
         int pg = Math.max(0, Math.min(page, pages - 1));
@@ -1548,7 +1669,7 @@ public final class TaskGui implements Listener {
         g.at(-15, "&f" + L_IMAGE, L_FONT, L_ADV);
         smallText(g, filters.get(fi).label(), L_BAR_FONT, L_BAR_CX, L_BAR_MAX);
         navText(g, pg + 1, pages);
-        UserProfilePowers.topTitle(plugin, g, title);
+        // niente titolo del popup: in alto resta "TASK" scurito (dentro bg())
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
         // sfondo dei popup aperti dalla lista/cestino: schermata task + pannello lista (advance reale, testi esclusi)
         h.under = u -> {
@@ -1557,15 +1678,27 @@ public final class TaskGui implements Listener {
         };
 
         put(h, L_X, pane("&cindietro", List.of()), onBack);
-        put(h, L_BTN, pane("&bfiltra per", fl), cycle);
-        put(h, new int[]{L_PREV}, pane("&7pagina precedente", List.of("&7Pagina &f" + (pg + 1) + "&8/&f" + pages)), pg > 0 ? () -> {
+        put(h, L_BTN, pane("&bfiltra per", fl), up);
+        if (down != null) {
+            putRight(h, L_BTN, down);
+        }
+        for (int s : L_BTN) {
+            h.dropActions.put(s, () -> {
+                askAdvanced(p, kind, () -> {
+                    reopen.open(fi, page);
+                }, () -> {
+                    reopen.open(n, 0);   // il nuovo filtro e' in fondo: indice n
+                });
+            });
+        }
+        put(h, new int[]{L_PREV}, pane("&7pagina precedente", List.of("&7pagina: &f" + (pg + 1) + "&8/&f" + pages)), pg > 0 ? () -> {
             reopen.open(fi, pg - 1);
         } : null);
-        put(h, new int[]{L_NEXT}, pane("&7pagina successiva", List.of("&7Pagina &f" + (pg + 1) + "&8/&f" + pages)), pg < pages - 1 ? () -> {
+        put(h, new int[]{L_NEXT}, pane("&7pagina successiva", List.of("&7pagina: &f" + (pg + 1) + "&8/&f" + pages)), pg < pages - 1 ? () -> {
             reopen.open(fi, pg + 1);
         } : null);
         if (rows.isEmpty()) {
-            h.inventory.setItem(gridSlot(10), icon("task_cartella_vuota", "&7nessuna voce", List.of("&8La lista e' vuota.")));
+            h.inventory.setItem(gridSlot(10), icon("task_cartella_vuota", "&7nessuna voce", List.of()));
         } else {
             for (int i = 0; i < L_PER_PAGE; i++) {
                 int idx = pg * L_PER_PAGE + i;
@@ -1584,6 +1717,182 @@ public final class TaskGui implements Listener {
             }
         }
         p.openInventory(h.inventory);
+    }
+
+    // ------------------------------------------------------------------
+    //  Filtri avanzati (Q sul pulsante filtro)
+    // ------------------------------------------------------------------
+
+    private List<Adv> adv(Player p, String kind) {
+        return advFilters.computeIfAbsent(p.getUniqueId(), u -> new HashMap<>()).computeIfAbsent(kind, k -> new ArrayList<>());
+    }
+
+    /** Filtri base + filtri avanzati di questa lista (chiave ADV + indice). */
+    private List<Filter> withAdv(Player p, String kind, List<Filter> base) {
+        List<Filter> out = new ArrayList<>(base);
+        List<Adv> list = adv(p, kind);
+        for (int i = 0; i < list.size(); i++) {
+            out.add(new Filter(list.get(i).label(), ADV + i));
+        }
+        return out;
+    }
+
+    private Adv advOf(Player p, String kind, String key) {
+        if (key == null || !key.startsWith(ADV)) {
+            return null;
+        }
+        List<Adv> list = adv(p, kind);
+        try {
+            int i = Integer.parseInt(key.substring(ADV.length()));
+            return i >= 0 && i < list.size() ? list.get(i) : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * Q sul pulsante filtro: incudine (con "continua in chat" di askText) per il codice di una task ("#4" o "4") o il nick di
+     * un utente/staffer (anche scritto male: il piu' simile tra i conosciuti). Riuscito = filtro in fondo e onAdded.
+     */
+    private void askAdvanced(Player p, String kind, Runnable onBack, Runnable onAdded) {
+        plugin.getProfileUi().askText(p, "codice task (es. #4) o nick", "CERCA", "", text -> {
+            Adv a = parseAdvanced(text);
+            if (a == null) {
+                deny(p, "nessuna task o giocatore trovato per \"" + clean(text) + "\".");
+                onBack.run();
+                return;
+            }
+            adv(p, kind).add(a);
+            onAdded.run();
+        }, onBack);
+    }
+
+    private Adv parseAdvanced(String raw) {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        String id = text.startsWith("#") ? text.substring(1).trim() : text;
+        if (id.matches("\\d+")) {
+            String tid = String.valueOf(Long.parseLong(id));
+            boolean known = tasks().get(tid) != null;
+            for (StaffTasks.LogEntry e : safe(tasks().log(null))) {
+                known |= tid.equals(e.taskId());
+            }
+            return known ? new Adv("Task #" + tid, tid, null, null) : null;
+        }
+        // nick: il piu' simile tra player del server e nomi che compaiono nelle task (creatori, staff, bersagli)
+        Map<String, UUID> names = knownNames();
+        String q = TaskText.plain(text);
+        String best = null;
+        int bestD = Integer.MAX_VALUE;
+        for (String n : names.keySet()) {
+            String pn = TaskText.plain(n);
+            int d = pn.equals(q) ? 0 : q.length() >= 3 && pn.startsWith(q) ? 1 : TaskText.levenshtein(q, pn);
+            if (d < bestD) {
+                bestD = d;
+                best = n;
+            }
+        }
+        if (best == null || bestD > Math.max(1, TaskText.threshold(q.length()))) {
+            return null;
+        }
+        return new Adv(best, null, names.get(best), best);
+    }
+
+    private Map<String, UUID> knownNames() {
+        Map<String, UUID> out = new HashMap<>();
+        for (Player o : Bukkit.getOnlinePlayers()) {
+            out.put(o.getName(), o.getUniqueId());
+        }
+        for (OfflinePlayer o : Bukkit.getOfflinePlayers()) {
+            if (o.getName() != null && !o.getName().isEmpty()) {
+                out.putIfAbsent(o.getName(), o.getUniqueId());
+            }
+        }
+        StaffTasks t = tasks();
+        List<StaffTasks.Task> all = new ArrayList<>(safe(t.list(StaffTasks.Status.APERTA)));
+        all.addAll(safe(t.list(StaffTasks.Status.ELIMINATA)));
+        for (StaffTasks.Task k : all) {
+            putName(out, k.createdByName(), k.createdBy());
+            for (StaffTasks.Order o : safe(k.orders())) {
+                putName(out, o.doneByName(), o.doneBy());
+                for (StaffTasks.Branch b : safe(o.branches())) {
+                    for (StaffTasks.Action a : safe(b.actions())) {
+                        putName(out, a.targetName(), a.target());
+                    }
+                }
+            }
+        }
+        for (StaffTasks.LogEntry e : safe(t.log(null))) {
+            putName(out, e.byName(), e.by());
+        }
+        return out;
+    }
+
+    private static void putName(Map<String, UUID> out, String name, UUID id) {
+        if (name != null && !name.isBlank()) {
+            out.putIfAbsent(name.trim(), id);
+        }
+    }
+
+    private static boolean same(Adv a, UUID id, String name) {
+        return (a.player() != null && a.player().equals(id)) || (a.name() != null && name != null && a.name().equalsIgnoreCase(name.trim()));
+    }
+
+    /** L'ordine riguarda il player: l'ha completato o e' il bersaglio di un'azione. */
+    private static boolean involves(Adv a, StaffTasks.Order o) {
+        if (same(a, o.doneBy(), o.doneByName())) {
+            return true;
+        }
+        for (StaffTasks.Branch b : safe(o.branches())) {
+            for (StaffTasks.Action x : safe(b.actions())) {
+                if (same(a, x.target(), x.targetName()) || same(a, x.doneBy(), null)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Task del filtro: quella col codice, oppure creata dal player o con un ordine che lo riguarda (o in carico a lui). */
+    private boolean matchesTask(Adv a, StaffTasks.Task k) {
+        if (a.taskId() != null) {
+            return a.taskId().equals(k.id());
+        }
+        if (same(a, k.createdBy(), k.createdByName())) {
+            return true;
+        }
+        for (StaffTasks.Order o : safe(k.orders())) {
+            StaffTasks.Charge c = tasks().chargeOn(k.id(), o.id());
+            if (involves(a, o) || (c != null && same(a, c.staff(), null))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Voce del registro: della task col codice, oppure fatta dal player o su una task/ordine che lo riguarda. */
+    private boolean matchesLog(Adv a, StaffTasks.LogEntry e) {
+        if (a.taskId() != null) {
+            return a.taskId().equals(e.taskId());
+        }
+        if (same(a, e.by(), e.byName())) {
+            return true;
+        }
+        StaffTasks.Task k = tasks().get(e.taskId());
+        if (k == null) {
+            return false;
+        }
+        if (e.orderId() != null) {
+            for (StaffTasks.Order o : safe(k.orders())) {
+                if (o.id().equals(e.orderId())) {
+                    return involves(a, o);
+                }
+            }
+            return false;
+        }
+        return matchesTask(a, k);
     }
 
     private static int gridSlot(int i) {
@@ -1615,16 +1924,41 @@ public final class TaskGui implements Listener {
         return sb.toString();
     }
 
+    /**
+     * Accorcia il testo finche' sta in max px (il testo non deve MAI uscire dalla barra; il tiny e' gia' il font piu'
+     * stretto del pack): prima abbrevia la parola piu' lunga col punto ("RIPRISTINATE" -> "RIPRIST."), poi taglia.
+     */
+    private static String fit(String text, int max) {
+        String t = text == null ? "" : text.trim();
+        while (tinyAdvance(t) > max) {
+            String[] w = t.split(" ");
+            int li = -1;
+            for (int i = 0; i < w.length; i++) {
+                int len = w[i].endsWith(".") ? w[i].length() - 1 : w[i].length();
+                if (len > 3 && (li < 0 || len >= (w[li].endsWith(".") ? w[li].length() - 1 : w[li].length()))) {
+                    li = i;
+                }
+            }
+            if (li < 0) {
+                break;
+            }
+            String base = w[li].endsWith(".") ? w[li].substring(0, w[li].length() - 1) : w[li];
+            w[li] = base.substring(0, base.length() - 1) + ".";
+            t = String.join(" ", w);
+        }
+        while (tinyAdvance(t) > max && t.length() > 1) {
+            t = t.substring(0, t.length() - 1).trim();   // ultima risorsa: taglio secco
+        }
+        return tinyAdvance(t) > max ? "" : t;
+    }
+
     /** Testo piccolo centrato su cx (copia di ProfileLists.barText, con font e larghezza massima a scelta). */
     private void smallText(GuiTitle g, String raw, String font, int cx, int max) {
         StringBuilder safe = new StringBuilder();
         for (char ch : (raw == null ? "" : raw).toCharArray()) {
             safe.append(tinyChar(ch) ? ch : ' ');
         }
-        String text = safe.toString().replaceAll(" +", " ").trim();
-        while (tinyAdvance(text) > max && text.length() > 1) {
-            text = text.substring(0, text.length() - 1).trim();
-        }
+        String text = fit(safe.toString().replaceAll(" +", " ").trim(), max);
         if (text.isEmpty()) {
             return;
         }
@@ -1641,19 +1975,31 @@ public final class TaskGui implements Listener {
         }
     }
 
+    /** Numero pagina dei popup lista/cartella (glifi NAV del font default, centro 96, quota della barra del popup). */
     private void navText(GuiTitle g, int page, int pages) {
-        String plain = page + "/" + pages;
+        navText(g, page, pages, "", L_NAV, L_NAV_SH, L_NAV_CX, 0);
+    }
+
+    /**
+     * Numero pagina "n/tot" centrato su cx (cifre e "/" da 6 px, base+0..9 cifre, base+10 "/"), sempre disegnato.
+     * dx = 0 nel titolo normale (convenzione IMG = -22), 7 dentro uno sfondo con cursore reale.
+     */
+    private void navText(GuiTitle g, int page, int pages, String font, char base, char shadow, int cx, int dx) {
+        String plain = Math.max(1, page) + "/" + Math.max(1, pages);
+        if (plain.length() * 6 > L_NAV_MAX) {
+            plain = String.valueOf(page);   // non sta tra le frecce: solo il numero di pagina
+        }
         StringBuilder n = new StringBuilder();
         StringBuilder sh = new StringBuilder();
         for (char ch : plain.toCharArray()) {
             int o = ch == '/' ? 10 : ch - '0';
-            n.append((char) (L_NAV + o));
-            sh.append((char) (L_NAV_SH + o));
+            n.append((char) (base + o));
+            sh.append((char) (shadow + o));
         }
         int adv = plain.length() * 6;
-        int start = L_NAV_CX - (adv - 1) / 2;
-        g.at(start + 1 + L_IMG, GuiTitle.shadowCode(plugin) + sh, "", adv);
-        g.at(start + L_IMG, "&f" + n, "", adv);
+        int start = cx - (adv - 1) / 2;
+        g.at(start + 1 + L_IMG + dx, GuiTitle.shadowCode(plugin) + sh, font, adv);
+        g.at(start + L_IMG + dx, "&f" + n, font, adv);
     }
 
     // ------------------------------------------------------------------
@@ -1765,8 +2111,21 @@ public final class TaskGui implements Listener {
         }
     }
 
+    /**
+     * GUI task chiusa davvero (Esc, closeInventory): i filtri avanzati spariscono. Aprire un popup o un'altra schermata
+     * (OPEN_NEW, compresa l'incudine) non li toglie.
+     */
+    @EventHandler
+    public void onClose(InventoryCloseEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof Holder
+                && event.getReason() != InventoryCloseEvent.Reason.OPEN_NEW) {
+            advFilters.remove(event.getPlayer().getUniqueId());
+        }
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         drafts.remove(event.getPlayer().getUniqueId());
+        advFilters.remove(event.getPlayer().getUniqueId());
     }
 }

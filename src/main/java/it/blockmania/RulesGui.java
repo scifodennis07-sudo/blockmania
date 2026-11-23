@@ -30,7 +30,7 @@ import java.util.UUID;
 
 /**
  * GUI delle regole (/adminmania rules): elenco a pagine di tutte le regole (ban, warn, mute, regolamento)
- * con filtro per tipo (click sinistro sul pulsante blu), creazione (click destro sul pulsante blu)
+ * con filtro per tipo (pulsante blu: sinistro = precedente, destro = successivo), creazione (Q sul pulsante blu)
  * (l'eliminazione si fa solo dalla GUI di dettaglio).
  * Grafica: regole.png (glifo U+3E0B), font minecraft:regole.
  * Live: si ridisegna da sola a ogni Rules.onChange.
@@ -393,14 +393,13 @@ public final class RulesGui implements Listener {
         List<String> lore = new ArrayList<>();
         // titolo in bianco in cima, poi descrizione, tipo, tempo
         lore.add("&f" + r.title());
-        lore.add(" ");
         for (String line : wrap(r.text())) {
             lore.add("&7" + line);
         }
-        lore.add(" ");
-        lore.add("&7Tipo: " + colorOf(r.type()) + rules.label(r.type()));
-        lore.add("&7Tempo: &f" + Rules.timeLabel(r));
-        lore.add(" ");
+        lore.add("");
+        lore.add("&7tipo: " + colorOf(r.type()) + rules.label(r.type()));
+        lore.add("&7tempo: &f" + Rules.timeLabel(r));
+        lore.add("");
         lore.add("&eclicca per aprire");
         return pane("&f" + r.code(), lore);
     }
@@ -415,22 +414,19 @@ public final class RulesGui implements Listener {
         }
         // stesso stile dei filtri dei ticket: opzioni con » verde sulla corrente
         List<String> blue = new ArrayList<>();
-        blue.add("&7scegli cosa vedere:");
-        blue.add(" ");
         Rules.Type[] opts = {null, Rules.Type.BAN, Rules.Type.WARN, Rules.Type.MUTE};
         for (Rules.Type o : opts) {
             blue.add(o == s.filter ? "&a» " + filterName(o) : "&8" + filterName(o));
         }
-        blue.add(" ");
-        blue.add("&eclicca per cambiare");
-        blue.add("&eclick destro: crea una regola");
+        blue.add("");
+        blue.add("&esinistro su &8| &edestro giù &8| &eQ crea");
         for (int slot : SLOTS_BLUE) {
             inv.setItem(slot, pane("&bfiltra per", blue));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
         if (all.isEmpty()) {
-            inv.setItem(GRID_START + 22, pane("&7nessuna regola", List.of("&8Click destro sul pulsante blu per crearne una.")));
+            inv.setItem(GRID_START + 22, pane("&7nessuna regola", List.of()));
             return;
         }
         for (int i = 0; i < PER_PAGE; i++) {
@@ -553,11 +549,13 @@ public final class RulesGui implements Listener {
     /** Sfondo della lista (regole.png) a colori pieni, advance reale 186: lo scurimento lo applica chi lo usa (MinesGui.tint). */
     public void drawDimmedBackground(GuiTitle g) {
         g.at(-15, "&f" + IMG_BASE, FONT_RULES, 186);
+        UserProfilePowers.invVariant(g, UserProfilePowers.INV_HIGH);   // regole
     }
 
     /**
      * Come sopra, ma con la pagina della lista da cui si e' partiti: numero pagina e targhette delle regole di quel filtro
-     * e pagina (testi a IMG + 7, perche' qui l'avanzamento dell'immagine e' quello reale).
+     * e pagina (testi a IMG + 7, perche' qui l'avanzamento dell'immagine e' quello reale) e il titolo in alto della lista
+     * (scurito insieme al resto: i popup non scrivono un loro titolo).
      */
     public void drawDimmedBackground(GuiTitle g, Rules.Type filter, int page) {
         drawDimmedBackground(g);
@@ -568,6 +566,7 @@ public final class RulesGui implements Listener {
         s.page = Math.max(0, Math.min(page, pages - 1));
         navText(g, s.page + 1, pages, IMG + 7);
         drawRuleTags(g, s, all, IMG + 7);
+        UserProfilePowers.topTitleDim(plugin, g, titleWord() + " " + filterName(s.filter));
     }
 
     private void askTime(Player p, Rules.Type currentFilter, int page, String code, String title, String text, Rules.Type t) {
@@ -627,13 +626,17 @@ public final class RulesGui implements Listener {
         }
         for (int b : SLOTS_BLUE) {
             if (slot == b) {
-                plugin.guiClick(p);
-                if (event.getClick().isRightClick()) {
+                ClickType bc = event.getClick();
+                if (bc == ClickType.DROP || bc == ClickType.CONTROL_DROP) {
+                    // Q: crea una regola (prima era il click destro)
+                    plugin.guiClick(p);
                     final Rules.Type cur = s.filter;
                     final int curPage = s.page;
                     Bukkit.getScheduler().runTask(plugin, () -> startCreate(p, cur, curPage));
-                } else {
-                    s.filter = nextFilter(s.filter);
+                } else if (bc.isLeftClick() || bc.isRightClick()) {
+                    // sinistro = filtro precedente (su), destro = filtro successivo (giu')
+                    plugin.guiClick(p);
+                    s.filter = bc.isLeftClick() ? prevFilter(s.filter) : nextFilter(s.filter);
                     s.page = 0;
                     filters.put(p.getUniqueId(), s.filter);
                     redraw(s);
@@ -665,6 +668,18 @@ public final class RulesGui implements Listener {
             Bukkit.getScheduler().runTask(plugin, () -> detail().open(p, code,
                     () -> Bukkit.getScheduler().runTask(plugin, () -> open(p, backFilter, backPage))));
         }
+    }
+
+    /** Filtro prima di t nel giro tutte -> ban -> warn -> mute (opposto di nextFilter). */
+    private static Rules.Type prevFilter(Rules.Type t) {
+        if (t == null) {
+            return Rules.Type.MUTE;
+        }
+        return switch (t) {
+            case BAN -> null;
+            case WARN -> Rules.Type.BAN;
+            case MUTE, REGOLAMENTO -> Rules.Type.WARN;
+        };
     }
 
     /** TUTTE -> BAN -> WARN -> MUTE -> TUTTE (regolamento non e' un filtro: si vede solo in "tutte"). */

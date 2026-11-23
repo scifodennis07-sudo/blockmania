@@ -213,10 +213,13 @@ public final class UserProfileGui implements Listener {
 
     /**
      * Sfondo del profilo per i popup (da scurire come in UserProfilePowers.confirmOver / RuleDetailGui.drawDimmedBackground):
-     * immagine della pagina, testa e barre sanzioni (e stamina in pagina 0), tutto con avanzamento reale 186. Non scurisce.
+     * immagine della pagina, testa e barre sanzioni (e stamina in pagina 0), tutto con avanzamento reale 186, e il titolo
+     * "PROFILO nome" nella barra in alto (lo scurisce il popup insieme al resto: i popup non scrivono un loro titolo). Non scurisce.
      */
     public void drawDimmedBackground(GuiTitle g, UUID target, int page) {
         scene(g, target, snap(target), Math.max(0, Math.min(PAGES - 1, page)), true);
+        UserProfilePowers.topTitleDim(plugin, g, "profilo " + UserProfilePowers.nameOf(target));
+        UserProfilePowers.invVariant(g, UserProfilePowers.INV_LOW);   // userprofile*: inventario 1 px piu' in basso
     }
 
     /** Aggiorna le GUI aperte su questo target (sanzione cambiata o scaduta). */
@@ -498,12 +501,9 @@ public final class UserProfileGui implements Listener {
 
         setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
         setAll(h, S_INFO, pane("&6informazioni", List.of(
-                "&7Profilo del giocatore: sanzioni e contatori.", "",
-                "&fMUTE / WARN / BAN: &7click sinistro = comandi,",
-                "&7click destro = cronologia.",
-                "&fPalle e oggetti: &7click sinistro = comandi",
-                "&7(give, remove, set, full, reset).",
-                "&fTesta: &7click destro su uno staffer = staffprofile.")), null);
+                "&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES,
+                "&7sanzioni: &fsinistro comandi",
+                "&7sanzioni: &fdestro cronologia")), null);
 
         // testa
         setHead(h, target, online);
@@ -525,20 +525,21 @@ public final class UserProfileGui implements Listener {
         fillArrows(h);
 
         // miniere, potenziamenti, ricompense, exp: aprono le GUI originali sul player (devono essere online)
-        String off = online ? "" : "&cIl giocatore deve essere online.";
-        setAll(h, S_UPG_A, pane("&6miniere", linesOf("&7Click: apre le miniere del giocatore.", off)), "mines");
-        setAll(h, S_UPG_B, pane("&6potenziamenti", linesOf("&7Click: apre i potenziamenti del giocatore.", off)), "upg");
-        setAll(h, S_RW_A, pane("&dricompense", linesOf("&7Click: apre le ricompense del giocatore.", off)), "rw");
+        String off = online ? "" : "&7stato: &coffline";
+        List<String> openLore = online ? List.of("&eclicca per aprire") : List.of(off, "", "&eclicca per aprire");
+        setAll(h, S_UPG_A, pane("&6miniere", openLore), "mines");
+        setAll(h, S_UPG_B, pane("&6potenziamenti", openLore), "upg");
+        setAll(h, S_RW_A, pane("&dricompense", openLore), "rw");
         List<String> expLore = new ArrayList<>();
         Player tp = Bukkit.getPlayer(target);
         if (tp != null && plugin.getProfileRewards() != null) {
             expLore.addAll(plugin.getProfileRewards().expLore(tp));
         }
-        expLore.add("");
-        expLore.add("&7Click: comandi exp (aggiungi, rimuovi, setta, reset).");
         if (!online) {
             expLore.add(off);
         }
+        expLore.add("");
+        expLore.add("&eclicca per i comandi");
         setAll(h, S_RW_B, pane("&5exp", expLore), "exp");
     }
 
@@ -546,9 +547,9 @@ public final class UserProfileGui implements Listener {
     private void fillArrows(Holder h) {
         boolean hasPrev = h.page > 0;
         boolean hasNext = h.page < PAGES - 1;
-        setAll(h, S_PREV, pane(hasPrev ? "&epagina precedente" : "&8pagina precedente", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+        setAll(h, S_PREV, pane(hasPrev ? "&epagina precedente" : "&8pagina precedente", List.of("&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES)),
                 hasPrev ? "pg:prev" : null);
-        setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7Pagina &f" + (h.page + 1) + "&8/&f" + PAGES)),
+        setAll(h, S_NEXT, pane(hasNext ? "&epagina successiva" : "&8pagina successiva", List.of("&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES)),
                 hasNext ? "pg:next" : null);
     }
 
@@ -557,10 +558,9 @@ public final class UserProfileGui implements Listener {
         boolean online = Bukkit.getPlayer(target) != null;
         setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
         setAll(h, S_INFO, pane("&6informazioni", List.of(
-                "&7Profilo del giocatore: pagina &f" + (h.page + 1) + "&8/&f" + PAGES + "&7.", "",
-                "&fFrecce in alto: &7cambiano pagina.",
-                "&fMUTE / WARN / BAN: &7click sinistro = comandi,",
-                "&7click destro = cronologia.")), null);
+                "&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES,
+                "&7sanzioni: &fsinistro comandi",
+                "&7sanzioni: &fdestro cronologia")), null);
         setHead(h, target, online);
         long now = System.currentTimeMillis();
         setAll(h, S_MUTE, timedItem("mute", s.mute(), now, false, ""), "sanc:MUTE");
@@ -569,15 +569,15 @@ public final class UserProfileGui implements Listener {
         setAll(h, S_STAMINA, staminaItem(target), "stamina");
         fillArrows(h);
         if (h.page == 1) {
-            setAll(h, S_BTN_LT, pane("&bresetta player", List.of("&7Azzera tutto tranne le sanzioni", "&7(miniere, ricompense, potenziamenti,", "&7contatori, stamina, exp...).", "", "&eclick: resetta (con conferma)")), "reset_player");
-            setAll(h, S_BTN_LB, pane("&eresetta sanzioni", List.of("&7Azzera mute, ban, warn e la", "&7cronologia sanzioni del giocatore.", "", "&eclick: resetta (con conferma)")), "reset_sanc");
-            setAll(h, S_BTN_RT, pane("&9cronologia movimenti", List.of("&7Miniere, negozi, ticket, ricompense,", "&7potenziamenti, sanzioni, staff...", "", "&eclick: apre la cronologia")), "hist_moves");
-            setAll(h, S_BTN_RB, pane("&6cronologia sanzioni", List.of("&7Warn, mute e ban del giocatore.", "", "&eclick: apre la cronologia")), "hist_sanc");
+            setAll(h, S_BTN_LT, pane("&bresetta player", List.of("&7azzera: &ftutto tranne sanzioni", "", "&eclicca per resettare")), "reset_player");
+            setAll(h, S_BTN_LB, pane("&eresetta sanzioni", List.of("&7azzera: &fmute, ban, warn", "&7e anche: &fla cronologia", "", "&eclicca per resettare")), "reset_sanc");
+            setAll(h, S_BTN_RT, pane("&9cronologia movimenti", List.of("&7contiene: &fminiere, negozi, ticket...", "", "&eclicca per aprire")), "hist_moves");
+            setAll(h, S_BTN_RB, pane("&6cronologia sanzioni", List.of("&7contiene: &fwarn, mute e ban", "", "&eclicca per aprire")), "hist_sanc");
         } else {
-            setAll(h, S_BTN_LT, pane("&6cronologia acquisti", List.of("&7Acquisti del giocatore.", "", "&eclick: apre la cronologia")), "hist_buys");
-            setAll(h, S_BTN_LB, pane("&bcambia ruolo", List.of("&7Cambia il ruolo del giocatore.", "", "&8non ancora disponibile")), "chg_role");
-            setAll(h, S_BTN_RT, pane("&dpexa staff", List.of("&7Assegna il grado staff al giocatore.", "", "&eclick: apre la selezione del ruolo")), "pexa");
-            setAll(h, S_BTN_RB, pane("&6aggiungi vip", List.of("&7Aggiunge il giocatore ai VIP.", "", "&8non ancora disponibile")), "vip");
+            setAll(h, S_BTN_LT, pane("&6cronologia acquisti", List.of("&eclicca per aprire")), "hist_buys");
+            setAll(h, S_BTN_LB, pane("&bcambia ruolo", List.of("&7stato: &8in arrivo")), "chg_role");
+            setAll(h, S_BTN_RT, pane("&dpexa staff", List.of("&eclicca per scegliere il grado")), "pexa");
+            setAll(h, S_BTN_RB, pane("&6aggiungi vip", List.of("&7stato: &8in arrivo")), "vip");
         }
     }
 
@@ -666,7 +666,10 @@ public final class UserProfileGui implements Listener {
             lore.add("&7stato: &aonline");
         } else {
             long seen = op.getLastSeen();
-            lore.add("&7stato: &8offline" + (seen > 0 ? " &7(visto " + DATE.format(Instant.ofEpochMilli(seen)) + ")" : ""));
+            lore.add("&7stato: &8offline");
+            if (seen > 0) {
+                lore.add("&7visto: &f" + DATE.format(Instant.ofEpochMilli(seen)));
+            }
         }
         long mins = playMinutes(target);
         lore.add("&7playtime: &f" + (mins < 0 ? "n/d" : minutes(mins)));
@@ -674,8 +677,9 @@ public final class UserProfileGui implements Listener {
         lore.add("&7ultimo login: &f" + (login > 0 ? DATE.format(Instant.ofEpochMilli(login)) : "mai"));
         if (isStaff(target)) {
             lore.add("");
-            lore.add("&6e' uno staffer");
-            lore.add("&eclick destro: staffprofile");
+            lore.add("&7staff: &asì");
+            lore.add("");
+            lore.add("&edestro per lo staffprofile");
         }
         return lore;
     }
@@ -686,20 +690,19 @@ public final class UserProfileGui implements Listener {
         if (st.active()) {
             lore.add("&7stato: " + color + "attivo");
             if (st.endMs() <= 0 || st.totalMs() <= 0) {
-                lore.add("&7tempo mancante: &fpermanente");
+                lore.add("&7mancano: &fpermanente");
             } else {
-                lore.add("&7tempo mancante: &f" + dur(Math.max(0, st.endMs() - now)));
-                lore.add("&7durata totale: &f" + dur(st.totalMs()));
+                lore.add("&7mancano: &f" + dur(Math.max(0, st.endMs() - now)));
+                lore.add("&7durata: &f" + dur(st.totalMs()));
             }
             if (fromWarns) {
-                lore.add("&5causato dai 4 warn");
+                lore.add("&7causa: &54 warn");
             }
         } else {
             lore.add("&7stato: &anon sanzionato");
         }
         lore.add("");
-        lore.add("&eclick sinistro: comandi");
-        lore.add("&eclick destro: cronologia");
+        lore.add("&esinistro comandi &8| &edestro storico");
         return pane(color + label, lore);
     }
 
@@ -708,17 +711,16 @@ public final class UserProfileGui implements Listener {
         int w = s.warns();
         lore.add("&7warn: &f" + w + "&8/&f" + WARN_N);
         if (s.banFromWarns()) {
-            lore.add("&5bannato per i warn");
+            lore.add("&7ban: &5per i 4 warn");
         }
         if (!s.warnNote().isBlank()) {
             lore.add("");
-            for (String part : wrap(s.warnNote(), 34)) {
+            for (String part : wrap(s.warnNote(), LoreWrap.LIMIT)) {
                 lore.add("&d" + part);
             }
         }
         lore.add("");
-        lore.add("&eclick sinistro: comandi");
-        lore.add("&eclick destro: cronologia");
+        lore.add("&esinistro comandi &8| &edestro storico");
         String color = s.banFromWarns() && w >= WARN_N ? "&5" : w == 0 ? "&7" : w == 1 ? "&e" : w == 2 ? "&6" : "&c";
         return pane(color + "warn", lore);
     }
@@ -727,14 +729,13 @@ public final class UserProfileGui implements Listener {
         List<String> lore = new ArrayList<>();
         lore.add("&7disponibili: &f" + amount(pc, target, ic.item()));
         if (ic.fired()) {
-            lore.add("&7sparate in totale: &f" + pc.totalFired(target, ic.item()));
+            lore.add("&7sparate: &f" + pc.totalFired(target, ic.item()));
         }
-        lore.add("");
         if (online) {
-            lore.add("&eclick sinistro: comandi (" + String.join(", ", pc.commands(ic.item())) + ")");
+            lore.add("");
+            lore.add("&eclicca per i comandi");
         } else {
-            lore.add("&8il player e' offline: dati salvati all'uscita,");
-            lore.add("&8si possono solo guardare");
+            lore.add("&7stato: &coffline");
         }
         return pane(ic.color() + ic.name(), lore);
     }
@@ -745,29 +746,27 @@ public final class UserProfileGui implements Listener {
         Power pw = plugin.getPower();
         List<String> lore = new ArrayList<>();
         if (pct < 0 || tp == null || pw == null) {
-            lore.add("&8il player e' offline: stamina non disponibile");
+            lore.add("&7stato: &coffline");
         } else {
             lore.add("&7livello: &f" + pct + "%");
-            lore.add("&7modalita': &f" + pw.mode(tp));
+            lore.add("&7modalità: &f" + pw.mode(tp));
             lore.add("");
-            lore.add("&eclick: comandi stamina");
+            lore.add("&eclicca per i comandi");
         }
-        return pane("&eSTAMINA", lore);
+        return pane("&estamina", lore);
     }
 
     private ItemStack powerItem(UUID target, PlayerCounters pc, boolean online) {
         int charges = pc.value(target, PlayerCounters.Item.POWER_CHARGES);
         List<String> lore = new ArrayList<>();
-        lore.add("&7attivo: " + (charges > 0 ? "&asi" : "&cno") + " &8(&f" + amount(pc, target, PlayerCounters.Item.POWER_CHARGES) + "&8)");
+        lore.add("&7attivo: " + (charges > 0 ? "&asì" : "&cno") + " &8(&f" + amount(pc, target, PlayerCounters.Item.POWER_CHARGES) + "&8)");
         lore.add("&7utilizzi: &f" + amount(pc, target, PlayerCounters.Item.POWER_USES));
-        lore.add("&7colpi potenziati sparati in totale: &f" + pc.totalFired(target, PlayerCounters.Item.POWER_CHARGES));
-        lore.add("");
+        lore.add("&7sparati: &f" + pc.totalFired(target, PlayerCounters.Item.POWER_CHARGES));
         if (online) {
-            lore.add("&eclick sinistro: comandi sbloccati");
-            lore.add("&eclick destro: comandi utilizzi");
+            lore.add("");
+            lore.add("&esinistro sblocchi &8| &edestro usi");
         } else {
-            lore.add("&8il player e' offline: dati salvati all'uscita,");
-            lore.add("&8si possono solo guardare");
+            lore.add("&7stato: &coffline");
         }
         return pane("&6colpo potenziato", lore);
     }
@@ -897,7 +896,7 @@ public final class UserProfileGui implements Listener {
             if (right) {
                 return;
             }
-            itemMenu(p, target, it);
+            itemMenu(p, target, it, page);
         } else if (action.equals("mines") || action.equals("upg") || action.equals("rw") || action.equals("exp")) {
             if (right) {
                 return;
@@ -912,7 +911,7 @@ public final class UserProfileGui implements Listener {
                 case "mines" -> plugin.getProfileMines().open(p, tp, back);
                 case "upg" -> plugin.getProfileUpgrades().open(p, tp, back);
                 case "rw" -> plugin.getProfileRewards().open(p, tp, back);
-                default -> plugin.getProfileRewards().openExp(p, tp, back);
+                default -> plugin.getProfileRewards().openExp(p, tp, back, popupBg(target, page));
             }
         }
     }
@@ -1008,11 +1007,11 @@ public final class UserProfileGui implements Listener {
     // ------------------------------------------------------------------
 
     /**
-     * Sfondo dei popup comandi aperti dalla pagina indicata: null in pagina 0 (UserProfilePowers disegna il profilo
-     * principale scurito), altrimenti la pagina 2/3 scurita (stesso sfondo dei popup di pageAction).
+     * Sfondo dei popup comandi aperti dalla pagina indicata: la pagina (anche la 1) scurita con il titolo del profilo
+     * (stesso sfondo dei popup di pageAction).
      */
     private java.util.function.Consumer<GuiTitle> popupBg(UUID target, int page) {
-        return page <= 0 ? null : g -> drawDimmedBackground(g, target, page);
+        return g -> drawDimmedBackground(g, target, page);
     }
 
     private void staminaMenu(Player p, UUID target, int page) {
@@ -1257,7 +1256,7 @@ public final class UserProfileGui implements Listener {
         };
     }
 
-    private void itemMenu(Player p, UUID target, PlayerCounters.Item it) {
+    private void itemMenu(Player p, UUID target, PlayerCounters.Item it, int page) {
         PlayerCounters pc = plugin.getCounters();
         // offline: si puo' modificare lo stesso, la modifica si applica al suo prossimo login (StaffTasks.applyOrQueue)
         if (!authorize(p, target, "profile", "see", 0)) {
@@ -1278,7 +1277,7 @@ public final class UserProfileGui implements Listener {
         String label = popupLabelOf(it);
         plugin.getProfileUi().openCommands(p, label, cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> itemPick(p, target, it, cmd)),
-                () -> back(p, target), false, null);
+                () -> back(p, target), false, null, popupBg(target, page));
     }
 
     /** Etichetta corta per la barra del popup (deve stare in ~60 px). */

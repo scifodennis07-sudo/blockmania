@@ -155,30 +155,39 @@ public final class UserProfileUpgrades implements Listener {
                 c.getString(UpgradeManager.GUI + "title.font", ""), UpgradeManager.GUI + "title");
         int before = t.cursor();
         t.at(before - 186, "&f" + IMG_STAFF, "minecraft:mines", 186);
+        drawTexts(t, page, pages, targetName);
+        return t.build();
+    }
+
+    /** Numero pagina e nome nella barra in alto (convenzione del titolo normale: cursore 7 px indietro rispetto al reale). */
+    private void drawTexts(GuiTitle t, int page, int pages, String targetName) {
+        var c = plugin.getConfig();
         String pg = UpgradeManager.GUI + "title.page.";
+        // il numero "N/M" c'e' SEMPRE (anche 1/1), come UpgradeManager.buildTitle: testo vuoto = quello di default
         String pageRaw = c.getString(pg + "text", "");
-        if (pageRaw != null && !pageRaw.isBlank()) {
-            String plain = BlockMania.stripCodes(pageRaw)
-                    .replace("%page%", String.valueOf(page + 1))
-                    .replace("%pages%", String.valueOf(pages))
-                    .replace("%slash%", "/");
-            String set = c.getString(pg + "set", "main");
-            String shadowSet = c.getString(pg + "shadow-set", "main-shadow");
-            int center = c.getInt(pg + "center", 73);
-            int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
-            t.number(start, set, shadowSet, c.getBoolean(pg + "shadow", true), plain, c.getString(pg + "font", ""));
+        if (pageRaw == null || pageRaw.isBlank()) {
+            pageRaw = "%page%/%pages%";
         }
+        String plain = BlockMania.stripCodes(pageRaw)
+                .replace("%page%", String.valueOf(page + 1))
+                .replace("%pages%", String.valueOf(Math.max(1, pages)))
+                .replace("%slash%", "/");
+        String set = c.getString(pg + "set", "main");
+        String shadowSet = c.getString(pg + "shadow-set", "main-shadow");
+        int center = c.getInt(pg + "center", 73);
+        int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
+        t.number(start, set, shadowSet, c.getBoolean(pg + "shadow", true), plain, c.getString(pg + "font", ""));
         // nome della GUI centrato nella barra grigia in alto
         UpgradeManager.barTitle(plugin, t, "POTENZIAMENTI DI " + targetName, "POTENZ DI " + targetName,
                 "POTENZ " + targetName);
-        return t.build();
     }
 
     /**
      * Sfondo della GUI potenziamenti per le conferme (confirmOver lo scurisce): immagine base originale +
-     * pulsante reset blu, a immagine intera (x = -15, avanzamento reale 186).
+     * pulsante reset blu, a immagine intera (x = -15, avanzamento reale 186), con numero pagina e nome nella barra in alto
+     * uguali alla GUI (li scurisce il popup insieme al resto: i popup non scrivono un loro titolo).
      */
-    private void drawBackdrop(GuiTitle c) {
+    private void drawBackdrop(GuiTitle c, Holder h) {
         var cfg = plugin.getConfig();
         String raw = cfg.getString(UpgradeManager.GUI + "title.text", "");
         String glyphs = raw == null ? "" : raw.replaceAll("\\{shift:-?\\d+\\}", "").replaceAll("&.", "");
@@ -187,6 +196,12 @@ public final class UserProfileUpgrades implements Listener {
             c.at(-15, "&f" + glyphs, font, 186);
         }
         c.at(-15, "&f" + IMG_STAFF, "minecraft:mines", 186);
+        // i testi del titolo sono calibrati col cursore 7 px indietro (immagine dichiarata 179): lo si sposta e poi si rimette
+        c.atComponent(c.cursor(), Component.empty(), -7);
+        UpgradeManager um = plugin.getUpgrades();
+        drawTexts(c, h.page, um == null ? 1 : Math.max(1, um.pageCount()), UserProfilePowers.nameOf(h.target));
+        c.atComponent(c.cursor(), Component.empty(), 7);
+        UserProfilePowers.invVariant(c, UserProfilePowers.INV_HIGH);   // potenziamenti
     }
 
     private void put(Inventory inv, Holder h, int slot, ItemStack item, String action) {
@@ -227,8 +242,8 @@ public final class UserProfileUpgrades implements Listener {
                     c.getStringList(GUI + "next.lore"), general, false), "next");
         }
         // al posto del tasto info c'e' il tasto reset (stessi slot)
-        List<String> resetLore = List.of("", "&7Riporta tutti i potenziamenti di",
-                "&f" + target.getName() + " &7a livello 0.", "", "&eclicca per resettare");
+        List<String> resetLore = List.of("&7azzera: &ftutti i potenziamenti",
+                "&7di: &f" + target.getName(), "", "&eclicca per resettare");
         for (int slot : um.slotList(GUI + "slots.info")) {
             put(inv, h, slot, um.invisible("&creset potenziamenti", resetLore, general, false), "reset");
         }
@@ -268,11 +283,11 @@ public final class UserProfileUpgrades implements Listener {
             int defaultCmd = state == UpgradeManager.State.AVAILABLE ? 1
                     : (state == UpgradeManager.State.LOCKED || state == UpgradeManager.State.MAX) ? 2 : 3;
             String name = "&alivello &f%level%&8/&f%max%";
-            List<String> lore = List.of("",
-                    "&8• &7%label% &f%current%",
-                    "&8• &7livello &f%level%&8/&f%max%",
+            List<String> lore = List.of(
+                    "&7%label%: &f%current%",
+                    "&7livello: &f%level%&8/&f%max%",
                     "",
-                    "&eclicca per gestire il livello");
+                    "&eclicca per gestire");
             put(inv, h, pos.button(), um.pane(bp, defaultCmd, name, lore, r, false), action);
             for (int extra : pos.extra()) {
                 put(inv, h, extra, um.invisible(name, lore, r, false), action);
@@ -375,7 +390,7 @@ public final class UserProfileUpgrades implements Listener {
             back.run();
             return;
         }
-        ui.confirmOver(staff, "Azzerare tutti i potenziamenti di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
+        ui.confirmOver(staff, "Azzerare tutti i potenziamenti di " + UserProfilePowers.nameOf(h.target) + "?", c -> drawBackdrop(c, h), () -> {
             Player target = Bukkit.getPlayer(h.target);
             if (target == null) {
                 GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
@@ -419,7 +434,7 @@ public final class UserProfileUpgrades implements Listener {
     private void askLevelCommand(Player staff, Holder h, String id) {
         Runnable back = () -> reopen(staff, h);
         ui.openCommands(staff, labelOf(id), List.of("give", "remove", "set", "full", "reset"),
-                cmd -> pick(staff, h, id, cmd), back, false, null, this::drawBackdrop);
+                cmd -> pick(staff, h, id, cmd), back, false, null, c -> drawBackdrop(c, h));
     }
 
     private void pick(Player staff, Holder h, String id, String cmd) {
@@ -463,11 +478,11 @@ public final class UserProfileUpgrades implements Listener {
                         back.run();
                     }, back);
             // dal popup comandi: sfondo = potenziamenti + popup comandi scuriti (confirm li prende dal popup aperto)
-            case "full" -> ui.confirm(staff, "Portare al massimo " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
+            case "full" -> ui.confirm(staff, "Portare al massimo " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", c -> drawBackdrop(c, h), () -> {
                 apply(staff, h, id, max, "full");
                 back.run();
             }, back);
-            case "reset" -> ui.confirm(staff, "Azzerare " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", this::drawBackdrop, () -> {
+            case "reset" -> ui.confirm(staff, "Azzerare " + labelOf(id).toLowerCase(Locale.ROOT) + " di " + UserProfilePowers.nameOf(h.target) + "?", c -> drawBackdrop(c, h), () -> {
                 apply(staff, h, id, 0, "reset");
                 back.run();
             }, back);

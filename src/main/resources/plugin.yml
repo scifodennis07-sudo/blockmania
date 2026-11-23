@@ -1,5 +1,5 @@
 name: BlockMania
-version: 1.77.2
+version: 1.78.0
 main: it.blockmania.BlockMania
 api-version: '1.21'
 description: Oggetti speciali con modello custom

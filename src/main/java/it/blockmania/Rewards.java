@@ -1020,8 +1020,6 @@ public final class Rewards implements Listener {
 
     /** Cursore (pixel) alla fine dell'ultimo titolo composto da barTitle: serve per ridisegnare il titolo scurito sotto una conferma. */
     private int lastCursor;
-    /** true mentre si compone lo sfondo da scurire sotto una conferma: il nome nella barra lo scrive la conferma. */
-    private boolean noBarTitle;
 
     private boolean staffTitle() {
         return imageOverride.containsKey("staff");
@@ -1043,10 +1041,6 @@ public final class Rewards implements Listener {
 
     /** Scrive il titolo centrato nella barra in alto. Il font tiny2 non ha lo spazio: ogni parola e' scritta a parte. */
     private GuiTitle barTitle(GuiTitle t, Player target, String what) {
-        if (noBarTitle) {
-            lastCursor = t.cursor();
-            return t;
-        }
         String text = barTitleText(target, what).trim();
         StringBuilder safe = new StringBuilder();
         for (char ch : text.toCharArray()) {
@@ -1308,12 +1302,12 @@ public final class Rewards implements Listener {
             }
             // il tasto "informazioni" diventa RESET
             String[] r = repl(target, holder.kind.equals("levels") ? holder.type : "broken");
-            String resetName = "&c&lRESET";
+            String resetName = "&creset";
             List<String> resetLore = holder.kind.equals("levels")
-                    ? List.of("&7Azzera i livelli di questa tipologia.", "&eClicca (poi conferma).")
+                    ? List.of("&7azzera: &fi livelli di questo tipo", "", "&eclicca per resettare")
                     : holder.kind.equals("daily")
-                    ? List.of("&7Azzera giorni e ritiro di oggi.", "&eClicca (poi conferma).")
-                    : List.of("&7Azzera TUTTE le ricompense.", "&eClicca (poi conferma).");
+                    ? List.of("&7azzera: &fgiorni e ritiro di oggi", "", "&eclicca per resettare")
+                    : List.of("&7azzera: &ftutte le ricompense", "", "&eclicca per resettare");
             List<Integer> resetSlots = holder.kind.equals("levels") ? slots("info-sub", 15, 16) : slots("info", 7, 8);
             for (int slot : resetSlots) {
                 put(inv, holder, slot, pane(invisibleCmd(), resetName, resetLore, r, false), "reset");
@@ -1331,7 +1325,8 @@ public final class Rewards implements Listener {
                     if (it != null && it.hasItemMeta()) {
                         ItemMeta meta = it.getItemMeta();
                         List<Component> lore = meta.lore() == null ? new ArrayList<>() : new ArrayList<>(meta.lore());
-                        lore.add(plugin.text("&8» &eClicca per modificare questo livello"));
+                        lore.add(plugin.color(" "));
+                        lore.add(plugin.text("&eclicca per modificare"));
                         meta.lore(lore);
                         LoreWrap.fix(meta);   // lore a capo, nome non troppo lungo
                         it.setItemMeta(meta);
@@ -1345,15 +1340,13 @@ public final class Rewards implements Listener {
         }
     }
 
-    /** Come staffView, ma senza il nome nella barra in alto: serve come sfondo da scurire sotto una conferma. */
+    /**
+     * Sfondo da scurire sotto un popup (conferma, popup comandi): la stessa vista di staffView, CON il nome nella barra in
+     * alto, che cosi' resta identico (solo scurito) sotto il popup; i popup non scrivono un loro titolo.
+     */
     public StaffView staffViewBackground(Player target, String kind, String type, int mainPage, int page,
                                          Map<String, String> images) {
-        noBarTitle = true;
-        try {
-            return staffView(target, kind, type, mainPage, page, images, null);
-        } finally {
-            noBarTitle = false;
-        }
+        return staffView(target, kind, type, mainPage, page, images, null);
     }
 
     /** Numero massimo di livelli di una tipologia (per i popup dello staff). */
@@ -1377,16 +1370,16 @@ public final class Rewards implements Listener {
             }
         }
         List<String> out = new ArrayList<>();
-        out.add("&7Exp totale: &f" + exp);
-        out.add("&7Livello pass: &f" + reach + "&8/&f" + levels);
+        out.add("&7exp: &f" + exp);
+        out.add("&7livello pass: &f" + reach + "&8/&f" + levels);
         if (reach >= levels) {
-            out.add("&7Exp nel livello: &fmassimo raggiunto");
+            out.add("&7nel livello: &fmassimo");
         } else {
-            out.add("&7Exp nel livello: &f" + into + "&8/&f" + per);
-            out.add("&7Mancano al prossimo: &f" + Math.max(0, per - into));
+            out.add("&7nel livello: &f" + into + "&8/&f" + per);
+            out.add("&7mancano: &f" + Math.max(0, per - into));
         }
-        out.add("&7Livelli pass ritirati: &f" + claimedPass + "&8/&f" + reach);
-        out.add("&7Exp ottenuti dai ritiri: &f" + ((long) claimedOthers * expPerClaim()));
+        out.add("&7ritirati: &f" + claimedPass + "&8/&f" + reach);
+        out.add("&7exp dai ritiri: &f" + ((long) claimedOthers * expPerClaim()));
         return out;
     }
 

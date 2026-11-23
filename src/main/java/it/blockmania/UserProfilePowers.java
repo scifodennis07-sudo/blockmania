@@ -46,11 +46,54 @@ public final class UserProfilePowers implements Listener {
     private static final String FONT_UP = "minecraft:userprofile";
     private static final String FONT_UP2 = "minecraft:userprofile2";
 
-    /** Disegna lo sfondo del consumer (colori pieni) scurito x0.6, come confirmOver. */
+    /**
+     * Disegna lo sfondo del consumer (colori pieni) scurito x0.6, come confirmOver, e sopra l'inventario del player a colori
+     * pieni (drawInventoryFull, variante dichiarata dallo sfondo con invVariant). Il consumer deve disegnare anche il titolo
+     * della GUI di sotto (topTitleDim): cosi' resta uguale, solo scurito; i popup NON scrivono un loro titolo in alto.
+     */
     static void drawDimmed(BlockMania plugin, GuiTitle g, Consumer<GuiTitle> background) {
         GuiTitle tmp = new GuiTitle(plugin);
         background.accept(tmp);
+        Character v = INV.remove(tmp);
+        char variant = v == null ? INV_DEFAULT : v;
         g.atComponent(0, MinesGui.tint(tmp.build(), null), tmp.cursor());
+        drawInventoryFull(plugin, g, variant);
+        INV.put(g, variant);   // se g e' a sua volta lo sfondo di un altro popup, la variante passa al livello sopra
+    }
+
+    // ---------- inventario a colori pieni sopra lo sfondo scurito (font inv_full di Sara, docs/INV_FULL.md) ----------
+    private static final String FONT_INV = "minecraft:inv_full";
+    /** inv_full_b.png: userprofile*, mines, regole-3 (dettaglio regola), ricompense*, ticket, ticket-2 (inventario 1 px piu' in basso). */
+    static final char INV_LOW = '\uE001';
+    /** inv_full.png: task, regole, regole-2, potenziamenti, shopitem, oggetti. */
+    static final char INV_HIGH = '\uE000';
+    /** inv_full_sp.png: staffprofile e staffprofile-p2 (pannello piu' corto). */
+    static final char INV_STAFF = '\uE002';
+    /** Nessun inventario da ridisegnare (ticket-3..8, incudine vanilla, sfondi che non sono a pagina intera). */
+    static final char INV_NONE = 0;
+    /** Variante usata se lo sfondo non la dichiara con invVariant (profilo, lo sfondo di default dei popup comandi). */
+    private static final char INV_DEFAULT = INV_LOW;
+    /** Stessa x dello sfondo a pagina intera, cursore reale (INV_FULL.md). */
+    private static final int INV_X = -15;
+    /** Avanzamento reale del glifo (ultima colonna opaca x=184, +2), uguale agli sfondi a 186. */
+    private static final int INV_REAL = 186;
+    /** Variante dichiarata dagli sfondi (chiave = il GuiTitle in cui disegnano; identita', si toglie appena letta). */
+    private static final Map<GuiTitle, Character> INV = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** Lo sfondo a pagina intera disegnato in g dichiara quale variante di inv_full gli corrisponde (da chiamare nel consumer). */
+    static void invVariant(GuiTitle g, char variant) {
+        INV.put(g, variant);
+    }
+
+    /**
+     * Inventario del player a colori pieni (font minecraft:inv_full): da disegnare dopo lo sfondo scurito e prima del pannello
+     * del popup, con il cursore REALE (come dopo drawDimmed). variant = INV_LOW / INV_HIGH / INV_STAFF / INV_NONE (non disegna niente).
+     */
+    static void drawInventoryFull(BlockMania plugin, GuiTitle g, char variant) {
+        if (variant == INV_NONE) {
+            return;
+        }
+        g.at(INV_X, "&f" + variant, FONT_INV, INV_REAL);
     }
 
     /**
@@ -115,8 +158,10 @@ public final class UserProfilePowers implements Listener {
     private static final String FONT_TINY4 = "minecraft:tiny4";   // font alto: testo sopra il bordo, per la barra dell'anvil
     private static final int ANVIL_BAR_CX = 99;                   // centro barra anvil (container 23..153)
     private static final int ANVIL_BAR_MAX = 112;
-    private static final int BAR_MAX = 62;
+    private static final int BAR_MAX = 58;    // userprofile-2..18: interno 64..125 (62 px) - 4 (BAR_WIDTH.md)
     private static final int BAR_CX = 94;     // barra centrale (63,33,64,14) -> centro x 95
+    private static final int BAR_WIDE_MAX = 64;   // userprofile-19..23 (U+E112..E116) allargate: interno 61..128 (BAR_WIDTH.md)
+    private static final int BAR_WIDE_CX = 95;
     private static final int NAV_CX = 94;     // barra frecce (71,109,48,12) -> centro x 95/96
 
     private final BlockMania plugin;
@@ -235,9 +280,9 @@ public final class UserProfilePowers implements Listener {
         s.view = view;
         String range = rangeText(min, max);
         // la casella di testo mostra il nome dell'oggetto 0: lo lasciamo vuoto (niente "ANNULLA")
-        view.setItem(0, pane(" ", List.of("&cannulla", "&7Torna indietro senza fare niente.")));
-        view.setItem(1, pane("&e" + s.title, List.of("&7Scrivi un numero " + range + ".", "&7Poi clicca sul tasto verde.",
-                "&7Scambio: scrivi il numero in chat.")));
+        view.setItem(0, pane(" ", List.of("&eclicca per annullare")));
+        view.setItem(1, pane("&e" + s.title, List.of("&7numero: &f" + range, "",
+                "&eclicca il verde per inviare")));
         UUID id = staff.getUniqueId();
         anvils.put(id, s);
         switching.add(id);
@@ -286,10 +331,10 @@ public final class UserProfilePowers implements Listener {
         ItemMeta im = in.getItemMeta();
         im.setCustomModelData(plugin.getConfig().getInt("rewards-gui.invisible.cmd", 999));
         im.displayName(Component.text(s.initial.isEmpty() ? " " : s.initial));
-        im.lore(lore(List.of("&cannulla", "&7Torna indietro senza fare niente.")));
+        im.lore(lore(List.of("&eclicca per annullare")));
         in.setItemMeta(im);
         view.setItem(0, in);
-        view.setItem(1, pane("&e" + s.title, List.of("&7L'incudine accetta max 50 caratteri (limite del client).", "&7Per testi lunghi clicca lo &fscambio&7 e scrivi in chat.", "&7Poi clicca sul tasto verde.")));
+        view.setItem(1, pane("&e" + s.title, List.of("&7massimo: &f50 caratteri", "&7più lungo: &fscambio e chat", "", "&eclicca il verde per inviare")));
         UUID id = staff.getUniqueId();
         anvils.put(id, s);
         switching.add(id);
@@ -305,14 +350,15 @@ public final class UserProfilePowers implements Listener {
      * Conferma = si continua in chat col testo gia' scritto (chatText); annulla = di nuovo l'incudine con quel testo.
      */
     private void fullToChat(Player p, AnvilSession s, String written) {
+        // il testo scritto nella barra dell'incudine e' il "titolo" della GUI di sotto: sta nello sfondo, quindi scurito
         confirmOver(p, "L'incudine e' piena! Vuoi continuare a scrivere in chat?", g -> {
             g.at(-15, "&f" + ANVIL_BG, ANVIL_BG_FONT, ANVIL_BG_REAL);
+            anvilBgText(g, written, 7);   // cursore reale (immagine a 186): x + 7 rispetto a IMG = -22
+            invVariant(g, ANVIL_INV);
         }, () -> {
             chatText(p, s, written);
         }, () -> {
             askText(p, s.title, s.barText, written, s.onText, s.onCancel, s.customFull);
-        }, g -> {
-            anvilBgText(g, written);
         });
     }
 
@@ -343,8 +389,14 @@ public final class UserProfilePowers implements Listener {
         p.sendMessage(msg);
     }
 
-    /** Testo gia' scritto nella barra in alto dell'incudine di sfondo: si vede la fine se non ci sta (a colori pieni). */
-    private void anvilBgText(GuiTitle g, String raw) {
+    /** Sfondo incudine (anvil_vanilla): nessun glifo inv_full (INV_FULL.md), l'inventario resta come nell'immagine. */
+    private static final char ANVIL_INV = INV_NONE;
+
+    /**
+     * Testo gia' scritto nella barra in alto dell'incudine di sfondo: si vede la fine se non ci sta. dx = 7 se il cursore e'
+     * reale (dentro lo sfondo di un popup, poi scurito), 0 con la convenzione dei ticket (cursore 7 px indietro).
+     */
+    private void anvilBgText(GuiTitle g, String raw, int dx) {
         StringBuilder sb = new StringBuilder();
         for (char ch : (raw == null ? "" : raw).toCharArray()) {
             sb.append(ch < 128 && (Character.isLetterOrDigit(ch) || PUNCT.indexOf(ch) >= 0) ? ch : ' ');
@@ -363,8 +415,8 @@ public final class UserProfilePowers implements Listener {
                 continue;
             }
             int wa = tinyAdvance(w);
-            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), ANVIL_BG_FONT, wa);
-            g.at(st + off + IMG, "&f" + tinyLetters(w, BAR), ANVIL_BG_FONT, wa);
+            g.at(st + off + 1 + IMG + dx, GuiTitle.shadowCode(plugin) + tinyLetters(w, BAR_SH), ANVIL_BG_FONT, wa);
+            g.at(st + off + IMG + dx, "&f" + tinyLetters(w, BAR), ANVIL_BG_FONT, wa);
             off += wa + 4;
         }
     }
@@ -400,7 +452,8 @@ public final class UserProfilePowers implements Listener {
         final boolean overCmds = cmds;
         final Consumer<GuiTitle> bg = bg0;
         confirmOver(staff, text, c -> {
-            // advance reale (186) per tutte le immagini: il cursore lo sistema confirmOver
+            // advance reale (186) per tutte le immagini: il cursore lo sistema confirmOver.
+            // Il titolo della GUI di sotto lo disegna lo sfondo (bg / fallback, con topTitleDim); il popup comandi non ne ha.
             if (overCmds && bg != null) {
                 bg.accept(c);
             } else if (!overCmds && fallback != null) {
@@ -416,9 +469,9 @@ public final class UserProfilePowers implements Listener {
 
     /**
      * Conferma sopra la GUI del chiamante. drawDimmedBackground disegna nel GuiTitle ricevuto lo sfondo della
-     * propria GUI (immagini a immagine intera con x=-15 e advance REALE 186, niente numero pagina/testi): lo
-     * scurisce questo metodo (x0.6) e disegna sopra a colori pieni il pannello "CONFERMA O ANNULLA IL COMANDO."
-     * (glifo U+E207, font minecraft:mines) con il titolo CONFERMA nella barra in alto.
+     * propria GUI (immagini a immagine intera con x=-15 e advance REALE 186, piu' il suo titolo con topTitleDim): lo
+     * scurisce questo metodo (x0.6), ridisegna l'inventario a colori pieni e sopra il pannello di conferma (font minecraft:mines).
+     * Il titolo in alto NON e' "conferma": lo sfondo deve contenere il titolo della propria GUI (topTitleDim), che resta scurito.
      * Il chiamante riceve onYes/onNo nel tick dopo il click; le slot del pannello sono 28-30 e 32-34.
      */
     public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
@@ -427,8 +480,8 @@ public final class UserProfilePowers implements Listener {
     }
 
     /**
-     * Come sopra, ma top (se non null) disegna a colori pieni, sopra il pannello, al posto del titolo "conferma" nella barra
-     * in alto (cursore gia' spostato di 7 px come per topTitle). Es. TaskGui: il testo scritto nella barra dell'incudine.
+     * Come sopra, ma top (se non null) disegna a colori pieni sopra il pannello (cursore gia' spostato di 7 px come per topTitle).
+     * NON usarlo per il titolo della barra in alto: quello va nello sfondo (scurito), vedi fullToChat.
      */
     public void confirmOver(Player staff, String text, Consumer<GuiTitle> drawDimmedBackground,
                             Runnable onYes, Runnable onNo, Consumer<GuiTitle> top) {
@@ -447,12 +500,11 @@ public final class UserProfilePowers implements Listener {
         Holder h = new Holder();
         h.kind = "confirm";
         h.image = IMG_EMPTY;
-        GuiTitle content = new GuiTitle(plugin);
-        if (drawDimmedBackground != null) {
-            drawDimmedBackground.accept(content);
-        }
         GuiTitle g = new GuiTitle(plugin);
-        g.atComponent(0, MinesGui.tint(content.build(), null), content.cursor());
+        if (drawDimmedBackground != null) {
+            // sfondo scurito (con il titolo della GUI di sotto, scurito) + inventario a colori pieni
+            drawDimmed(plugin, g, drawDimmedBackground);
+        }
         g.at(-15, "&f" + (labels ? CONFIRM_BUTTONS : CONFIRM_EMPTY), MinesGui.F_MINES, 186);
         g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro (convenzione dei ticket)
         // ordine: prima pulsanti e titolo, la DESCRIZIONE PER ULTIMA. Ogni pezzo si posiziona rispetto al cursore che
@@ -462,9 +514,8 @@ public final class UserProfilePowers implements Listener {
             drawLabel(plugin, g, yesLabel == null ? "conferma" : yesLabel, CONFIRM_YES_CX);
             drawLabel(plugin, g, noLabel == null ? "annulla" : noLabel, CONFIRM_NO_CX);
         }
-        if (top == null) {
-            topTitle(plugin, g, "conferma");
-        } else {
+        // niente titolo "conferma": in alto resta (scurito, dentro lo sfondo) quello della GUI di sotto
+        if (top != null) {
             top.accept(g);
         }
         drawDescription(plugin, g, text);
@@ -473,7 +524,7 @@ public final class UserProfilePowers implements Listener {
         yes.add("&7" + (text == null ? "" : text));
         yes.add("");
         yes.add("&eclicca per confermare");
-        List<String> no = List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare");
+        List<String> no = List.of("&eclicca per annullare");
         Runnable doYes = () -> {
             if (h.chosen) {
                 return;   // doppio click: una sola scelta
@@ -494,7 +545,7 @@ public final class UserProfilePowers implements Listener {
             put(h, s, pane(yesName, yes), doYes);
         }
         for (int s : CONFIRM_NO) {
-            put(h, s, pane(noName, noLabel == null ? no : List.of("", "&eclicca per " + noLabel.toLowerCase(java.util.Locale.ROOT))), doNo);
+            put(h, s, pane(noName, noLabel == null ? no : List.of("&eclicca per " + noLabel.toLowerCase(java.util.Locale.ROOT))), doNo);
         }
         open(staff, h);
     }
@@ -599,14 +650,14 @@ public final class UserProfilePowers implements Listener {
     private static String[] actionInfo(String cmd) {
         // {nome, descrizione}
         return switch (cmd) {
-            case "give" -> new String[]{"&aaggiungi", "Aggiunge una quantita."};
-            case "add" -> new String[]{"&aaggiungi", "Aggiunge (sanzione o quantita)."};
-            case "remove" -> new String[]{"&ctogli", "Toglie una quantita o rimuove."};
-            case "reduce" -> new String[]{"&6riduci", "Riduce la durata."};
-            case "set" -> new String[]{"&eimposta", "Imposta un valore preciso."};
-            case "full" -> new String[]{"&bmassimo", "Porta al valore massimo."};
-            case "reset" -> new String[]{"&4azzera", "Riporta tutto a zero."};
-            case "setuses" -> new String[]{"&dcolpi potenziati", "Imposta quanti colpi puo' sparare con un colpo potenziato."};
+            case "give" -> new String[]{"&aaggiungi", "aggiunge una quantità"};
+            case "add" -> new String[]{"&aaggiungi", "aggiunge"};
+            case "remove" -> new String[]{"&ctogli", "toglie"};
+            case "reduce" -> new String[]{"&6riduci", "riduce la durata"};
+            case "set" -> new String[]{"&eimposta", "imposta un valore"};
+            case "full" -> new String[]{"&bmassimo", "porta al massimo"};
+            case "reset" -> new String[]{"&4azzera", "azzera tutto"};
+            case "setuses" -> new String[]{"&dcolpi potenziati", "colpi per ogni potenziato"};
             default -> new String[]{"&f" + cmd, ""};
         };
     }
@@ -616,16 +667,16 @@ public final class UserProfilePowers implements Listener {
         if (label != null && label.toLowerCase(java.util.Locale.ROOT).startsWith("stamina")) {
             switch (cmd) {
                 case "set" -> {
-                    return new String[]{"&eimposta", "Imposta la stamina a una percentuale.", "&eclicca per impostare la stamina"};
+                    return new String[]{"&eimposta", "imposta in percentuale", "&eclicca per impostare"};
                 }
                 case "full" -> {
-                    return new String[]{"&bpiena", "Riempie la stamina.", "&eclicca per riempire la stamina"};
+                    return new String[]{"&bpiena", "riempie", "&eclicca per riempire"};
                 }
                 case "infinite" -> {
-                    return new String[]{"&dinfinita", "La stamina non finisce mai.", "&eclicca per rendere infinita la stamina"};
+                    return new String[]{"&dinfinita", "non finisce mai", "&eclicca per renderla infinita"};
                 }
                 case "reset" -> {
-                    return new String[]{"&4svuota", "Svuota la stamina.", "&eclicca per svuotare la stamina"};
+                    return new String[]{"&4svuota", "svuota", "&eclicca per svuotare"};
                 }
                 default -> { }
             }
@@ -636,41 +687,41 @@ public final class UserProfilePowers implements Listener {
                 // regole staff: stessi tasti (ban/warn/mute) ma con il significato per lo staff
                 switch (cmd) {
                     case "ban" -> {
-                        return new String[]{"&cdepex", "Lo staffer perde il grado (per sempre).", "&eclicca per scegliere il depex"};
+                        return new String[]{"&cdepex", "toglie il grado per sempre", "&eclicca per scegliere"};
                     }
                     case "warn" -> {
-                        return new String[]{"&ewarn", "Lo staffer riceve un warn staff.", "&eclicca per scegliere il warn"};
+                        return new String[]{"&ewarn", "dà un warn staff", "&eclicca per scegliere"};
                     }
                     case "mute" -> {
-                        return new String[]{"&6sospensione", "Lo staffer e' sospeso per un tempo.", "&eclicca per scegliere la sospensione"};
+                        return new String[]{"&6sospensione", "sospende per un tempo", "&eclicca per scegliere"};
                     }
                     default -> { }
                 }
             }
             switch (cmd) {
                 case "code" -> {
-                    return new String[]{"&bcodice", "Cambia il codice della regola.", "&eclicca per cambiare il codice"};
+                    return new String[]{"&bcodice", "cambia il codice", "&eclicca per cambiare"};
                 }
                 case "title" -> {
-                    return new String[]{"&etitolo", "Cambia il titolo della regola.", "&eclicca per cambiare il titolo"};
+                    return new String[]{"&etitolo", "cambia il titolo", "&eclicca per cambiare"};
                 }
                 case "text" -> {
-                    return new String[]{"&fdescrizione", "Cambia la descrizione della regola.", "&eclicca per cambiare la descrizione"};
+                    return new String[]{"&fdescrizione", "cambia la descrizione", "&eclicca per cambiare"};
                 }
                 case "type" -> {
-                    return new String[]{"&csanzione", "Cambia il tipo di sanzione e il tempo.", "&eclicca per cambiare la sanzione"};
+                    return new String[]{"&csanzione", "cambia tipo e tempo", "&eclicca per cambiare"};
                 }
                 case "ban" -> {
-                    return new String[]{"&cban", "La regola e' punita con un ban.", "&eclicca per scegliere il ban"};
+                    return new String[]{"&cban", "sanzione: ban", "&eclicca per scegliere"};
                 }
                 case "warn" -> {
-                    return new String[]{"&ewarn", "La regola e' punita con un warn.", "&eclicca per scegliere il warn"};
+                    return new String[]{"&ewarn", "sanzione: warn", "&eclicca per scegliere"};
                 }
                 case "mute" -> {
-                    return new String[]{"&6mute", "La regola e' punita con un mute.", "&eclicca per scegliere il mute"};
+                    return new String[]{"&6mute", "sanzione: mute", "&eclicca per scegliere"};
                 }
                 case "regolamento" -> {
-                    return new String[]{"&bregolamento", "Regola solo informativa, senza sanzione.", "&eclicca per scegliere il regolamento"};
+                    return new String[]{"&bregolamento", "nessuna sanzione", "&eclicca per scegliere"};
                 }
                 default -> { }
             }
@@ -740,14 +791,16 @@ public final class UserProfilePowers implements Listener {
         h.background = background;
         GuiTitle g = new GuiTitle(plugin);
         if (background != null) {
-            drawDimmed(plugin, g, background);
+            drawDimmed(plugin, g, background);   // con il titolo della GUI di sotto (scurito) e l'inventario a colori pieni
         } else {
+            // vecchio sfondo senza titolo: i chiamanti devono passare lo sfondo della loro GUI (con topTitleDim)
             g.at(-15, DIM + IMG_MAIN, FONT_UP, 186);
+            drawInventoryFull(plugin, g, INV_DEFAULT);
         }
         g.at(-15, "&f" + img, fontFor(img), declaredAdvance(img));
-        tinyBar(g, label == null ? "" : label);
+        tinyBar(g, label == null ? "" : label, realAdvance(img) == 169);
         navText(g, page + 1, pages);
-        topTitle(plugin, g, label == null ? "" : label);
+        // niente topTitle(label): nella barra in alto resta il titolo della GUI di sotto, scurito
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         final int pg = page;
@@ -757,7 +810,7 @@ public final class UserProfilePowers implements Listener {
         }
         if (historyButton) {
             for (int s : SLOTS_BLUE) {
-                put(h, s, pane("&9cronologia", List.of("&7Mostra lo storico.")), () -> later(onHistory));
+                put(h, s, pane("&9cronologia", List.of("&eclicca per aprire")), () -> later(onHistory));
             }
         } else {
             for (int s : SLOTS_BLUE) {
@@ -827,14 +880,15 @@ public final class UserProfilePowers implements Listener {
         return sb.toString().replaceAll(" +", " ").trim();
     }
 
-    private void tinyBar(GuiTitle g, String raw) {
+    /** wide = pannello userprofile-19..23 (barra allargata), altrimenti barra stretta delle immagini userprofile-2..18. */
+    private void tinyBar(GuiTitle g, String raw, boolean wide) {
         String text = tinySafe(raw);
         if (text.isEmpty()) {
             return;
         }
-        text = fit(text, BAR_MAX);
+        text = fit(text, wide ? BAR_WIDE_MAX : BAR_MAX);
         int total = tinyAdvance(text);
-        int st = BAR_CX - Math.max(0, total - 1) / 2;
+        int st = (wide ? BAR_WIDE_CX : BAR_CX) - Math.max(0, total - 1) / 2;
         int off = 0;
         for (String w : text.split(" ")) {
             if (w.isEmpty()) {
@@ -853,8 +907,24 @@ public final class UserProfilePowers implements Listener {
     private static final int TOP_CX = 94;
     private static final int TOP_MAX = 112;
 
-    /** Scrive il nome della GUI centrato nella barra grigia in alto (colori pieni, sopra qualunque popup). */
+    /**
+     * Scrive il nome della GUI centrato nella barra grigia in alto (colori pieni), nel titolo normale della GUI (cursore 7 px
+     * indietro, come IMG = -22). I popup NON lo usano per il proprio nome: il titolo della GUI di sotto va in topTitleDim.
+     */
     public static void topTitle(BlockMania plugin, GuiTitle g, String raw) {
+        topTitle(plugin, g, raw, 0);
+    }
+
+    /**
+     * Stesso titolo di topTitle (stesso testo, stessa posizione) ma da scrivere DENTRO lo sfondo di un popup, col cursore reale
+     * (immagini a 186): drawDimmed / confirmOver lo scuriscono insieme al resto. Da chiamare una volta sola, nello sfondo della
+     * GUI principale (i popup sopra altri popup riusano quello sfondo, quindi il titolo non si ripete).
+     */
+    public static void topTitleDim(BlockMania plugin, GuiTitle g, String raw) {
+        topTitle(plugin, g, raw, 7);
+    }
+
+    private static void topTitle(BlockMania plugin, GuiTitle g, String raw, int dx) {
         String text = tinySafe(raw == null ? "" : raw).toUpperCase(java.util.Locale.ROOT);
         if (text.isEmpty()) {
             return;
@@ -868,8 +938,8 @@ public final class UserProfilePowers implements Listener {
                 continue;
             }
             int wa = tinyAdvance(w);
-            g.at(st + off + 1 + IMG, GuiTitle.shadowCode(plugin) + tinyLetters(w, TOP_SH), "", wa);
-            g.at(st + off + IMG, "&f" + tinyLetters(w, TOP), "", wa);
+            g.at(st + off + 1 + IMG + dx, GuiTitle.shadowCode(plugin) + tinyLetters(w, TOP_SH), "", wa);
+            g.at(st + off + IMG + dx, "&f" + tinyLetters(w, TOP), "", wa);
             off += wa + 4;
         }
     }
@@ -903,6 +973,9 @@ public final class UserProfilePowers implements Listener {
             }
             w[li] = w[li].substring(0, w[li].length() - 1);
             t = String.join(" ", w).trim();
+        }
+        while (tinyAdvance(t) > max && t.length() > 1) {
+            t = t.substring(0, t.length() - 1).trim();   // solo numeri/parole corte: si taglia la fine, mai fuori dalla barra
         }
         return t;
     }
@@ -1069,7 +1142,7 @@ public final class UserProfilePowers implements Listener {
             }
             boolean okText = raw.length() <= 100;
             event.setResult(pane(okText ? "&ainvia" : "&ctesto troppo lungo",
-                    List.of(okText ? "&7" + (raw.isEmpty() ? "(vuoto)" : raw) : "&7Massimo 100 caratteri.")));
+                    List.of(okText ? "&7" + (raw.isEmpty() ? "(vuoto)" : raw) : "&7massimo: &f100 caratteri")));
             av.setRepairCost(0);
             return;
         }
@@ -1077,7 +1150,7 @@ public final class UserProfilePowers implements Listener {
         Long v = parse(txt, s.min);
         boolean ok = v != null && v >= s.min && v <= s.max;
         event.setResult(pane(ok ? "&ainvia" : "&cnumero non valido",
-                List.of(ok ? "&7" + v : "&7Serve un numero " + rangeText(s.min, s.max) + ".")));
+                List.of(ok ? "&7" + v : "&7serve: &f" + rangeText(s.min, s.max))));
         av.setRepairCost(0);
     }
 

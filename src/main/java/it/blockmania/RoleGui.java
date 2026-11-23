@@ -132,10 +132,10 @@ public final class RoleGui implements Listener {
         String name = roles == null ? id : roles.label(id);
         boolean special = StaffRoles.isSpecial(id);
         boolean has = special && roles != null && roles.specialsOf(s.target).contains(id);
-        List<String> barLore = new ArrayList<>(List.of("&7Ruolo scelto: &f" + name + (special ? " &8(speciale)" : ""),
-                "&7Grado staff attuale: &f" + (current == null ? "nessuno" : roles.label(current))));
+        List<String> barLore = new ArrayList<>(List.of("&7ruolo: &f" + name + (special ? " &8(speciale)" : ""),
+                "&7grado attuale: &f" + (current == null ? "nessuno" : roles.label(current))));
         if (special) {
-            barLore.add(has ? "&7Ce l'ha gia': confermando lo toglie." : "&7Non ce l'ha: confermando si aggiunge.");
+            barLore.add(has ? "&7ce l'ha: &asì" : "&7ce l'ha: &cno");
         }
         barLore.add("");
         barLore.add("&eusa le frecce per cambiare");
@@ -149,13 +149,12 @@ public final class RoleGui implements Listener {
             h.inventory.setItem(i, pane("&f" + name, barLore));
         }
         for (int i : SLOTS_YES) {
-            h.inventory.setItem(i, pane("&aconferma", List.of("&7Assegna il grado &f" + name + "&7 a &f" + UserProfilePowers.nameOf(s.target) + "&7.",
-                    special ? (has ? "&7Ce l'ha gia': confermando lo toglie. Il grado staff non cambia."
-                            : "&7Ruolo speciale: si aggiunge, il grado staff non cambia.")
-                            : "&7Riceve anche i gradi sotto di questo.", "", "&eclicca per confermare")));
+            h.inventory.setItem(i, pane("&aconferma", List.of("&7grado: &f" + name, "&7a: &f" + UserProfilePowers.nameOf(s.target),
+                    special ? (has ? "&7azione: &ctoglie" : "&7azione: &aaggiunge")
+                            : "&7include: &fi gradi sotto", "", "&eclicca per confermare")));
         }
         for (int i : SLOTS_NO) {
-            h.inventory.setItem(i, pane("&cannulla", List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare")));
+            h.inventory.setItem(i, pane("&cannulla", List.of("&eclicca per annullare")));
         }
         UUID uid = s.staff.getUniqueId();
         switching.add(uid);

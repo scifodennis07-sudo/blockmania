@@ -234,8 +234,8 @@ public final class UserProfileMines implements Listener {
         }
         // il tasto "info" dell'originale qui e' il RESET (azzera tutte le miniere)
         for (int slot : slotList(GUI + "slots.info")) {
-            put(inv, holder, slot, invisible("&cReset miniere",
-                    List.of("&7Toglie TUTTE le miniere a " + target.getName() + ".", "", "&eclicca per resettare"), general), "reset");
+            put(inv, holder, slot, invisible("&creset miniere",
+                    List.of("&7azzera: &ftutte le miniere", "&7di: &f" + target.getName(), "", "&eclicca per resettare"), general), "reset");
         }
 
         int owned = owned(target);
@@ -279,13 +279,13 @@ public final class UserProfileMines implements Listener {
             String actionText;
             if (have) {
                 action = "enter:" + mine;
-                actionText = "&eclicca per visitarla";
+                actionText = mine == owned && owned > 1 ? "&eclicca per visitare &8| &cQ elimina" : "&eclicca per visitarla";
             } else if (mine == owned + 1) {
                 action = "give:" + mine;
-                actionText = "&eclicca per darla al giocatore";
+                actionText = "&eclicca per darla";
             } else {
                 action = "far:" + mine;
-                actionText = "&cdagli prima la miniera " + (owned + 1);
+                actionText = "&7serve: &cminiera " + (owned + 1);
             }
             String name = c.getString(bp + ".name", "&fminiera %number%");
             List<String> lore = new ArrayList<>();
@@ -294,11 +294,6 @@ public final class UserProfileMines implements Listener {
                     line = line.replace("%action%", actionText);
                 }
                 lore.add(line);
-            }
-            if (have && mine == owned && owned > 1) {
-                lore.add("&7Q: elimina questa miniera (con conferma)");
-            } else if (have && mine < owned) {
-                lore.add("&8Per eliminarla togli prima la " + owned);
             }
             put(inv, holder, pos.icon(), invisible(name, lore, r), action);
             for (int slot : pos.extra()) {
@@ -342,7 +337,7 @@ public final class UserProfileMines implements Listener {
     /** confirmText = descrizione scritta nel pannello di conferma (solo con confirm). */
     private Component title(Player target, int page, int pages, boolean confirm, String confirmText) {
         return MinesGui.fontTitle(plugin, greens(target, page), cubes(target, page), true, confirm,
-                "miniere " + UserProfilePowers.nameOf(target.getUniqueId()), page, pages, !confirm, confirmText);
+                "miniere " + UserProfilePowers.nameOf(target.getUniqueId()), page, pages, true, confirmText);
     }
 
     // ---------- aprire ----------
@@ -406,7 +401,7 @@ public final class UserProfileMines implements Listener {
             put(inv, h, s, invisible("&aconferma", List.of("&7" + text, "", "&eclicca per confermare"), none), "yes");
         }
         for (int s : no) {
-            put(inv, h, s, invisible("&cannulla", List.of("&7Torna indietro senza fare niente.", "", "&eclicca per annullare"), none), "no");
+            put(inv, h, s, invisible("&cannulla", List.of("&eclicca per annullare"), none), "no");
         }
         staff.openInventory(inv);
     }
