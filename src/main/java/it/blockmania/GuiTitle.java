@@ -72,7 +72,7 @@ public final class GuiTitle {
         if (move != 0) {
             result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
         }
-        result = result.append(withFont(plugin.color(legacy), font));
+        result = result.append(withFont(colorKeep(legacy, font), font));
         cursor = x + plugin.getBackground().measure(legacy);
         return this;
     }
@@ -83,7 +83,7 @@ public final class GuiTitle {
         if (move != 0) {
             result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
         }
-        result = result.append(withFont(plugin.color(legacy), font));
+        result = result.append(withFont(colorKeep(legacy, font), font));
         cursor = x + advance;
         return this;
     }
@@ -97,6 +97,36 @@ public final class GuiTitle {
         result = result.append(component);
         cursor = x + advance;
         return this;
+    }
+
+    /**
+     * plugin.color() toglie U+E000..U+E002 (segni dei tasti del font normale): nei font del pack (inv_full, task_btn...) quei
+     * caratteri sono glifi veri, quindi li si protegge durante la conversione e poi si rimettono.
+     */
+    private Component colorKeep(String legacy, String font) {
+        if (font == null || font.isBlank() || legacy == null) {
+            return plugin.color(legacy);
+        }
+        boolean has = false;
+        StringBuilder sb = new StringBuilder(legacy.length());
+        for (char ch : legacy.toCharArray()) {
+            if (ch >= '\uE000' && ch <= '\uE002') {
+                sb.append((char) ('\uF8F0' + (ch - '\uE000')));
+                has = true;
+            } else {
+                sb.append(ch);
+            }
+        }
+        Component c = plugin.color(sb.toString());
+        if (!has) {
+            return c;
+        }
+        for (int i = 0; i < 3; i++) {
+            final String from = String.valueOf((char) ('\uF8F0' + i));
+            final String to = String.valueOf((char) ('\uE000' + i));
+            c = c.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder().matchLiteral(from).replacement(to).build());
+        }
+        return c;
     }
 
     public Component build() {
