@@ -38,7 +38,7 @@ jobs:
             -d '{"root":"/plugins","name":"update"}' > /dev/null || true
           resp=$(curl -s -X POST "$API/files/upload" -H "Authorization: Bearer $FALIX_API_KEY")
           echo "$resp" | jq -c 'del(..|.url?)' 2>/dev/null || true
-          url=$(echo "$resp" | jq -r '[..|strings|select(startswith("http"))][0]')
+          url=$(echo "$resp" | jq -r '[..|strings|select(startswith("http") and (contains("apidocs")|not))][0] // empty')
           if [ -z "$url" ] || [ "$url" = "null" ]; then echo "nessun URL di upload"; echo "$resp" | head -c 300; exit 1; fi
           case "$url" in *\?*) sep='&';; *) sep='?';; esac
           code=$(curl -s -o up.txt -w '%{http_code}' -X POST "${url}${sep}directory=/plugins/update" -F "files=@target/BlockMania.jar")
