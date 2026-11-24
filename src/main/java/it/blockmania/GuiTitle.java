@@ -60,7 +60,7 @@ public final class GuiTitle {
             m.appendReplacement(shifted, Matcher.quoteReplacement(space));
         }
         m.appendTail(shifted);
-        result = result.append(withFont(plugin.color(plugin.tiny(shifted.toString())), font));
+        result = result.append(withFont(plugin.colorPlain(plugin.tiny(shifted.toString())), font));
         int manual = c.getInt(path + ".advance", 0);
         cursor += manual > 0 ? manual : advanceOf(advanceRaw, path + ".widths");
         return this;
@@ -70,7 +70,7 @@ public final class GuiTitle {
     public GuiTitle at(int x, String legacy, String font) {
         int move = x - cursor;
         if (move != 0) {
-            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
+            result = result.append(plugin.colorPlain("&f" + plugin.getBackground().shift(move)));
         }
         result = result.append(withFont(colorKeep(legacy, font), font));
         cursor = x + plugin.getBackground().measure(legacy);
@@ -81,7 +81,7 @@ public final class GuiTitle {
     public GuiTitle at(int x, String legacy, String font, int advance) {
         int move = x - cursor;
         if (move != 0) {
-            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
+            result = result.append(plugin.colorPlain("&f" + plugin.getBackground().shift(move)));
         }
         result = result.append(withFont(colorKeep(legacy, font), font));
         cursor = x + advance;
@@ -92,7 +92,7 @@ public final class GuiTitle {
     public GuiTitle atComponent(int x, Component component, int advance) {
         int move = x - cursor;
         if (move != 0) {
-            result = result.append(plugin.color("&f" + plugin.getBackground().shift(move)));
+            result = result.append(plugin.colorPlain("&f" + plugin.getBackground().shift(move)));
         }
         result = result.append(component);
         cursor = x + advance;
@@ -100,12 +100,12 @@ public final class GuiTitle {
     }
 
     /**
-     * plugin.color() toglie U+E000..U+E002 (segni dei tasti del font normale): nei font del pack (inv_full, task_btn...) quei
+     * plugin.colorPlain() toglie U+E000..U+E002 (segni dei tasti del font normale): nei font del pack (inv_full, task_btn...) quei
      * caratteri sono glifi veri, quindi li si protegge durante la conversione e poi si rimettono.
      */
     private Component colorKeep(String legacy, String font) {
         if (font == null || font.isBlank() || legacy == null) {
-            return plugin.color(legacy);
+            return plugin.colorPlain(legacy);
         }
         boolean has = false;
         StringBuilder sb = new StringBuilder(legacy.length());
@@ -117,7 +117,7 @@ public final class GuiTitle {
                 sb.append(ch);
             }
         }
-        Component c = plugin.color(sb.toString());
+        Component c = plugin.colorPlain(sb.toString());
         if (!has) {
             return c;
         }

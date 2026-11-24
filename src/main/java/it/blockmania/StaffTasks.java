@@ -1266,7 +1266,7 @@ public final class StaffTasks implements Listener {
         long left = remainingMs(c);
         Action next = nextAction(c);
         Order o = orderOf(get(c.taskId()), c.orderId());
-        String what = next != null ? describe(next) : o != null && type(o) == OrderType.CUSTOM ? shortText(o.text()) + " (poi \"fatto\")"
+        String what = next != null ? describe(next) : o != null && type(o) == OrderType.CUSTOM ? shortText(o.text())
                 : "ordine";
         long s = left / 1000;
         String title = (s < 60 ? "&c" : "&e") + what + " &7" + String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60);

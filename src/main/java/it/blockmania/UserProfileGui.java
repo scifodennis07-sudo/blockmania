@@ -426,11 +426,12 @@ public final class UserProfileGui implements Listener {
     }
 
     // numero pagina "n/3": overlay 256x256 del pack (font minecraft:pagnum, U+E130..E132 = pagnum-1..3.png)
-    // ultima colonna opaca 103 -> advance reale 104, dichiarato 97 (= reale - 7); disegnato a -15 come gli sfondi
+    // ultima colonna opaca 103 -> advance reale 105 (= ultima + 2, come 184 -> 186 degli sfondi), dichiarato 98 (= reale - 7).
+    // Con 104/97 il cursore restava 1 px indietro: titolo spostato di 1 px e, nei popup, inventario e popup 1 px a destra.
     private static final String FONT_PAGNUM = "minecraft:pagnum";
     private static final char PAGNUM_BASE = '\uE130';
-    private static final int PAGNUM_REAL = 104;
-    private static final int PAGNUM_DECL = 97;
+    private static final int PAGNUM_REAL = 105;
+    private static final int PAGNUM_DECL = 98;
     /** Titolo normale: il cursore dichiarato e' 7 px indietro rispetto al reale (immagine a 179 invece di 186), come IMG = -22. */
     private static final int PAGNUM_SHIFT = -7;
 

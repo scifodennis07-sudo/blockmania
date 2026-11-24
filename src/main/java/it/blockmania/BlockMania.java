@@ -879,6 +879,7 @@ public final class BlockMania extends JavaPlugin {
 
     /** Testo con lo sfondo dietro. Lo sfondo non ha l'ombra (se remove-shadow e' attivo), il testo si'. */
     public Component withBackground(String legacy) {
+        legacy = KeyIcons.iconizeBig(legacy);   // actionbar (tutorial, messaggi): tasti -> icone GRANDI
         if (legacy != null && legacy.indexOf(KEY_OPEN) >= 0) {
             return withBackgrounds(splitKeys(legacy), -1);
         }
@@ -1152,6 +1153,17 @@ public final class BlockMania extends JavaPlugin {
         if (legacy == null || legacy.isEmpty()) {
             return Component.empty();
         }
+        // TUTTI i testi (lore, nomi, chat, ologrammi...): le parole dei tasti diventano icone (KeyIcons, LORE 9 px).
+        // Va fatto qui, prima dei colori: con la palette ogni lettera ha il suo colore e dopo le parole non si leggono piu'.
+        // Bossbar/actionbar arrivano gia' con le icone GRANDI (iconizeBig), quindi qui non cambia niente.
+        return colorPlain(KeyIcons.iconize(stripKeyMarks(legacy)));
+    }
+
+    /** Come color(), senza le icone dei tasti: per i testi in un font del pack (titoli delle GUI), dove le icone non ci sono. */
+    public Component colorPlain(String legacy) {
+        if (legacy == null || legacy.isEmpty()) {
+            return Component.empty();
+        }
         legacy = stripKeyMarks(legacy);
         List<Component> out = new ArrayList<>();
         StringBuilder buffer = new StringBuilder();
@@ -1334,11 +1346,13 @@ public final class BlockMania extends JavaPlugin {
 
         for (String line : lines) {
             String t = tiny(keyMarks(icon + prefix + line + suffix));
-            if (actionBar) {
-                t = KeyIcons.iconizeBig(t);   // actionbar: tasti -> icone GRANDI (la chat resta a parole)
-            }
             if (uniform) {
                 t = stripCodes(t);
+            }
+            if (actionBar) {
+                // actionbar: tasti -> icone GRANDI (dopo stripCodes, che toglierebbe il bianco delle icone).
+                // La chat prende le icone piccole in color().
+                t = KeyIcons.iconizeBig(t);
             }
             for (int i = 0; i + 1 < replacements.length; i += 2) {
                 String value = uniform ? stripCodes(replacements[i + 1]) : replacements[i + 1];

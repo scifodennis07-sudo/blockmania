@@ -61,10 +61,34 @@ public final class TaskGui implements Listener {
     private static final int[] S_BAR = {3, 4, 5};
     private static final int[] S_NEXT = {6};
     private static final int[] S_INFO = {7, 8};
-    private static final int[] S_LIST = {9, 10, 11, 18, 19, 20, 27, 28, 29, 36};
+    private static final int[] S_LIST = {9, 10, 11, 18, 19, 20, 27, 28, 29};
     private static final int[] S_CREATE = {12, 13, 14, 21, 22, 23, 30, 31, 32};
-    private static final int[] S_TRASH = {15, 16, 17, 24, 25, 26, 33, 34, 35, 44};
-    private static final int[] S_LOG = {37, 38, 39, 40, 41, 42, 43, 46, 47, 48, 49, 50, 51, 52};
+    private static final int[] S_TRASH = {15, 16, 17, 24, 25, 26, 33, 34, 35};
+    // due pulsanti in basso (TASK_MAIN2.md): COMPLETATE a sinistra, RESOCONTO a destra; 40 e 49 sono a meta' (pane senza azione).
+    // "TASK COMPLETATE" / "RESOCONTO TASK" non ci stanno (87/81 px su 59): scritte corte, disegnate dal plugin (font tiny_y123)
+    private static final int[] S_DONE = {36, 37, 38, 39, 45, 46, 47, 48};
+    private static final int[] S_LOG = {41, 42, 43, 44, 50, 51, 52, 53};
+    private static final int[] S_GAP = {40, 49};
+    private static final String M_BTN_FONT = "minecraft:tiny_y123";
+    private static final int M_DONE_CX = 59;
+    private static final int M_LOG_CX = 145;
+    private static final int M_BTN_MAX = 60;   // area testo 59 px visibili = 60 di avanzamento (l'ultimo px e' lo spazio)
+
+    // ---------- popup a 3 pulsanti dell'incarico custom (Sara: docs/POPUP3.md) ----------
+    // pannello U+E20A del font mines (x 5..184, advance reale 186), pulsanti sulla riga 3: DISDICI | CONTINUA | FATTO
+    private static final String P3_IMAGE = "\ue20a";
+    private static final String P3_FONT = "minecraft:mines";
+    private static final int P3_REAL = 186;
+    private static final int[] P3_NO = {27, 28, 29};        // DISDICI (rosso), riempimento x 15..57 (43 px)
+    private static final int[] P3_MID = {30, 31, 32};       // CONTINUA (grigio), x 68..121 (54 px)
+    private static final int[] P3_YES = {33, 34, 35};       // FATTO (verde), x 132..174 (43 px)
+    private static final int P3_NO_CX = 36;
+    private static final int P3_MID_CX = 94;
+    private static final int P3_YES_CX = 153;
+    private static final int P3_SIDE_MAX = 39;              // 43 - 4 (DISDICI = 36, FATTO = 30)
+    private static final int P3_MID_MAX = 50;               // 54 - 4 (CONTINUA = 46)
+    /** Stesso font delle etichette di confirmOver (tiny_y91 = tiny_y92 alzato di 1 px). */
+    private static final String P3_LABEL_FONT = "minecraft:tiny_y91";
     /**
      * Numero pagina nella barra frecce della schermata principale (sempre, anche "1/1"): stessi glifi di RulesGui (font tiny5,
      * U+F700 cifre / U+F70A "/", ombra U+F710, ascent -5 = y33 come pagnum-*.png), centro 94 come pagnum (x86..103).
@@ -171,7 +195,11 @@ public final class TaskGui implements Listener {
         }
     }
 
-    private record Filter(String label, String key) {
+    /** Filtro di una lista; hint = riga breve che lo spiega nella lore del pulsante (null = niente). */
+    private record Filter(String label, String key, String hint) {
+        Filter(String label, String key) {
+            this(label, key, null);
+        }
     }
 
     /**
@@ -202,7 +230,7 @@ public final class TaskGui implements Listener {
 
     private final BlockMania plugin;
     private final Map<UUID, Draft> drafts = new HashMap<>();
-    /** Filtri avanzati per player e per lista ("list", "trash", "log"), in ordine di creazione. */
+    /** Filtri avanzati per player e per lista ("list", "trash", "log", "done"), in ordine di creazione. */
     private final Map<UUID, Map<String, List<Adv>>> advFilters = new HashMap<>();
 
     public TaskGui(BlockMania plugin) {
@@ -257,12 +285,20 @@ public final class TaskGui implements Listener {
         if (!guard(p)) {
             return;
         }
+        if (customCharge(p) != null) {
+            // incarico custom in corso: subito FATTO / CONTINUA / DISDICI sopra la schermata task
+            customPopup(p, bg(), () -> {
+                open(p);
+            });
+            return;
+        }
         StaffTasks t = tasks();
         Holder h = new Holder();
         GuiTitle g = new GuiTitle(plugin);
         g.at(-15, "&f" + IMAGE, FONT, IMG_ADV);
         UserProfilePowers.topTitle(plugin, g, "task");
         navText(g, 1, 1, M_NAV_FONT, M_NAV, M_NAV_SH, M_NAV_CX, 0);   // una sola pagina: sempre "1/1"
+        mainLabels(g, 0);
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         UUID me = p.getUniqueId();
@@ -361,6 +397,13 @@ public final class TaskGui implements Listener {
             put(h, S_TRASH, pane("&8cestino", List.of()), null);
         }
         List<StaffTasks.LogEntry> log = safe(t.log(admin ? null : me));
+        put(h, S_GAP, pane(" ", List.of()), null);
+        put(h, S_DONE, pane("&atask completate", List.of(
+                "&7completate: &f" + doneTasks().size(),
+                "",
+                "&eclicca per aprire")), () -> {
+            openDone(p, 0, 0);
+        });
         put(h, S_LOG, pane("&bresoconto task", List.of(
                 "&7voci nel registro: &f" + log.size(),
                 admin ? "&7mostra: &ftutto" : "&7mostra: &fle tue task",
@@ -380,7 +423,14 @@ public final class TaskGui implements Listener {
         g.at(-15, "&f" + IMAGE, FONT, IMG_REAL);
         UserProfilePowers.topTitleDim(plugin, g, "task");
         navText(g, 1, 1, M_NAV_FONT, M_NAV, M_NAV_SH, M_NAV_CX, 7);   // "1/1" anche nello sfondo (cursore reale: +7)
+        mainLabels(g, 7);
         UserProfilePowers.invVariant(g, UserProfilePowers.INV_HIGH);   // U+E000 (INV_FULL.md: task.png)
+    }
+
+    /** Scritte dei due pulsanti in basso (non sono nel PNG). dx = 0 nel titolo normale, 7 nello sfondo (cursore reale). */
+    private void mainLabels(GuiTitle g, int dx) {
+        smallText(g, "completate", M_BTN_FONT, M_DONE_CX + dx, M_BTN_MAX, true);
+        smallText(g, "resoconto", M_BTN_FONT, M_LOG_CX + dx, M_BTN_MAX, true);
     }
 
     private Consumer<GuiTitle> bg() {
@@ -916,6 +966,72 @@ public final class TaskGui implements Listener {
         });
     }
 
+    // ------------------------------------------------------------------
+    //  TASK COMPLETATE (pulsante in basso a sinistra)
+    // ------------------------------------------------------------------
+
+    private static final List<Filter> DONE_FILTERS = List.of(
+            new Filter("Tutte", "", "Tutte le task completate."),
+            new Filter("Fatte da me", "ME", "Task di altri con ordini completati da te."),
+            new Filter("Mie da altri", "OTHERS", "Task tue con ordini completati da altri."));
+
+    /** Task completate (tutti gli ordini fatti), le piu' recenti prima. */
+    private List<StaffTasks.Task> doneTasks() {
+        List<StaffTasks.Task> out = new ArrayList<>(safe(tasks().list(StaffTasks.Status.ESEGUITA)));
+        out.addAll(safe(tasks().list(StaffTasks.Status.RIFIUTATA)));
+        out.sort((a, b) -> Long.compare(b.createdAt(), a.createdAt()));
+        return out;
+    }
+
+    /** Qualche ordine della task completato da me (mine = true) o da altri (mine = false). */
+    private static boolean doneBy(StaffTasks.Task k, UUID me, boolean mine) {
+        for (StaffTasks.Order o : safe(k.orders())) {
+            if (o.status() != StaffTasks.Status.APERTA && o.doneBy() != null && me.equals(o.doneBy()) == mine) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void openDone(Player p, int filterIdx, int page) {
+        if (!guard(p)) {
+            return;
+        }
+        List<Filter> filters = withAdv(p, "done", DONE_FILTERS);
+        int fi = Math.max(0, Math.min(filterIdx, filters.size() - 1));
+        String key = filters.get(fi).key();
+        Adv adv = advOf(p, "done", key);
+        UUID me = p.getUniqueId();
+        List<Row> rows = new ArrayList<>();
+        for (StaffTasks.Task k : doneTasks()) {
+            boolean minePlace = me.equals(k.createdBy());
+            if ("ME".equals(key) && (minePlace || !doneBy(k, me, true))) {
+                continue;
+            }
+            if ("OTHERS".equals(key) && (!minePlace || !doneBy(k, me, false))) {
+                continue;
+            }
+            if (adv != null && !matchesTask(adv, k)) {
+                continue;
+            }
+            List<String> lore = folderLore(k, StaffTasks.counts(k));
+            lore.add("");
+            lore.add("&eclicca per aprire");
+            String id = k.id();
+            Runnable back = () -> {
+                openDone(p, fi, page);
+            };
+            rows.add(new Row(icon("task_fatto", folderName(k), lore), () -> {
+                viewTask(p, id, 0, back);
+            }, null));
+        }
+        listPanel(p, "task completate", "done", filters, fi, page, rows, (f, pg) -> {
+            openDone(p, f, pg);
+        }, () -> {
+            open(p);
+        });
+    }
+
     /** Nome della cartella: "Task #4" (i dettagli sono nella lore). */
     private String folderName(StaffTasks.Task k) {
         return "&f&lTask #" + k.id();
@@ -1033,7 +1149,7 @@ public final class TaskGui implements Listener {
             tl.add("");
             tl.add("&eclicca quando hai finito");
             textClick = () -> {
-                finishCustom(p, self);
+                customPopup(p, bgHere(p), self);
             };
         }
         // togliere un ordine non completato: solo creatore o admin+, SOLO col tasto Q (con conferma)
@@ -1073,7 +1189,7 @@ public final class TaskGui implements Listener {
                 lore.add("");
                 lore.add("&eclicca quando hai finito");
                 click = () -> {
-                    finishCustom(p, self);
+                    customPopup(p, bgHere(p), self);
                 };
             } else if (charge != null) {
                 iconName = "task_in_carico";
@@ -1159,13 +1275,18 @@ public final class TaskGui implements Listener {
     }
 
     /**
-     * Ha gia' un incarico: "hai gia' un incarico, non puoi prenderne altri" con DISINCARICA (release come la scadenza:
-     * azioni fatte rimesse, ordine di nuovo libero) e CONTINUA (chiude: torna a fare l'incarico).
+     * Ha gia' un incarico: "hai gia' un incarico, non puoi prenderne altri" con RINUNCIA (release come la scadenza:
+     * azioni fatte rimesse, ordine di nuovo libero) e CONTINUA (chiude: torna a fare l'incarico). Incarico custom: il popup
+     * a 3 scelte (FATTO / CONTINUA / DISDICI).
      */
     private void chargePopup(Player p, Runnable after) {
         StaffTasks.Charge c = tasks().chargeOf(p.getUniqueId());
         if (c == null) {
             after.run();
+            return;
+        }
+        if (customCharge(p) != null) {
+            customPopup(p, bgHere(p), after);
             return;
         }
         StaffTasks.Action next = tasks().nextAction(c);
@@ -1179,11 +1300,11 @@ public final class TaskGui implements Listener {
             after.run();
         }, () -> {
             p.closeInventory();
-        }, null, "disincarica", "continua");
+        }, null, "rinuncia", "continua");   // "DISINCARICA" (60 px) non stava nel pulsante (52): RINUNCIA = 44 px
     }
 
     private void confirmTake(Player p, StaffTasks.Task k, StaffTasks.Order o, int branch, String what, Runnable self) {
-        // ha gia' un incarico: popup DISINCARICA / CONTINUA invece della conferma
+        // ha gia' un incarico: popup RINUNCIA / CONTINUA (o FATTO / CONTINUA / DISDICI se custom) invece della conferma
         if (tasks().chargeOf(p.getUniqueId()) != null) {
             chargePopup(p, self);
             return;
@@ -1217,8 +1338,46 @@ public final class TaskGui implements Listener {
         }, self);
     }
 
-    private void finishCustom(Player p, Runnable self) {
-        plugin.getProfileUi().confirmOver(p, "Segnare come fatto l'ordine che hai in carico?", bgHere(p), () -> {
+    /** Incarico custom del player (ordine da fare a mano), null se non ne ha. */
+    private StaffTasks.Order customCharge(Player p) {
+        StaffTasks.Charge c = tasks().chargeOf(p.getUniqueId());
+        StaffTasks.Task k = c == null ? null : tasks().get(c.taskId());
+        if (k == null) {
+            return null;
+        }
+        for (StaffTasks.Order o : safe(k.orders())) {
+            if (o.id().equals(c.orderId())) {
+                return StaffTasks.type(o) == StaffTasks.OrderType.CUSTOM ? o : null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Incarico custom in corso (riaprendo la GUI task o cliccando l'ordine): popup a 3 pulsanti sopra under (scurito).
+     * DISDICI (rosso, sinistra) = lascia l'incarico (release, ordine di nuovo libero); CONTINUA = chiude, si continua a farlo
+     * a mano; FATTO (verde, destra) = ordine completato (StaffTasks.finishCustom). Dopo FATTO / DISDICI: after.
+     * Descrizione: drawDescription di UserProfilePowers (righe y62..78 come E209, larghezza 122 < 162 dell'area).
+     */
+    private void customPopup(Player p, Consumer<GuiTitle> under, Runnable after) {
+        StaffTasks.Order o = customCharge(p);
+        if (o == null) {
+            after.run();
+            return;
+        }
+        Holder h = new Holder();
+        GuiTitle g = new GuiTitle(plugin);
+        UserProfilePowers.drawDimmed(plugin, g, under);
+        g.at(-15, "&f" + P3_IMAGE, P3_FONT, P3_REAL);
+        g.atComponent(g.cursor(), Component.empty(), -7);   // cursore 7 px indietro (convenzione IMG = -22), come confirmOver
+        smallText(g, "disdici", P3_LABEL_FONT, P3_NO_CX, P3_SIDE_MAX, true);
+        smallText(g, "continua", P3_LABEL_FONT, P3_MID_CX, P3_MID_MAX, true);
+        smallText(g, "fatto", P3_LABEL_FONT, P3_YES_CX, P3_SIDE_MAX, true);
+        // descrizione per ultima (come confirmOver)
+        UserProfilePowers.drawDescription(plugin, g, "Incarico in corso: " + clean(o.text()));
+        h.inventory = Bukkit.createInventory(h, SIZE, g.build());
+        h.under = under;
+        put(h, P3_YES, pane("&afatto", List.of("&7Segna l'ordine come completato.", "", "&eclicca se l'hai fatto")), () -> {
             if (!guard(p)) {
                 return;
             }
@@ -1228,8 +1387,19 @@ public final class TaskGui implements Listener {
             } else {
                 deny(p, err);
             }
-            self.run();
-        }, self);
+            after.run();
+        });
+        put(h, P3_MID, pane("&econtinua", List.of("&7Chiude: l'incarico resta tuo.", "", "&eclicca per continuare")), () -> {
+            p.closeInventory();
+        });
+        put(h, P3_NO, pane("&cdisdici", List.of("&7Lasci l'incarico: l'ordine torna libero.", "", "&eclicca per disdire")), () -> {
+            if (tasks().chargeOf(p.getUniqueId()) != null) {
+                tasks().release(p.getUniqueId(), "disincaricato");
+                GuiMsg.send(plugin, p, "&7incarico lasciato.");
+            }
+            after.run();
+        });
+        p.openInventory(h.inventory);
     }
 
     private void confirmRemoveOrder(Player p, String taskId, String orderId, int number, Runnable self) {
@@ -1644,13 +1814,16 @@ public final class TaskGui implements Listener {
     /**
      * Popup lista. Pulsante filtro: click sinistro = filtro precedente (su), destro = successivo (giu'), Q = filtro avanzato
      * (incudine: codice task o nick, vedi askAdvanced) che si aggiunge in fondo ai filtri, gia' selezionato.
-     * kind = chiave dei filtri avanzati di questa lista ("list", "trash", "log").
+     * kind = chiave dei filtri avanzati di questa lista ("list", "trash", "log", "done").
      */
     private void listPanel(Player p, String title, String kind, List<Filter> filters, int fi, int page, List<Row> rows, Reopen reopen,
                            Runnable onBack) {
         List<String> fl = new ArrayList<>();
         for (int i = 0; i < filters.size(); i++) {
             fl.add(i == fi ? "&a» " + filters.get(i).label() : "&8" + filters.get(i).label());
+        }
+        if (filters.get(fi).hint() != null) {
+            fl.add("&7" + filters.get(fi).hint());
         }
         fl.add("");
         fl.add(filters.size() > 1 ? "&esinistro su &8| &edestro giù &8| &eQ cerca" : "&eQ cerca per task o nick");
@@ -1954,8 +2127,14 @@ public final class TaskGui implements Listener {
 
     /** Testo piccolo centrato su cx (copia di ProfileLists.barText, con font e larghezza massima a scelta). */
     private void smallText(GuiTitle g, String raw, String font, int cx, int max) {
+        smallText(g, raw, font, cx, max, false);
+    }
+
+    /** upper = tutto maiuscolo (scritte dei pulsanti, come drawLabel di UserProfilePowers). */
+    private void smallText(GuiTitle g, String raw, String font, int cx, int max, boolean upper) {
+        String src = raw == null ? "" : upper ? raw.toUpperCase(Locale.ROOT) : raw;
         StringBuilder safe = new StringBuilder();
-        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+        for (char ch : src.toCharArray()) {
             safe.append(tinyChar(ch) ? ch : ' ');
         }
         String text = fit(safe.toString().replaceAll(" +", " ").trim(), max);

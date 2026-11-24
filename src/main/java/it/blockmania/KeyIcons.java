@@ -164,8 +164,12 @@ public final class KeyIcons {
     //  Frasi riconosciute
     // ------------------------------------------------------------------
 
-    /** need: 0 sempre, 1 solo a inizio frase (o dopo "tasto"/"premi"), 2 solo dopo "tasto"/"premi"/"shift +". */
-    private record Pat(String[] words, int[] icons, int need) {
+    /**
+     * need: 0 sempre, 1 solo a inizio frase (o dopo "tasto"/"premi"), 2 solo dopo "tasto"/"premi"/"shift +".
+     * safe: frase che e' SEMPRE un tasto (c'e' click/clicca, "shift + ...", "doppio click"): vale anche nelle frasi
+     * descrittive e in chat; le altre ("destro", "Q", "shift" da soli) solo nelle righe di istruzione.
+     */
+    private record Pat(String[] words, int[] icons, int need, boolean safe) {
     }
 
     private static final List<Pat> PATS = new ArrayList<>();
@@ -177,46 +181,66 @@ public final class KeyIcons {
     /** Niente spazio tra l'icona e questi segni. */
     private static final String NO_SPACE_BEFORE = ")],.;:!?";
 
+    private static final Set<String> CLICKS = Set.of("click", "clicca", "clic", "clicchi", "cliccando", "cliccare");
+
     private static void pat(String words, int need, int... icons) {
-        PATS.add(new Pat(words.trim().split("\\s+"), icons, need));
+        String[] w = words.trim().split("\\s+");
+        boolean safe = false;
+        for (String x : w) {
+            safe |= CLICKS.contains(x);
+        }
+        safe |= w.length > 1 && (w[0].equals("shift") || w[0].equals("ctrl") || w[0].equals("doppio"));
+        PATS.add(new Pat(w, icons, need, safe));
     }
 
     static {
-        String[] clicks = {"click", "clicca", "clic", "clicchi", "cliccando"};
+        String[] clicks = {"click", "clicca", "clic", "clicchi", "cliccando", "cliccare"};
+        String[] rights = {"destro", "dx"};
+        String[] lefts = {"sinistro", "sx"};
         for (String c : clicks) {
-            pat("shift + " + c + " destro", 0, I_SHIFT_RIGHT);
-            pat("shift " + c + " destro", 0, I_SHIFT_RIGHT);
-            pat("shift + " + c + " sinistro", 0, I_SHIFT_LEFT);
-            pat("shift " + c + " sinistro", 0, I_SHIFT_LEFT);
+            for (String r : rights) {
+                pat("shift + " + c + " " + r, 0, I_SHIFT_RIGHT);
+                pat("shift " + c + " " + r, 0, I_SHIFT_RIGHT);
+                pat("doppio " + c + " " + r, 0, I_DOUBLE_RIGHT);
+                pat(c + " " + r, 0, I_RIGHT);
+                pat(c + " - " + r, 0, I_RIGHT);
+            }
+            for (String l : lefts) {
+                pat("shift + " + c + " " + l, 0, I_SHIFT_LEFT);
+                pat("shift " + c + " " + l, 0, I_SHIFT_LEFT);
+                pat("doppio " + c + " " + l, 0, I_DOUBLE_LEFT);
+                pat(c + " " + l, 0, I_LEFT);
+                pat(c + " - " + l, 0, I_LEFT);
+            }
             pat("shift + " + c, 0, I_SHIFT_LEFT);
             pat("shift " + c, 0, I_SHIFT_LEFT);
-            pat("doppio " + c + " destro", 0, I_DOUBLE_RIGHT);
-            pat("doppio " + c + " sinistro", 0, I_DOUBLE_LEFT);
             pat("doppio " + c, 0, I_DOUBLE_LEFT);
             pat(c + " e trascina*", 0, I_DRAG);
-            pat(c + " destro", 0, I_RIGHT);
-            pat(c + " sinistro", 0, I_LEFT);
             pat(c + " centrale", 0, I_MIDDLE);
             pat(c + " con la rotella", 0, I_MIDDLE);
             pat(c + " rotella", 0, I_MIDDLE);
             pat(c, 0, I_LEFT);
         }
-        pat("shift + tasto destro", 0, I_SHIFT_RIGHT);
-        pat("shift + tasto sinistro", 0, I_SHIFT_LEFT);
-        pat("shift + destro", 0, I_SHIFT_RIGHT);
-        pat("shift + sinistro", 0, I_SHIFT_LEFT);
-        pat("shift destro", 0, I_SHIFT_RIGHT);
-        pat("shift sinistro", 0, I_SHIFT_LEFT);
-        pat("doppio destro", 0, I_DOUBLE_RIGHT);
-        pat("doppio sinistro", 0, I_DOUBLE_LEFT);
+        for (String r : rights) {
+            pat("shift + tasto " + r, 0, I_SHIFT_RIGHT);
+            pat("shift + " + r, 0, I_SHIFT_RIGHT);
+            pat("shift " + r, 0, I_SHIFT_RIGHT);
+            pat("doppio " + r, 0, I_DOUBLE_RIGHT);
+            pat(r, 1, I_RIGHT);
+        }
+        for (String l : lefts) {
+            pat("shift + tasto " + l, 0, I_SHIFT_LEFT);
+            pat("shift + " + l, 0, I_SHIFT_LEFT);
+            pat("shift " + l, 0, I_SHIFT_LEFT);
+            pat("doppio " + l, 0, I_DOUBLE_LEFT);
+            pat(l, 1, I_LEFT);
+        }
         pat("scorri con la rotella", 0, I_SCROLL);
         pat("rotella", 0, I_SCROLL);
         pat("rotellina", 0, I_SCROLL);
         pat("scroll", 0, I_SCROLL);
         pat("trascina*", 0, I_DRAG);
         pat("centrale", 2, I_MIDDLE);
-        pat("destro", 1, I_RIGHT);
-        pat("sinistro", 1, I_LEFT);
         // tasti: q/esc/tab/ctrl anche da soli; e/f/alt/numeri solo dopo "tasto"/"premi"/"shift +"
         String[][] keys = {{"q", "0"}, {"esc", "0"}, {"tab", "0"}, {"ctrl", "0"}, {"e", "2"}, {"f", "2"}, {"alt", "2"}};
         int[] idx = {I_Q, I_ESC, I_TAB, I_CTRL, I_E, I_F, I_ALT};
@@ -230,6 +254,7 @@ public final class KeyIcons {
             pat(String.valueOf(n), 2, I_KEY_1 + n - 1);
         }
         pat("shift", 0, I_SHIFT);
+        pat("maiusc", 2, I_SHIFT);
         // le frasi piu' lunghe prima (sort stabile: a parita' resta l'ordine scritto sopra)
         PATS.sort((a, b) -> b.words().length - a.words().length);
     }
@@ -252,6 +277,10 @@ public final class KeyIcons {
         IRREGULAR.put("dare", "dai");
         IRREGULAR.put("fare", "fai");
         IRREGULAR.put("dire", "di'");
+        IRREGULAR.put("disdire", "disdici");
+        IRREGULAR.put("ridire", "ridici");
+        IRREGULAR.put("predire", "predici");
+        IRREGULAR.put("benedire", "benedici");
         IRREGULAR.put("stare", "stai");
         IRREGULAR.put("andare", "vai");
         IRREGULAR.put("uscire", "esci");
@@ -288,7 +317,7 @@ public final class KeyIcons {
             return stem + "a";
         }
         if (w.endsWith("ere")) {
-            return stem + "i";
+            return stem.endsWith("i") ? stem : stem + "i";   // scegliere -> scegli, togliere -> togli
         }
         if (w.endsWith("ire")) {
             return ISC.contains(w) ? stem + "isci" : stem + "i";
@@ -402,12 +431,24 @@ public final class KeyIcons {
                 }
             }
             if (Character.isLetterOrDigit(c)) {
+                // una parola puo' avere codici colore in mezzo (sfumature della palette: un colore per lettera)
                 int j = i;
-                while (j < n && Character.isLetterOrDigit(s.charAt(j))) {
-                    j++;
+                StringBuilder letters = new StringBuilder();
+                while (j < n) {
+                    char cj = s.charAt(j);
+                    if (Character.isLetterOrDigit(cj)) {
+                        letters.append(cj);
+                        j++;
+                        continue;
+                    }
+                    int cl2 = LoreWrap.codeLength(s, j);
+                    if (cl2 > 0 && j + cl2 < n && Character.isLetterOrDigit(s.charAt(j + cl2))) {
+                        j += cl2;
+                        continue;
+                    }
+                    break;
                 }
-                String w = s.substring(i, j);
-                out.add(new Tok(WORD, w, norm(w)));
+                out.add(new Tok(WORD, s.substring(i, j), norm(letters.toString())));
                 i = j;
                 continue;
             }
@@ -442,8 +483,11 @@ public final class KeyIcons {
     private record Hit(int end, int[] icons) {
     }
 
-    private static Hit matchAt(List<Tok> t, int start, boolean atStart, boolean prefixed) {
+    private static Hit matchAt(List<Tok> t, int start, boolean atStart, boolean prefixed, boolean strict) {
         for (Pat p : PATS) {
+            if (strict && !p.safe() && !prefixed) {
+                continue;   // frase descrittiva: solo le frasi che sono sicuramente tasti
+            }
             if (p.need() == 1 && !atStart && !prefixed) {
                 continue;
             }
@@ -469,34 +513,68 @@ public final class KeyIcons {
         return null;
     }
 
-    private static Hit match(List<Tok> t, int i, boolean atStart) {
+    private static Hit match(List<Tok> t, int i, boolean atStart, boolean strict) {
         Tok tok = t.get(i);
         if (tok.type() == WORD && PREFIX.contains(tok.norm())) {
             int nx = nextSig(t, i + 1);
             if (nx >= 0) {
-                Hit h = matchAt(t, nx, atStart, true);
+                Hit h = matchAt(t, nx, atStart, true, strict);
                 if (h != null) {
                     return h;   // "premi"/"tasto" spariscono insieme al tasto
                 }
             }
             return null;
         }
-        return matchAt(t, i, atStart, false);
+        return matchAt(t, i, atStart, false, strict);
     }
 
     // ------------------------------------------------------------------
     //  Trasformazione
     // ------------------------------------------------------------------
 
+    /** Pezzi di parole dei tasti: se il testo (normalizzato) non ne contiene nessuno non c'e' niente da fare. */
+    private static final String[] STEMS = {"clic", "destr", "sinistr", "shift", "tast", "prem", "trascin", "rotell",
+            "scroll", "doppi", "esc", "tab", "ctrl", "alt", "maiusc", "dx", "sx", "q"};
+
+    /** Controllo veloce (color() lo chiama di continuo, anche per le bossbar a ogni tick). */
+    private static boolean mayHaveKeys(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); ) {
+            int cl = LoreWrap.codeLength(s, i);   // i codici colore (anche in mezzo alle parole) non contano
+            if (cl > 0) {
+                i += cl;
+                continue;
+            }
+            sb.append(Character.toLowerCase(Tiny.untiny(s.charAt(i))));
+            i++;
+        }
+        String low = sb.toString();
+        for (String stem : STEMS) {
+            if (low.contains(stem)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
-     * Righe di ISTRUZIONE delle lore (icone LORE 9 px). Le righe descrittive ({@link LoreWrap#isInstruction} falso)
-     * restano uguali. Funziona sia con i codici & (prima di plugin.text) sia con \u00A7 e tiny text (dopo).
+     * Testi per i giocatori con icone LORE (9 px): lore, nomi item, chat, ologrammi. Lo chiama plugin.color() per
+     * tutti i testi e LoreWrap per le lore.
+     * <ul>
+     *     <li>righe di ISTRUZIONE ({@link LoreWrap#isInstruction}): tutte le parole dei tasti, anche "destro", "Q",
+     *     "shift" da soli;</li>
+     *     <li>altre frasi (descrittive, chat): solo le frasi che sono sicuramente tasti ("click destro", "clicca",
+     *     "shift + F", "tasto Q", "premi E", "doppio click").</li>
+     * </ul>
+     * Funziona sia con i codici & (prima di plugin.color) sia con \u00A7, sfumature e tiny text (dopo).
      */
     public static String iconize(String legacyLine) {
-        if (legacyLine == null || legacyLine.isEmpty() || !LoreWrap.isInstruction(legacyLine)) {
+        if (legacyLine == null || legacyLine.isEmpty() || !mayHaveKeys(legacyLine)) {
             return legacyLine;
         }
-        return run(legacyLine, false);
+        // gia' passata (color() e poi LoreWrap): il resto della riga si guarda solo con le frasi sicure
+        boolean strict = hasIcon(legacyLine) || !LoreWrap.isInstruction(legacyLine);
+        return run(legacyLine, false, strict);
     }
 
     /**
@@ -504,9 +582,10 @@ public final class KeyIcons {
      * riquadri {key:...} (gia' passati da keyMarks) diventano icone se sono fatti solo di tasti.
      */
     public static String iconizeBig(String legacy) {
-        if (legacy == null || legacy.isEmpty()) {
+        if (legacy == null || legacy.isEmpty() || !mayHaveKeys(legacy)) {
             return legacy;
         }
+        boolean marked = legacy.indexOf('\uE000') >= 0;
         // riquadri dei tasti (KEY_OPEN \uE000 ... KEY_CLOSE \uE001): se il testo e' tutto tasti tolgo il riquadro
         if (legacy.indexOf('\uE000') >= 0) {
             StringBuilder sb = new StringBuilder();
@@ -533,12 +612,12 @@ public final class KeyIcons {
             }
             legacy = sb.toString();
         }
-        return run(legacy, true);
+        return run(legacy, true, !marked && !LoreWrap.isInstruction(legacy));
     }
 
     /** True se il testo e' fatto solo di tasti (dopo la trasformazione non resta nessuna lettera/numero). */
     private static boolean onlyKeys(String label) {
-        String r = run(label, true);
+        String r = run(label, true, false);
         if (r.equals(label)) {
             return false;
         }
@@ -550,7 +629,21 @@ public final class KeyIcons {
         return true;
     }
 
-    private static String run(String line, boolean big) {
+    /** Stato colore dopo tutti i codici del testo (anche quelli in mezzo alle parole). */
+    private static String advanceAll(String state, String text) {
+        for (int i = 0; i < text.length(); ) {
+            int cl = LoreWrap.codeLength(text, i);
+            if (cl > 0) {
+                state = LoreWrap.advance(state, text.substring(i, i + cl));
+                i += cl;
+            } else {
+                i++;
+            }
+        }
+        return state;
+    }
+
+    private static String run(String line, boolean big, boolean strict) {
         List<Tok> t = tokenize(line);
         String cc = line.indexOf('\u00A7') >= 0 ? "\u00A7" : "&";
         char base = big ? BIG_BASE : LORE_BASE;
@@ -577,7 +670,7 @@ public final class KeyIcons {
                 i++;
                 continue;
             }
-            Hit h = tok.type() == WORD && i != conjAt ? match(t, i, atStart) : null;
+            Hit h = tok.type() == WORD && i != conjAt ? match(t, i, atStart, strict) : null;
             if (h == null) {
                 // token normale (eventualmente il verbo dopo "per", messo all'imperativo)
                 if (needSpace && !(tok.type() == PUNCT && NO_SPACE_BEFORE.indexOf(tok.text().charAt(0)) >= 0)) {
@@ -597,6 +690,7 @@ public final class KeyIcons {
                     }
                 }
                 out.append(text);
+                state = advanceAll(state, tok.text());   // sfumature: codici colore dentro la parola
                 if (tok.type() == PUNCT) {
                     char c = text.charAt(0);
                     atStart = START_PUNCT.indexOf(c) >= 0;
@@ -638,8 +732,8 @@ public final class KeyIcons {
             }
             for (int k = i; k < end; k++) {
                 Tok c = t.get(k);
-                if (c.type() == CODE && c.text().length() >= 2) {
-                    state = LoreWrap.advance(state, c.text());
+                if ((c.type() == CODE && c.text().length() >= 2) || c.type() == WORD) {
+                    state = advanceAll(state, c.text());
                 }
             }
             if (needSpace) {

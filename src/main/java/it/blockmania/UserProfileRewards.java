@@ -310,12 +310,24 @@ public final class UserProfileRewards implements Listener {
      * Sfondo (a colori pieni, lo scurisce chi lo usa) della GUI ricompense da cui si arriva: stessa vista e pagina.
      * Per i popup comandi (livelli, giornaliera) al posto del profilo che UserProfilePowers disegnerebbe con null.
      */
+    /** Il titolo della GUI ricompense ha l'immagine dichiarata 179 (reale 186): il suo cursore e' 7 px indietro rispetto al reale. */
+    private static final int REAL_SHIFT = 7;
+
     private java.util.function.Consumer<GuiTitle> rewardsBg(Player t, Session s) {
         final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images());
+        final Map<String, String> imgs = images();
+        final String kind = s.kind;
+        final String type = s.type;
         return g -> {
-            g.atComponent(0, v.title(), v.cursor());   // con il nome nella barra in alto: resta uguale, scurito
+            // con il nome nella barra in alto: resta uguale, scurito. v.cursor() e' quello del titolo normale (immagine
+            // dichiarata 179 = reale - 7): + 7 per lasciare il cursore REALE, come vogliono inventario e popup sopra
+            g.atComponent(0, v.title(), v.cursor() + REAL_SHIFT);
             UserProfilePowers.invVariant(g, UserProfilePowers.INV_LOW);   // ricompense
+            // i popup comandi a pagina intera coprono la barra in alto: il nome si riscrive sopra (scurito)
+            UserProfilePowers.titleRedraw(g, tt -> {
+                rewards().staffBarTitle(tt, t, kind, type, imgs);
+            });
         };
     }
 
@@ -329,7 +341,7 @@ public final class UserProfileRewards implements Listener {
                 s.kind.equals("main") ? s.mainPage : s.page, images());
         // lo scurimento lo fa confirmOver; nella barra in alto resta (scurito) il nome della GUI ricompense
         ui.confirmOver(staff, text, g -> {
-            g.atComponent(0, v.title(), v.cursor());
+            g.atComponent(0, v.title(), v.cursor() + REAL_SHIFT);   // cursore reale (vedi rewardsBg)
             UserProfilePowers.invVariant(g, UserProfilePowers.INV_LOW);   // ricompense
         }, onYes, () -> later(() -> show(staff, s)));
     }

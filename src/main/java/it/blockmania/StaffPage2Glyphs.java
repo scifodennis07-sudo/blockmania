@@ -72,7 +72,7 @@ public final class StaffPage2Glyphs {
     }
 
     // ---- numero pagina (font pagnum, stessa posizione di pagnum-1..3 della userprofile) ----
-    // NB: UserProfileGui usa PAGNUM_REAL = 104 per glifi con la stessa estensione (ultima col. 103); qui 105 per la regola sopra.
+    // stessa estensione (ultima colonna 103): avanzamento reale 105, come UserProfileGui.PAGNUM_REAL.
     public static final Glyph PAGE_1_2 = new Glyph("", "minecraft:pagnum", 105);
     public static final Glyph PAGE_2_2 = new Glyph("", "minecraft:pagnum", 105);
 }

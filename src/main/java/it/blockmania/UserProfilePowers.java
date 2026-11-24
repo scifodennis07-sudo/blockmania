@@ -56,6 +56,10 @@ public final class UserProfilePowers implements Listener {
         background.accept(tmp);
         Character v = INV.remove(tmp);
         char variant = v == null ? INV_DEFAULT : v;
+        Consumer<GuiTitle> title = TITLE.remove(tmp);
+        if (title != null) {
+            TITLE.put(g, title);   // per ridisegnarlo sopra un popup che copre la barra in alto (redrawTitleDim)
+        }
         g.atComponent(0, MinesGui.tint(tmp.build(), null), tmp.cursor());
         drawInventoryFull(plugin, g, variant);
         INV.put(g, variant);   // se g e' a sua volta lo sfondo di un altro popup, la variante passa al livello sopra
@@ -79,6 +83,38 @@ public final class UserProfilePowers implements Listener {
     private static final int INV_REAL = 186;
     /** Variante dichiarata dagli sfondi (chiave = il GuiTitle in cui disegnano; identita', si toglie appena letta). */
     private static final Map<GuiTitle, Character> INV = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Come ridisegnare il titolo della GUI di sotto (stessa chiave di INV), col cursore 7 px indietro come nel titolo normale:
+     * serve a riscriverlo sopra i popup a pagina intera che coprono la barra in alto.
+     */
+    private static final Map<GuiTitle, Consumer<GuiTitle>> TITLE = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Lo sfondo disegnato in g dichiara come si scrive il suo titolo (draw: stesso codice del titolo normale, cursore 7 px
+     * indietro). Lo fa gia' topTitleDim; serve a chi scrive il titolo in altro modo (ricompense, potenziamenti).
+     */
+    static void titleRedraw(GuiTitle g, Consumer<GuiTitle> draw) {
+        if (draw != null) {
+            TITLE.put(g, draw);
+        }
+    }
+
+    /**
+     * I popup comandi userprofile-2..18 (U+E101..E111) sono immagini a pagina intera con la barra in alto opaca e chiara:
+     * coprono il titolo scurito dello sfondo. Questo lo riscrive (stesso testo e posizione, scurito) sopra il popup.
+     * g deve essere col cursore 7 px indietro (convenzione del titolo normale, dopo un'immagine dichiarata 179); da
+     * chiamare per ULTIMO, cosi' un errore di larghezza non sposta altro.
+     */
+    private static void redrawTitleDim(BlockMania plugin, GuiTitle g) {
+        Consumer<GuiTitle> draw = TITLE.get(g);
+        if (draw == null) {
+            return;
+        }
+        GuiTitle t = new GuiTitle(plugin);
+        draw.accept(t);
+        g.atComponent(0, MinesGui.tint(t.build(), null), t.cursor());
+    }
 
     /** Lo sfondo a pagina intera disegnato in g dichiara quale variante di inv_full gli corrisponde (da chiamare nel consumer). */
     static void invVariant(GuiTitle g, char variant) {
@@ -464,6 +500,14 @@ public final class UserProfilePowers implements Listener {
             }
             if (overCmds && !img.isEmpty()) {
                 c.at(-15, "&f" + img, fontFor(img), realAdvance(img));
+                Consumer<GuiTitle> t = TITLE.get(c);
+                if (realAdvance(img) == 186 && t != null) {
+                    // il popup comandi a pagina intera copre la barra in alto: il titolo (scurito poi da confirmOver) va sopra,
+                    // col cursore 7 px indietro come nel titolo normale e poi di nuovo reale
+                    c.atComponent(c.cursor(), Component.empty(), -7);
+                    t.accept(c);
+                    c.atComponent(c.cursor(), Component.empty(), 7);
+                }
             }
         }, onYes, onNo);
     }
@@ -554,7 +598,7 @@ public final class UserProfilePowers implements Listener {
     /**
      * Popup di conferma senza scritta fissa (POPUP_GLYPHS.md di Sara, font minecraft:mines): U+E208 = pannello vuoto con
      * CONFERMA / ANNULLA, U+E209 = pannello vuoto con i pulsanti senza scritta. Area descrizione x28..161 (centro 94.5),
-     * righe alte 5 px: 1 riga a y69, 2 righe a y66/y74, 3 righe a y62/y70/y78; testi dei pulsanti a y92, centri x62 e x127.
+     * righe alte 5 px: 1 riga a y69, 2 righe a y66/y74, 3 righe a y62/y70/y78; testi dei pulsanti a y91 (font tiny_y91), centri x62 e x127.
      * Ogni quota ha il suo font tiny_y<y> nel pack (= tiny3 spostato: set F500 testo, F600 ombra).
      */
     static final char CONFIRM_EMPTY = '\uE208';
@@ -610,7 +654,7 @@ public final class UserProfilePowers implements Listener {
 
     /** Testo di un pulsante (pannello U+E209), centrato sul pulsante. */
     private static void drawLabel(BlockMania plugin, GuiTitle g, String raw, int cx) {
-        centered(plugin, g, tinySafePunct(raw).toUpperCase(java.util.Locale.ROOT).trim(), cx, LABEL_MAX, "minecraft:tiny_y92");
+        centered(plugin, g, tinySafePunct(raw).toUpperCase(java.util.Locale.ROOT).trim(), cx, LABEL_MAX, "minecraft:tiny_y91");   // 1 px sopra tiny_y92
     }
 
     /** Una riga di testo piccolo centrata su cx (pixel immagine), ombra 1 px a destra come topTitle. */
@@ -801,7 +845,11 @@ public final class UserProfilePowers implements Listener {
         g.at(-15, "&f" + img, fontFor(img), declaredAdvance(img));
         tinyBar(g, label == null ? "" : label, realAdvance(img) == 169);
         navText(g, page + 1, pages);
-        // niente topTitle(label): nella barra in alto resta il titolo della GUI di sotto, scurito
+        // niente topTitle(label): nella barra in alto resta il titolo della GUI di sotto, scurito. Le immagini a pagina intera
+        // (userprofile-2..18) hanno la barra in alto opaca: il titolo scurito si riscrive sopra, per ultimo.
+        if (realAdvance(img) == 186) {
+            redrawTitleDim(plugin, g);
+        }
         h.inventory = Bukkit.createInventory(h, SIZE, g.build());
 
         final int pg = page;
@@ -923,6 +971,9 @@ public final class UserProfilePowers implements Listener {
      */
     public static void topTitleDim(BlockMania plugin, GuiTitle g, String raw) {
         topTitle(plugin, g, raw, 7);
+        TITLE.put(g, t -> {
+            topTitle(plugin, t, raw, 0);
+        });
     }
 
     private static void topTitle(BlockMania plugin, GuiTitle g, String raw, int dx) {

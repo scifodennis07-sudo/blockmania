@@ -100,7 +100,10 @@ public final class TicketDialog {
     /** Se il Dialog fallisce: link cliccabili in chat. */
     private static void fallbackChat(Player p, List<Link> links) {
         if (!p.isOnline()) return;
-        p.sendMessage(Component.text("Non riesco ad aprire la finestra, clicca il link qui sotto:", NamedTextColor.YELLOW));
+        // icona del click sinistro (KeyIcons, bianca) al posto di "clicca"
+        p.sendMessage(Component.text("Non riesco ad aprire la finestra, ", NamedTextColor.YELLOW)
+                .append(Component.text(KeyIcons.LEFT, NamedTextColor.WHITE))
+                .append(Component.text(" il link qui sotto:", NamedTextColor.YELLOW)));
         if (links == null) return;
         for (Link l : links) {
             if (l == null || l.url() == null) continue;

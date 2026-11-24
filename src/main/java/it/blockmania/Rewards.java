@@ -1349,6 +1349,27 @@ public final class Rewards implements Listener {
         return staffView(target, kind, type, mainPage, page, images, null);
     }
 
+    /**
+     * Solo il nome nella barra in alto della vista staff (stesso testo e posizione di staffView, convenzione del titolo
+     * normale): serve a riscriverlo, scurito, sopra i popup comandi a pagina intera che coprono la barra.
+     */
+    public void staffBarTitle(GuiTitle t, Player target, String kind, String type, Map<String, String> images) {
+        Map<String, String> old = imageOverride;
+        imageOverride = images == null ? Map.of() : images;
+        try {
+            String k = kind == null ? "main" : kind;
+            String ty = type == null ? "" : type;
+            String what = switch (k) {
+                case "levels" -> known(ty) && !ty.equals("daily") ? (ty.equals("pass") ? "battlepass" : italianType(ty)) : "ricompense";
+                case "daily" -> "giornaliera";
+                default -> "ricompense";
+            };
+            barTitle(t, target, what);
+        } finally {
+            imageOverride = old;
+        }
+    }
+
     /** Numero massimo di livelli di una tipologia (per i popup dello staff). */
     public int staffMaxLevel(String type) {
         return known(type) ? levelsOf(type) : 0;

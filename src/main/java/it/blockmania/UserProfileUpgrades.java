@@ -178,6 +178,11 @@ public final class UserProfileUpgrades implements Listener {
         int start = center - GuiTitle.widthOf(plugin, set, plain) / 2;
         t.number(start, set, shadowSet, c.getBoolean(pg + "shadow", true), plain, c.getString(pg + "font", ""));
         // nome della GUI centrato nella barra grigia in alto
+        barTitle(t, targetName);
+    }
+
+    /** Nome della GUI centrato nella barra grigia in alto (convenzione del titolo normale). */
+    private void barTitle(GuiTitle t, String targetName) {
         UpgradeManager.barTitle(plugin, t, "POTENZIAMENTI DI " + targetName, "POTENZ DI " + targetName,
                 "POTENZ " + targetName);
     }
@@ -202,6 +207,11 @@ public final class UserProfileUpgrades implements Listener {
         drawTexts(c, h.page, um == null ? 1 : Math.max(1, um.pageCount()), UserProfilePowers.nameOf(h.target));
         c.atComponent(c.cursor(), Component.empty(), 7);
         UserProfilePowers.invVariant(c, UserProfilePowers.INV_HIGH);   // potenziamenti
+        // i popup comandi a pagina intera coprono la barra in alto: il nome si riscrive sopra (scurito)
+        final String name = UserProfilePowers.nameOf(h.target);
+        UserProfilePowers.titleRedraw(c, t -> {
+            barTitle(t, name);
+        });
     }
 
     private void put(Inventory inv, Holder h, int slot, ItemStack item, String action) {
