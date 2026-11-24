@@ -1059,8 +1059,9 @@ public final class StaffTasks implements Listener {
                 }
                 replaceBranch(t, o, c.branch(), new Branch(b.condition(), List.copyOf(fresh), b.nothing()));
             }
-            addLog(c.taskId(), c.orderId(), "ANNULLATA", null, why + (undoNow.isEmpty() ? "" : " (" + undoNow.size()
-                    + " azioni rimesse come prima)"));
+            // chi aveva l'incarico (prima: "server"): la GUI task mostra "annullato da / il"
+            addLog(c.taskId(), c.orderId(), "ANNULLATA", staff, playerName(staff), why + (undoNow.isEmpty() ? "" : " ("
+                    + undoNow.size() + " azioni rimesse come prima)"));
         }
         for (Action a : undoNow) {
             restoreBefore(a);
@@ -1971,8 +1972,12 @@ public final class StaffTasks implements Listener {
 
     /** Chiamare dentro synchronized. Non salva. */
     private void addLog(String taskId, String orderId, String event, CommandSender by, String detail) {
-        log.add(new LogEntry(System.currentTimeMillis(), taskId, orderId, event, by instanceof Player p ? p.getUniqueId() : null,
-                by == null ? "server" : by.getName(), detail == null ? "" : detail));
+        addLog(taskId, orderId, event, by instanceof Player p ? p.getUniqueId() : null, by == null ? "server" : by.getName(), detail);
+    }
+
+    private void addLog(String taskId, String orderId, String event, UUID by, String byName, String detail) {
+        log.add(new LogEntry(System.currentTimeMillis(), taskId, orderId, event, by, byName == null ? "server" : byName,
+                detail == null ? "" : detail));
         while (log.size() > MAX_LOG) {
             log.remove(0);
         }

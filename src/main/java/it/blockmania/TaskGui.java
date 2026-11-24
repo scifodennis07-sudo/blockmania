@@ -1040,7 +1040,7 @@ public final class TaskGui implements Listener {
     /**
      * Lore della cartella (uguale in lista, cestino e pulsante della cartella), es.
      * "creata da DoppiaX il 19/11/2026 14:52" / "motivo: ..." / "" / "ordinarie: 2 (1/2 completate)" / "custom: ..." / "stato: da fare".
-     * Mai nomi dei player degli ordini (solo chi l'ha creata).
+     * Sotto lo stato: chi e quando (completata = ultimo ordine completato; eliminata / ripristinata = registro).
      */
     private List<String> folderLore(StaffTasks.Task k, StaffTasks.Counts c) {
         List<String> lore = new ArrayList<>();
@@ -1061,7 +1061,55 @@ public final class TaskGui implements Listener {
             lore.add("&7nessun ordine");
         }
         lore.add("&7stato: " + taskState(k, c));
+        if (k.status() == StaffTasks.Status.ELIMINATA) {
+            StaffTasks.LogEntry e = lastLog(k.id(), null, "ELIMINATA", "TOLTO");   // TOLTO: ultimo ordine tolto = task nel cestino
+            if (e != null) {
+                whoWhen(lore, "eliminata", e.byName(), e.ts());
+            }
+            return lore;
+        }
+        if (c.total() > 0 && c.done() >= c.total()) {
+            StaffTasks.Order last = null;
+            for (StaffTasks.Order o : safe(k.orders())) {
+                if (o.status() != StaffTasks.Status.APERTA && (last == null || o.doneAt() > last.doneAt())) {
+                    last = o;
+                }
+            }
+            if (last != null) {
+                whoWhen(lore, "completata", last.doneByName(), last.doneAt());
+            }
+        }
+        StaffTasks.LogEntry r = lastLog(k.id(), null, "ELIMINATA", "RIPRISTINATA");
+        if (r != null && "RIPRISTINATA".equalsIgnoreCase(r.event())) {
+            whoWhen(lore, "ripristinata", r.byName(), r.ts());
+        }
         return lore;
+    }
+
+    /** "&7<verbo> da: &fnome" e "&7il: &fdd/MM/yyyy HH:mm" (solo i dati che ci sono). */
+    private static void whoWhen(List<String> lore, String verb, String name, long ts) {
+        if (name != null && !name.isBlank()) {
+            lore.add("&7" + verb + " da: &f" + clean(name));
+        }
+        if (ts > 0) {
+            lore.add("&7il: &f" + date(ts));
+        }
+    }
+
+    /** Ultima voce del registro della task (e dell'ordine, se orderId non e' null) con uno di questi eventi. */
+    private StaffTasks.LogEntry lastLog(String taskId, String orderId, String... events) {
+        StaffTasks.LogEntry best = null;
+        for (StaffTasks.LogEntry e : safe(tasks().log(null))) {
+            if (!taskId.equals(e.taskId()) || (orderId != null && !orderId.equals(e.orderId()))) {
+                continue;
+            }
+            for (String ev : events) {
+                if (ev.equalsIgnoreCase(e.event()) && (best == null || e.ts() > best.ts())) {
+                    best = e;
+                }
+            }
+        }
+        return best;
     }
 
     private String taskState(StaffTasks.Task k, StaffTasks.Counts c) {
@@ -1141,6 +1189,15 @@ public final class TaskGui implements Listener {
         }
         tl.add("&7tipo: &f" + typeLabel(type));
         tl.add("&7stato: " + orderState(o, charge));
+        if (done) {
+            whoWhen(tl, "completato", o.doneByName(), o.doneAt());
+        } else if (charge == null) {
+            // incarico annullato (rinuncia o tempo scaduto) e ordine di nuovo libero: chi e quando, se e' nel registro
+            StaffTasks.LogEntry last = lastLog(k.id(), o.id(), "PRESA", "ANNULLATA");
+            if (last != null && "ANNULLATA".equalsIgnoreCase(last.event())) {
+                whoWhen(tl, "annullato", last.byName(), last.ts());
+            }
+        }
         if (done && o.chosenBranch() >= 0 && o.chosenBranch() < safe(o.branches()).size() && type == StaffTasks.OrderType.CONDIZIONALE) {
             tl.add("&7ramo scelto: &f" + StaffTasks.describe(o.branches().get(o.chosenBranch())));
         }
@@ -1180,7 +1237,7 @@ public final class TaskGui implements Listener {
             if (done) {
                 iconName = "task_fatto";
                 name = "&acompletato";
-                lore.add("&7da: &f" + clean(o.doneByName()) + " &8(" + date(o.doneAt()) + ")");
+                whoWhen(lore, "completato", o.doneByName(), o.doneAt());
             } else if (mine && type == StaffTasks.OrderType.CUSTOM) {
                 iconName = "task_salva";
                 name = "&asegna come fatto";
@@ -1235,7 +1292,7 @@ public final class TaskGui implements Listener {
                 if (chosen) {
                     iconName = "task_fatto";
                     name = "&a" + (b.nothing() ? "non fare nulla" : "ramo " + (bi + 1)) + " (scelto)";
-                    lore.add("&7da: &f" + clean(o.doneByName()) + " &8(" + date(o.doneAt()) + ")");
+                    whoWhen(lore, "completato", o.doneByName(), o.doneAt());
                 }
             } else if (chargedHere) {
                 iconName = "task_in_carico";
