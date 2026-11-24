@@ -932,6 +932,10 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
                 if (args.length == 2) {
                     out.addAll(GROUPS);
                 }
+            } else if (args.length == 2 && allowed(sender, "sanctions", "see")
+                    && (args[0].equalsIgnoreCase("rules") || args[0].equalsIgnoreCase("regole")
+                    || args[0].equalsIgnoreCase("staffrules") || args[0].equalsIgnoreCase("regolestaff"))) {
+                out.add("importa");
             } else if (GROUPS.contains(g) && anyAllowed(sender, g)) {
                 if (g.equals("shops")) {
                     String[] t = new String[args.length];

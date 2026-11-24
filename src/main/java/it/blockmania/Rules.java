@@ -57,6 +57,8 @@ public final class Rules {
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
     /** true = regole staff (etichette e durate diverse). */
     private final boolean staff;
+    /** Ultima versione del regolamento di default importata (salvata nel file dati come "defaults-version"). */
+    private int defaultsVersion;
 
     /** Regole dei player: rules.yml / rules-log.yml. */
     public Rules(BlockMania plugin) {
@@ -537,14 +539,72 @@ public final class Rules {
      * che non esistono ancora. Non tocca le regole gia' presenti. Ritorna {aggiunte, saltate, errori}.
      */
     public int[] importDefaults(Player by) {
-        int added = 0, skipped = 0, bad = 0;
-        String res = staff ? "regolamento-staff.yml" : "regolamento-player.yml";
-        java.io.InputStream in = plugin.getResource(res);
-        if (in == null) {
+        YamlConfiguration y = loadDefaults();
+        if (y == null) {
             return new int[] {0, 0, -1};
         }
-        YamlConfiguration y = YamlConfiguration.loadConfiguration(
-                new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+        int[] r = importDefaults(y, by);
+        synchronized (this) {
+            // import manuale: la versione corrente conta come gia' importata (l'avvio non la ripete)
+            defaultsVersion = Math.max(defaultsVersion, y.getInt("versione", 1));
+            save();
+        }
+        return r;
+    }
+
+    private String defaultsResource() {
+        return staff ? "regolamento-staff.yml" : "regolamento-player.yml";
+    }
+
+    /** Regolamento di default dal jar, null se manca. */
+    private YamlConfiguration loadDefaults() {
+        java.io.InputStream in = plugin.getResource(defaultsResource());
+        if (in == null) {
+            return null;
+        }
+        try (java.io.Reader rd = new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8)) {
+            return YamlConfiguration.loadConfiguration(rd);
+        } catch (IOException e) {
+            plugin.getLogger().warning(defaultsResource() + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * All'avvio: se il regolamento e' vuoto importa tutti i default; altrimenti aggiunge i codici mancanti
+     * solo se la versione dei default ("versione" nel file del jar) e' piu' nuova dell'ultima importata,
+     * cosi' le regole cancellate a mano non tornano a ogni riavvio. Ritorna le regole aggiunte.
+     */
+    public int autoImportDefaults() {
+        String what = staff ? "regolamento staff" : "regolamento player";
+        YamlConfiguration y = loadDefaults();
+        if (y == null) {
+            plugin.getLogger().warning(what + ": " + defaultsResource() + " non trovato nel plugin");
+            return 0;
+        }
+        int ver = y.getInt("versione", 1);
+        boolean empty;
+        int stored;
+        synchronized (this) {
+            empty = rules.isEmpty();
+            stored = defaultsVersion;
+        }
+        if (!empty && stored >= ver) {
+            return 0;
+        }
+        int[] r = importDefaults(y, null);
+        synchronized (this) {
+            defaultsVersion = Math.max(defaultsVersion, ver);
+            save();
+        }
+        plugin.getLogger().info(what + ": " + (empty ? "regolamento vuoto, " : "")
+                + "aggiunte " + r[0] + " regole di default (versione " + ver + ")"
+                + (r[2] > 0 ? ", non valide " + r[2] : ""));
+        return r[0];
+    }
+
+    private int[] importDefaults(YamlConfiguration y, Player by) {
+        int added = 0, skipped = 0, bad = 0;
         for (Map<?, ?> m : y.getMapList("rules")) {
             String code = String.valueOf(m.get("code"));
             String tipo = String.valueOf(m.get("tipo")).toUpperCase(Locale.ROOT);
@@ -573,7 +633,10 @@ public final class Rules {
                 continue;
             }
             long ms = needsTime(t) ? time(t, tempo) : (staff ? time(t, tempo) : 0L);
-            if (add(Rule.created(code, title, text, t, ms, by))) {
+            Rule nr = by != null ? Rule.created(code, title, text, t, ms, by)
+                    : new Rule(code, title, text, t, ms, null, "regolamento default",
+                            System.currentTimeMillis(), null, null, 0L);
+            if (add(nr)) {
                 added++;
             } else {
                 skipped++;
@@ -600,10 +663,12 @@ public final class Rules {
         rules.clear();
         histories.clear();
         hitLog.clear();
+        defaultsVersion = 0;
         if (!file.exists()) {
             return;
         }
         YamlConfiguration y = YamlConfiguration.loadConfiguration(file);
+        defaultsVersion = y.getInt("defaults-version", 0);
         ConfigurationSection sec = y.getConfigurationSection("rules");
         if (sec == null) {
             return;
@@ -682,6 +747,7 @@ public final class Rules {
 
     public synchronized void save() {
         YamlConfiguration y = new YamlConfiguration();
+        y.set("defaults-version", defaultsVersion);
         for (Rule r : rules.values()) {
             // la chiave non puo' contenere il punto (sarebbe un sotto-livello): uso "_"
             String p = "rules." + r.code().replace('.', '_') + ".";

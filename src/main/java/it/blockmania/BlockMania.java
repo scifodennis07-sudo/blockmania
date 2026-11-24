@@ -204,6 +204,9 @@ public final class BlockMania extends JavaPlugin {
         // regole staff (staff-rules.yml): seconda istanza, etichette warn/depex/sospensione
         staffRules = new Rules(this, "staff-rules.yml", "staff-rules-log.yml", true);
         staffRules.load();
+        // regolamenti di default: tutti se vuoti, altrimenti solo i codici nuovi una volta per versione
+        rules.autoImportDefaults();
+        staffRules.autoImportDefaults();
         // profilo player (/adminmania userprofile): l'ordine conta, le GUI usano i servizi creati prima
         sanctions = new SanctionManager(this);
         getServer().getPluginManager().registerEvents(sanctions, this);
