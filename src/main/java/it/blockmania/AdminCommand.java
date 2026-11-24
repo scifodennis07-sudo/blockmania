@@ -146,6 +146,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
 
     /** Livello del ruolo piu' alto (1 = primo della lista, 0 = nessun ruolo). Console e OP sono all'ultimo. */
     int level(CommandSender sender) {
+        if (StaffDiscipline.suspendedStaff(plugin, sender)) {
+            return 0;   // staffer sospeso: nessun permesso staff, anche se OP (come se non fosse staff)
+        }
         List<String> roles = roleIds();
         if (sender instanceof ConsoleCommandSender || sender.isOp()) {
             return roles.size();
@@ -173,6 +176,9 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private boolean hasDept(CommandSender sender, List<String> depts) {
+        if (StaffDiscipline.suspendedStaff(plugin, sender)) {
+            return false;   // sospeso: niente reparti
+        }
         if (sender instanceof ConsoleCommandSender || sender.isOp()) {
             return true;
         }
@@ -684,20 +690,41 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         if (level(sender) >= roleLevel(plugin.getConfig().getString("adminmania.self-min", "admin"))) {
             return true;
         }
-        String target = self.getName();
+        // il target si cerca per UUID anche se e' OFFLINE (online, id u-N/s-N, oppure nome gia' visto dal server):
+        // prima un target offline restava "te stesso" e il comando veniva negato
+        UUID target = self.getUniqueId();
         for (int i = 1; i < t.length; i++) {
-            Player p = Bukkit.getPlayerExact(t[i]);
-            if (p != null) {
-                target = p.getName();
+            UUID found = targetId(t[i]);
+            if (found != null) {
+                target = found;
                 break;
             }
         }
-        if (target.equalsIgnoreCase(self.getName())) {
+        if (target.equals(self.getUniqueId())) {
             deny(sender, "col tuo ruolo non puoi dare, togliere o azzerare niente a te stesso: scrivi il nome di un altro giocatore, "
                     + "oppure chiedi a un ruolo più alto");
             return false;
         }
         return true;
+    }
+
+    /** UUID di un giocatore scritto nel comando (online, id u-N / s-N, oppure offline gia' visto); null = non e' un giocatore. */
+    private UUID targetId(String word) {
+        if (word == null || word.isBlank()) {
+            return null;
+        }
+        Player p = Bukkit.getPlayerExact(word);
+        if (p != null) {
+            return p.getUniqueId();
+        }
+        if (plugin.getPlayerIds() != null && word.matches("(?i)[us]-[0-9]+")) {
+            UUID id = plugin.getPlayerIds().byId(word);
+            if (id != null) {
+                return id;
+            }
+        }
+        org.bukkit.OfflinePlayer off = Bukkit.getOfflinePlayerIfCached(word);
+        return off != null && off.hasPlayedBefore() ? off.getUniqueId() : null;
     }
 
     private boolean checkCaps(CommandSender sender, String group, String verb, String[] t) {

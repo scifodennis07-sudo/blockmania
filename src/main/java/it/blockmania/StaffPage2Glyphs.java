@@ -4,8 +4,10 @@ package it.blockmania;
  * Glifi del resource pack per la pagina 2 dello staffprofile (generati da maniablock5/tools/genera_staffprofile2.py).
  * Tutti canvas 256x256, ascent 28, height 256.
  * real = avanzamento Minecraft = ultima colonna opaca + 2 (larghezza + 1 px di spaziatura), stessa convenzione di
- * StaffProfileGui.IMG_REAL (186). Dichiarato nel titolo normale = real - 7.
- * Disegno: normale g.at(-15 - 7, ch, font, real - 7); sfondo popup g.at(-15, ch, font, real).
+ * StaffProfileGui.IMG_REAL (186).
+ * Disegno (overlay, come StaffProfileGui.overlay): titolo normale g.at(-22, ch, font, real); sfondo popup g.at(-15, ch, font, real).
+ * Sempre l'avanzamento REALE: con x gia' spostata di -7 E avanzamento dichiarato i 7 px si tolgono due volte (AUDIT 0.1).
+ * Fa eccezione solo l'immagine di sfondo BG, primo pezzo del titolo: normale g.at(-15, BG, font, real - 7).
  */
 public final class StaffPage2Glyphs {
 

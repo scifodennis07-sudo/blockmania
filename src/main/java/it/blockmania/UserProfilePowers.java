@@ -125,6 +125,31 @@ public final class UserProfilePowers implements Listener {
      * Inventario del player a colori pieni (font minecraft:inv_full): da disegnare dopo lo sfondo scurito e prima del pannello
      * del popup, con il cursore REALE (come dopo drawDimmed). variant = INV_LOW / INV_HIGH / INV_STAFF / INV_NONE (non disegna niente).
      */
+    /** Riaperture fatte per ogni popup (limite di sicurezza di reopenOnEscape). */
+    private static final Map<Inventory, Integer> REOPENS = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * R-ESC (docs/REGOLE_GUI.md): un popup si chiude solo con i suoi pulsanti. Da chiamare in onClose dei popup delle altre
+     * classi: se chosen dice false (nessun pulsante premuto) il popup si riapre al tick dopo, ma solo se il player e' online
+     * e non si e' aperta un'altra GUI (top inventory = inventario del player). Massimo 40 riaperture per popup.
+     */
+    static void reopenOnEscape(BlockMania plugin, Player p, Inventory inv, java.util.function.BooleanSupplier chosen) {
+        if (p == null || inv == null || chosen.getAsBoolean()) {
+            return;
+        }
+        int n = REOPENS.getOrDefault(inv, 0);
+        if (n >= 40) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (p.isOnline() && !chosen.getAsBoolean()
+                    && p.getOpenInventory().getTopInventory().getType() == InventoryType.CRAFTING) {
+                REOPENS.put(inv, n + 1);
+                p.openInventory(inv);
+            }
+        });
+    }
+
     static void drawInventoryFull(BlockMania plugin, GuiTitle g, char variant) {
         if (variant == INV_NONE) {
             return;
@@ -194,7 +219,7 @@ public final class UserProfilePowers implements Listener {
     private static final String FONT_TINY4 = "minecraft:tiny4";   // font alto: testo sopra il bordo, per la barra dell'anvil
     private static final int ANVIL_BAR_CX = 99;                   // centro barra anvil (container 23..153)
     private static final int ANVIL_BAR_MAX = 112;
-    private static final int BAR_MAX = 58;    // userprofile-2..18: interno 64..125 (62 px) - 4 (BAR_WIDTH.md)
+    private static final int BAR_MAX = 60;    // userprofile-2..18: interno 64..125 (62 px), 1 px libero per lato (ombra compresa)
     private static final int BAR_CX = 94;     // barra centrale (63,33,64,14) -> centro x 95
     private static final int BAR_WIDE_MAX = 64;   // userprofile-19..23 (U+E112..E116) allargate: interno 61..128 (BAR_WIDTH.md)
     private static final int BAR_WIDE_CX = 95;
@@ -219,9 +244,17 @@ public final class UserProfilePowers implements Listener {
         java.util.function.Consumer<GuiTitle> background;   // sfondo personalizzato (null = profilo)
         String image = IMG_EMPTY;    // immagine mostrata (serve da sfondo per la conferma)
         boolean dead;                // gia' gestita: la chiusura non va interpretata
-        boolean chosen;              // conferma: premuto conferma o annulla (solo allora si puo' chiudere)
-        int reopens;                 // conferma: quante volte e' stata riaperta dopo una chiusura (limite di sicurezza)
+        boolean chosen;              // premuto un pulsante che porta via (solo allora il popup si puo' chiudere, R-ESC)
+        int reopens;                 // quante volte e' stato riaperto dopo una chiusura con ESC (limite di sicurezza)
         final Map<Integer, Runnable> actions = new HashMap<>();
+        /** Slot che non portano via (informazioni): cliccarli non vale come scelta. */
+        final Set<Integer> stay = new HashSet<>();
+        /** Slot che rispondono solo a Q (azzera = eliminazione, REGOLE_GUI: solo Q e con conferma). */
+        final Set<Integer> qOnly = new HashSet<>();
+        // popup comandi: barra e numero pagina, per ridisegnarli sotto una conferma (R-BG)
+        String label = "";
+        int page;
+        int pages = 1;
 
         @Override
         public Inventory getInventory() {
@@ -479,15 +512,24 @@ public final class UserProfilePowers implements Listener {
         String cur = "";
         Consumer<GuiTitle> bg0 = null;
         boolean cmds = false;
+        String lab = "";
+        int pg0 = 0;
+        int pgs0 = 1;
         if (staff.getOpenInventory().getTopInventory().getHolder() instanceof Holder h0
                 && "cmds".equals(h0.kind) && h0.image != null) {
             cur = h0.image;
             bg0 = h0.background;
             cmds = true;
+            lab = h0.label;
+            pg0 = h0.page;
+            pgs0 = h0.pages;
         }
         final String img = cur;
         final boolean overCmds = cmds;
         final Consumer<GuiTitle> bg = bg0;
+        final String cmdLabel = lab;
+        final int cmdPage = pg0;
+        final int cmdPages = pgs0;
         confirmOver(staff, text, c -> {
             // advance reale (186) per tutte le immagini: il cursore lo sistema confirmOver.
             // Il titolo della GUI di sotto lo disegna lo sfondo (bg / fallback, con topTitleDim); il popup comandi non ne ha.
@@ -500,14 +542,16 @@ public final class UserProfilePowers implements Listener {
             }
             if (overCmds && !img.isEmpty()) {
                 c.at(-15, "&f" + img, fontFor(img), realAdvance(img));
+                // tutto il popup comandi di sotto (R-BG): barra descrittiva, numero pagina e, se il popup a pagina intera copre
+                // la barra in alto, il titolo. Col cursore 7 px indietro come in showCommands, poi di nuovo reale.
+                c.atComponent(c.cursor(), Component.empty(), -7);
+                tinyBar(c, cmdLabel, realAdvance(img) == 169);
+                navText(c, cmdPage + 1, cmdPages);
                 Consumer<GuiTitle> t = TITLE.get(c);
                 if (realAdvance(img) == 186 && t != null) {
-                    // il popup comandi a pagina intera copre la barra in alto: il titolo (scurito poi da confirmOver) va sopra,
-                    // col cursore 7 px indietro come nel titolo normale e poi di nuovo reale
-                    c.atComponent(c.cursor(), Component.empty(), -7);
                     t.accept(c);
-                    c.atComponent(c.cursor(), Component.empty(), 7);
                 }
+                c.atComponent(c.cursor(), Component.empty(), 7);
             }
         }, onYes, onNo);
     }
@@ -721,7 +765,7 @@ public final class UserProfilePowers implements Listener {
                     return new String[]{"&dinfinita", "non finisce mai", "&eclicca per renderla infinita"};
                 }
                 case "reset" -> {
-                    return new String[]{"&4svuota", "svuota", "&eclicca per svuotare"};
+                    return new String[]{"&4svuota", "svuota", "&eQ per svuotare"};   // azzera: solo Q
                 }
                 default -> { }
             }
@@ -772,7 +816,8 @@ public final class UserProfilePowers implements Listener {
             }
         }
         String[] base = actionInfo(cmd);
-        return new String[]{base[0], base[1], "&eclicca per scegliere"};
+        // azzera conta come eliminazione: solo Q (poi la conferma)
+        return new String[]{base[0], base[1], "reset".equals(cmd) ? "&eQ per azzerare" : "&eclicca per scegliere"};
     }
 
     private static Material fallbackMaterial(String cmd) {
@@ -834,6 +879,9 @@ public final class UserProfilePowers implements Listener {
         h.kind = "cmds";
         h.image = img;
         h.background = background;
+        h.label = label == null ? "" : label;
+        h.page = page;
+        h.pages = pages;
         GuiTitle g = new GuiTitle(plugin);
         if (background != null) {
             drawDimmed(plugin, g, background);   // con il titolo della GUI di sotto (scurito) e l'inventario a colori pieni
@@ -863,8 +911,9 @@ public final class UserProfilePowers implements Listener {
             }
         } else {
             for (int s : SLOTS_BLUE) {
-                put(h, s, pane("&einformazioni", List.of()), () -> GuiMsg.send(plugin, p,
-                        "&e" + (label == null ? "" : label) + ": scegli con le icone, frecce per cambiare pagina, X per tornare"));
+                // solo dati nella lore, niente messaggi in chat (R-CHAT)
+                put(h, s, pane("&einformazioni", List.of("&7comandi: &f" + cmds.size(), "&7pagina: &f" + (page + 1) + "/" + pages)), null);
+                h.stay.add(s);
             }
         }
         if (pages > 1) {
@@ -879,6 +928,9 @@ public final class UserProfilePowers implements Listener {
             List<String> lore = List.of("&7" + info[1], "", info[2]);
             ItemStack st = drawn ? pane(info[0], lore) : item(fallbackMaterial(cmd), info[0], lore);
             put(h, SLOTS_ICON[i], st, () -> later(() -> onPick.accept(cmd)));
+            if ("reset".equals(cmd)) {
+                h.qOnly.add(SLOTS_ICON[i]);   // azzera = eliminazione: solo Q, poi la conferma
+            }
         }
         open(p, h);
     }
@@ -981,7 +1033,8 @@ public final class UserProfilePowers implements Listener {
         if (text.isEmpty()) {
             return;
         }
-        text = fit(text, TOP_MAX);
+        // "PROFILO NICK" troppo lungo: resta il nick, mai tagliato (il punto non c'e' nel set F100: si toglie)
+        text = fit(text, TOP_MAX, true).replace(".", "").trim();
         int total = tinyAdvance(text);
         int st = TOP_CX - Math.max(0, total - 1) / 2;
         int off = 0;
@@ -1002,9 +1055,26 @@ public final class UserProfilePowers implements Listener {
         return n == null ? "" : n;
     }
 
-    /** Accorcia il testo per farlo stare nella barra: toglie "di", poi "ball", poi taglia la parola piu' lunga. */
+    /** Abbreviazioni fisse (mai parole tagliate a meta'): si usano solo se il testo non sta nella barra. */
+    private static final Map<String, String> ABBR = Map.ofEntries(
+            Map.entry("POTENZIAMENTI", "POTENZ"), Map.entry("BLOCKSHELL", "SHELL"), Map.entry("BLOCKCOIN", "BCOIN"),
+            Map.entry("GUADAGNATI", "GUAD"), Map.entry("SPACCATI", "SPACC"), Map.entry("GIORNALIERA", "GIORN"),
+            Map.entry("CRONOLOGIA", "STORICO"), Map.entry("SANZIONE", "SANZ"), Map.entry("DESCRIZIONE", "DESCR"),
+            Map.entry("REGOLAMENTO", "REGOL"), Map.entry("STANDARDBALL", "STANDARD"), Map.entry("EXPLOSIONBALL", "EXPLOSION"),
+            Map.entry("GHOSTBALL", "GHOST"), Map.entry("DOUBLEBALL", "DOUBLE"));
+
+    /**
+     * Fa stare il testo in max px (tinyAdvance: con l'ombra la larghezza visibile e' proprio questa) senza mai tagliare una
+     * parola lettera per lettera: toglie "di" e "ball", poi usa le abbreviazioni fisse, poi toglie parole intere (dalla fine,
+     * o dall'inizio con keepLast, es. "PROFILO NICK" tiene il nick). Solo se resta una parola sola troppo lunga la abbrevia
+     * con il punto finale ("BLOCKSH."), che si legge come abbreviazione.
+     */
     private static String fit(String text, int max) {
-        String t = text;
+        return fit(text, max, false);
+    }
+
+    private static String fit(String text, int max, boolean keepLast) {
+        String t = text == null ? "" : text.trim();
         if (tinyAdvance(t) <= max) {
             return t;
         }
@@ -1012,22 +1082,23 @@ public final class UserProfilePowers implements Listener {
         if (tinyAdvance(t) > max) {
             t = t.replaceAll("(?i)(\\w)ball\\b", "$1").replaceAll(" +", " ").trim();
         }
-        while (tinyAdvance(t) > max) {
-            String[] w = t.split(" ");
-            int li = -1;
-            for (int i = 0; i < w.length; i++) {
-                if (w[i].length() > 1 && !w[i].matches(".*\\d.*") && (li < 0 || w[i].length() >= w[li].length())) {
-                    li = i;
-                }
+        if (tinyAdvance(t) > max) {
+            StringBuilder sb = new StringBuilder();
+            for (String w : t.split(" ")) {
+                String a = ABBR.get(w.toUpperCase(java.util.Locale.ROOT));
+                String piece = a == null ? w : w.equals(w.toUpperCase(java.util.Locale.ROOT)) ? a : a.toLowerCase(java.util.Locale.ROOT);
+                sb.append(sb.length() == 0 ? "" : " ").append(piece);
             }
-            if (li < 0) {
-                break;
-            }
-            w[li] = w[li].substring(0, w[li].length() - 1);
-            t = String.join(" ", w).trim();
+            t = sb.toString();
         }
-        while (tinyAdvance(t) > max && t.length() > 1) {
-            t = t.substring(0, t.length() - 1).trim();   // solo numeri/parole corte: si taglia la fine, mai fuori dalla barra
+        while (tinyAdvance(t) > max && t.contains(" ")) {
+            t = keepLast ? t.substring(t.indexOf(' ') + 1).trim() : t.substring(0, t.lastIndexOf(' ')).trim();
+        }
+        if (tinyAdvance(t) > max) {
+            while (t.length() > 2 && tinyAdvance(t + ".") > max) {
+                t = t.substring(0, t.length() - 1);
+            }
+            t = t + ".";
         }
         return t;
     }
@@ -1236,15 +1307,21 @@ public final class UserProfilePowers implements Listener {
         if (event.getClickedInventory() != h.inventory) {
             return;
         }
-        // solo click sinistro/destro sui bottoni: Q, tasti numerici, doppio click, centrale ecc. non fanno niente
-        if (!event.getClick().isLeftClick() && !event.getClick().isRightClick()) {
+        // click sinistro/destro sui bottoni; sui bottoni "azzera" solo Q. Tasti numerici, doppio click, centrale: niente
+        org.bukkit.event.inventory.ClickType ct = event.getClick();
+        boolean drop = ct == org.bukkit.event.inventory.ClickType.DROP || ct == org.bukkit.event.inventory.ClickType.CONTROL_DROP;
+        int slot = event.getRawSlot();
+        if (h.qOnly.contains(slot) ? !drop : !ct.isLeftClick() && !ct.isRightClick()) {
             return;
         }
-        Runnable action = h.actions.get(event.getRawSlot());
+        Runnable action = h.actions.get(slot);
         if (action == null || h.dead) {
             return;
         }
         plugin.guiClick(p);
+        if (!h.stay.contains(slot)) {
+            h.chosen = true;   // un pulsante che porta via: da qui la chiusura del popup e' voluta
+        }
         h.dead = true;
         action.run();
         // le azioni di pagina riaprono un nuovo popup; se non e' cambiato niente la GUI resta valida
@@ -1359,9 +1436,9 @@ public final class UserProfilePowers implements Listener {
             return;
         }
         UUID id = p.getUniqueId();
-        // popup di conferma chiuso senza conferma/annulla (ESC, tasto inventario mentre si scrive...): si riapre al tick
-        // dopo, solo se non si e' aperta un'altra GUI e il player e' ancora online
-        if (event.getInventory().getHolder() instanceof Holder ch && "confirm".equals(ch.kind) && !ch.chosen
+        // popup (conferma o comandi) chiuso senza scegliere un pulsante (ESC, tasto inventario...): si riapre al tick
+        // dopo, solo se non si e' aperta un'altra GUI e il player e' ancora online (R-ESC)
+        if (event.getInventory().getHolder() instanceof Holder ch && !ch.chosen
                 && !switching.contains(id) && ch.reopens < 40) {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (p.isOnline() && !ch.chosen && p.getOpenInventory().getTopInventory().getType() == InventoryType.CRAFTING) {

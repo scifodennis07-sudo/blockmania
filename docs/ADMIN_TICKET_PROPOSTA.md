@@ -1,6 +1,6 @@
 # PROPOSTA - nuovo /adminmania ticket (sezione TICKET dello staff)
 
-Autore: Davide. Stato: FASE 1, solo proposta (niente codice).
+Autore: Davide. Stato: FASE 2, codice scritto (`TicketStaffGui`); grafica di Sara in attesa (vedi 6).
 Valgono sempre `docs/REGOLE_GUI.md` e `maniablock5/docs/design-team/GUIDA_STILE.md`.
 Modello: GUI task (`TaskGui`), da cui si copiano struttura, popup e comportamento dei tasti.
 
@@ -64,7 +64,7 @@ Nuova classe `TicketStaffGui` (copia della struttura di `TaskGui`). La logica de
 | card sinistra (S_LIST) | **APERTI** | popup lista "aperti" | `aperti: 12`, `da prendere: 4` |
 | card centrale (S_CREATE) | **MIEI** | popup lista "miei" | `presi da te: 3/9`, `non letti: 5` |
 | card destra (S_TRASH) | **CHIUSI** | popup lista "chiusi" | `chiusi: 230`, `chiusi da te: 41` |
-| basso sx (S_DONE) | **VALUTAZIONI** | popup lista valutazioni | `media: 4,6`, `da valutare: 2` |
+| basso sx (S_DONE) | **STELLE** (valutazioni; "VALUTAZIONI" e' 61 px e non sta nei 59) | popup lista valutazioni | `media: 4,6`, `da valutare: 2` |
 | basso dx (S_LOG) | **RESOCONTO** | popup lista registro | `voci: 812`, `mostra: tutto` (admin) / `le tue` |
 
 Non c'è il CESTINO: i ticket non si eliminano (oggi non esiste e non lo aggiungo). Se un giorno servirà, si userà Q + conferma, come vogliono le regole.
@@ -106,7 +106,7 @@ valutazione: ★★★★☆ (4/5) | da dare entro 24/11/2026 22:00 | 5/5 automa
 ### 2.4 Conferme e scelte
 - Chiudere un ticket resta nella chat, con la sua conferma (ticket-6).
 - Le nuove conferme della sezione usano `UserProfilePowers.confirmOver` sopra la schermata TICKET scurita (`bgHere`). Per ora c'è solo quella della presa in carico facoltativa qui sotto ("Prendere il ticket #12?"). Se lo staffer è al limite, compare il messaggio d'errore di `postMessage`.
-- Proposta opzionale (da confermare con l'utente): **prendere in carico senza scrivere**. Nella lista APERTI, shift+sinistro = "prendi" con conferma (aggiunge a `t.staff` e rispetta il limite). Senza questa aggiunta tutto funziona come oggi.
+- **Prendere in carico senza scrivere** (approvato): in ogni lista, shift + click su un ticket aperto non tuo = "prendi" con conferma (aggiunge a `t.staff`, rispetta il limite, nota visibile solo allo staff "X ha preso in carico il ticket").
 
 ### 2.5 Allineamento della chat (fase 3, facoltativa ma consigliata dalle regole "ovunque")
 - Popup link e tagga: aggiungere Q cerca sul filtro e il numero pagina (c'è già), e accorciare le lore.
@@ -167,3 +167,13 @@ valutazione: ★★★★☆ (4/5) | da dare entro 24/11/2026 22:00 | 5/5 automa
 - **`AdminCommand`**: nessuna modifica (passa già tutto a `Tickets.staffCommand`).
 - **Pack (Sara)**: `ticket_staff.png` + carattere nel font `task.json` + voce in `README_CARTELLE.txt`; icone `ticket_ev_*` (facoltative).
 - **Futuro `StaffBoard`**: un pulsante chiama `plugin.getTicketStaffGui().open(p, () -> { open(p); })`.
+
+---
+
+## 6. Grafica di Sara (applicata)
+
+Valori da `maniablock5/docs/TICKET_STAFF.md`, costanti `PACK` in `TicketStaffGui`: sfondo `ticket_staff.png` = U+E181 del font
+`minecraft:task`; etichette card col font `tiny_y95` (centri 40 / 94 / 148, max 41); VALUTAZIONI (centro 58, max 62) e
+RESOCONTO (centro 145, max 60) col font `tiny_y123`; icone del resoconto `ticket_ev_open / reply / canned / section / tag /
+closed / rated` ("preso in carico" usa `ticket_open`). L'icona `blockmania:staffboard` serve alla futura STAFFBOARD.
+Font aggiunto da Davide nel pack: `font/tiny_y147.json` (= tiny_y123 con ascent -119/-120) per il "1/1" del popup "cambia sezione" (ticket-4).

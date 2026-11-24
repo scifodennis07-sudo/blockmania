@@ -5,6 +5,7 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -27,9 +28,11 @@ import java.util.UUID;
  * Disegna la GUI ORIGINALE delle ricompense (la costruisce Rewards.staffView) di "target" con lo sfondo staff
  * (tasto info arancione -> RESET blu, glifi U+E117/E120..E123 del font minecraft:userprofile).
  * <p>
- * Click: tipologia -> percorso dei livelli; livello -> popup comandi [give=+1, remove=-1, set, full=maxa, reset=azzera];
- * giornaliera -> popup sui giorni; RESET (blu) -> conferma e azzera (tutto / la tipologia / la giornaliera).
- * Exp del pass: {@link #expLore(Player)} per la lore dell'icona e {@link #openExp} per il popup give/remove/set/reset.
+ * Click: tipologia -> popup comandi [give=+1, remove=-1, set, full=maxa, reset=azzera];
+ * giornaliera -> popup sui giorni; RESET (blu) -> solo con Q, conferma e azzera (tutto / la tipologia / la giornaliera).
+ * Exp del pass: {@link #expLore(UUID)} per la lore dell'icona e {@link #openExp} per il popup give/remove/set/reset.
+ * Funziona anche col player OFFLINE (R-OFF): si leggono i dati salvati e le modifiche restano in coda fino al login
+ * (Rewards per UUID su OfflinePdc).
  * <p>
  * Glifi configurabili (userprofile.staff-rewards.*: font, main, levels, pass, daily-ready, daily-wait, confirm-main)
  * ma i valori di default sono quelli di STAFF_GUIS.md di Sara.
@@ -83,38 +86,48 @@ public final class UserProfileRewards implements Listener {
     //  API pubblica
     // ------------------------------------------------------------------
 
-    /** Apre le ricompense di "target" (deve essere online). onBack = cosa fare con la X (di solito riaprire il profilo). */
-    public void open(Player staff, Player target, Runnable onBack) {
-        if (target == null || !target.isOnline()) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire le sue ricompense.");
+    /** Apre le ricompense di "target" (anche offline). onBack = cosa fare con la X (di solito riaprire il profilo). */
+    public void open(Player staff, UUID target, Runnable onBack) {
+        if (staff == null || target == null) {
             return;
         }
         Session s = new Session();
-        s.target = target.getUniqueId();
+        s.target = target;
         s.back = onBack;
         show(staff, s);
     }
 
-    /** Righe di lore per l'icona exp del profilo (exp totale, livello pass, quanto manca, ritiri). */
-    public List<String> expLore(Player target) {
+    public void open(Player staff, Player target, Runnable onBack) {
+        open(staff, target == null ? null : target.getUniqueId(), onBack);
+    }
+
+    /** Righe di lore per l'icona exp del profilo (exp totale, livello pass, quanto manca, ritiri): offline i dati salvati. */
+    public List<String> expLore(UUID target) {
         if (target == null) {
-            return List.of("&7exp: &coffline");
+            return List.of();
         }
         return rewards().staffExpLines(target);
     }
 
-    /** Popup comandi sull'exp del pass: aggiungi, rimuovi, setta, azzera. */
-    public void openExp(Player staff, Player target, Runnable onBack) {
-        openExp(staff, target, onBack, null);
+    public List<String> expLore(Player target) {
+        return expLore(target == null ? null : target.getUniqueId());
     }
 
-    /** Come sopra; background = sfondo della GUI da cui si apre (con il suo titolo), scurito sotto il popup. */
+    /** Popup comandi sull'exp del pass: aggiungi, rimuovi, setta, azzera. */
+    public void openExp(Player staff, Player target, Runnable onBack) {
+        openExp(staff, target == null ? null : target.getUniqueId(), onBack, null);
+    }
+
     public void openExp(Player staff, Player target, Runnable onBack, java.util.function.Consumer<GuiTitle> background) {
-        if (target == null || !target.isOnline()) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire i suoi exp.");
+        openExp(staff, target == null ? null : target.getUniqueId(), onBack, background);
+    }
+
+    /** Come sopra (anche offline); background = sfondo della GUI da cui si apre (con il suo titolo), scurito sotto il popup. */
+    public void openExp(Player staff, UUID target, Runnable onBack, java.util.function.Consumer<GuiTitle> background) {
+        if (staff == null || target == null) {
             return;
         }
-        final UUID id = target.getUniqueId();
+        final UUID id = target;
         ui.openCommands(staff, "EXP", List.of("give", "remove", "set", "reset"),
                 cmd -> later(() -> runExp(staff, id, cmd, onBack, background)),
                 () -> {
@@ -158,26 +171,20 @@ public final class UserProfileRewards implements Listener {
         return stack;
     }
 
-    private Player targetOf(Player staff, Session s) {
-        Player t = Bukkit.getPlayer(s.target);
-        if (t == null) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
-            sessions.remove(staff.getUniqueId());
-            Runnable back = s.back;
-            if (back != null) {
-                later(back);
-            } else {
-                staff.closeInventory();
-            }
-        }
-        return t;
+    private static String nameOf(UUID id) {
+        return UserProfilePowers.nameOf(id);
+    }
+
+    /** Coda offline: la modifica vale al prossimo accesso del player (da dire nel messaggio allo staff). */
+    private static String when(UUID id) {
+        return Bukkit.getPlayer(id) != null ? "" : " &7(offline: al prossimo accesso)";
     }
 
     private void show(Player staff, Session s) {
-        Player target = targetOf(staff, s);
-        if (target == null) {
+        if (!staff.isOnline()) {
             return;
         }
+        UUID target = s.target;
         String confirmImage = null; // le conferme usano ui.confirm (nessuna immagine di conferma nel pack v3)
         Rewards.StaffView v = rewards().staffView(target, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images(), confirmImage);
@@ -195,7 +202,7 @@ public final class UserProfileRewards implements Listener {
             // conferma nell'immagine: contano solo i due bottoni
             for (int slot : SLOTS_YES) {
                 inv.setItem(slot, pane("&aconferma", List.of("&7azzera: &ftutte le ricompense",
-                        "&7di: &f" + target.getName(), "", "&eclicca per confermare")));
+                        "&7di: &f" + nameOf(target), "", "&eclicca per confermare")));
                 s.actions.put(slot, "yes");
             }
             for (int slot : SLOTS_NO) {
@@ -236,6 +243,10 @@ public final class UserProfileRewards implements Listener {
         String act = s.actions.get(event.getRawSlot());
         if (act == null || act.equals("deny")) {
             return;
+        }
+        boolean q = event.getClick() == ClickType.DROP || event.getClick() == ClickType.CONTROL_DROP;
+        if (q != act.equals("reset")) {
+            return;   // Q solo sul reset; il reset solo con Q
         }
         plugin.guiClick(p);
         if (act.equals("yes")) {
@@ -282,7 +293,10 @@ public final class UserProfileRewards implements Listener {
         } else if (act.equals("daily")) {
             later(() -> dailyMenu(p, s));
         } else if (act.equals("reset")) {
-            later(() -> resetMenu(p, s));
+            // azzerare = eliminare: solo con Q (poi conferma)
+            if (event.getClick() == ClickType.DROP || event.getClick() == ClickType.CONTROL_DROP) {
+                later(() -> resetMenu(p, s));
+            }
         }
     }
 
@@ -313,7 +327,7 @@ public final class UserProfileRewards implements Listener {
     /** Il titolo della GUI ricompense ha l'immagine dichiarata 179 (reale 186): il suo cursore e' 7 px indietro rispetto al reale. */
     private static final int REAL_SHIFT = 7;
 
-    private java.util.function.Consumer<GuiTitle> rewardsBg(Player t, Session s) {
+    private java.util.function.Consumer<GuiTitle> rewardsBg(UUID t, Session s) {
         final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images());
         final Map<String, String> imgs = images();
@@ -333,10 +347,7 @@ public final class UserProfileRewards implements Listener {
 
     /** Conferma che lascia dietro, scurita, la GUI ricompense da cui si arriva (stessa pagina, stesso titolo). */
     private void confirmDim(Player staff, Session s, String text, Runnable onYes) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
+        UUID t = s.target;
         final Rewards.StaffView v = rewards().staffViewBackground(t, s.kind, s.type, s.mainPage,
                 s.kind.equals("main") ? s.mainPage : s.page, images());
         // lo scurimento lo fa confirmOver; nella barra in alto resta (scurito) il nome della GUI ricompense
@@ -360,21 +371,15 @@ public final class UserProfileRewards implements Listener {
 
     private void levelMenu(Player staff, Session s, int level) {
         final String type = s.type;
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
+        UUID t = s.target;
         ui.openCommands(staff, typeLabel(type), List.of("give", "remove", "set", "full", "reset"),
                 cmd -> later(() -> runLevel(staff, s, type, cmd)),
                 () -> later(() -> show(staff, s)), false, null, rewardsBg(t, s));
     }
 
     private void runLevel(Player staff, Session s, String type, String cmd) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
-        if (!authorize(staff, t.getUniqueId(), verbOf(cmd))) {
+        UUID t = s.target;
+        if (!authorize(staff, t, verbOf(cmd))) {
             later(() -> show(staff, s));
             return;
         }
@@ -386,7 +391,7 @@ public final class UserProfileRewards implements Listener {
             case "remove" -> applyLevel(staff, s, type, Math.max(0, now - 1));
             case "full" -> applyLevel(staff, s, type, max);
             // dal popup comandi: sfondo = ricompense + popup comandi scuriti (confirm li prende dal popup aperto)
-            case "reset" -> ui.confirm(staff, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
+            case "reset" -> ui.confirm(staff, "Azzerare " + Rewards.italianType(type) + " di " + nameOf(t) + "?",
                     rewardsBg(t, s), () -> applyLevel(staff, s, type, 0), () -> later(() -> show(staff, s)));
             case "set" -> ui.askNumber(staff, "setta livello " + Rewards.italianType(type),
                     "SETTA " + label + " " + now + "/" + max, 0, max,
@@ -397,21 +402,18 @@ public final class UserProfileRewards implements Listener {
     }
 
     private void applyLevel(Player staff, Session s, String type, int level) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
+        UUID t = s.target;
         StaffTasks st = plugin.getStaffTasks();
-        if (st != null && !st.allowsLevel(staff, t.getUniqueId(), "ricompense", type, rewards().reached(t, type), level)) {
+        if (st != null && !st.allowsLevel(staff, t, "ricompense", type, rewards().reached(t, type), level)) {
             show(staff, s);
             return;
         }
         rewards().setReached(t, type, level);
         if (st != null) {
-            st.doneLevel(staff, t.getUniqueId());
+            st.doneLevel(staff, t);
         }
-        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": " + Rewards.italianType(type) + " ora al livello &f"
-                + rewards().reached(t, type) + "&a/&f" + rewards().staffMaxLevel(type) + "&a.");
+        GuiMsg.send(plugin, staff, "&a" + nameOf(t) + ": " + Rewards.italianType(type) + " ora al livello &f"
+                + rewards().reached(t, type) + "&a/&f" + rewards().staffMaxLevel(type) + "&a." + when(t));
         show(staff, s);
     }
 
@@ -420,66 +422,50 @@ public final class UserProfileRewards implements Listener {
     // ------------------------------------------------------------------
 
     private void dailyMenu(Player staff, Session s) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
+        UUID t = s.target;
         ui.openCommands(staff, "GIORNALIERA", List.of("give", "remove", "set", "reset"),
                 cmd -> later(() -> runDaily(staff, s, cmd)),
                 () -> later(() -> show(staff, s)), false, null, rewardsBg(t, s));
     }
 
     private void runDaily(Player staff, Session s, String cmd) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
-        if (!authorize(staff, t.getUniqueId(), verbOf(cmd))) {
+        UUID t = s.target;
+        if (!authorize(staff, t, verbOf(cmd))) {
             later(() -> show(staff, s));
             return;
         }
-        AmmoManager a = plugin.getAmmo();
-        final int now = a.getCounter(t, "rw_days");
+        final int now = rewards().days(t);
         switch (cmd) {
             case "give" -> setDays(staff, s, now + 1);
             case "remove" -> setDays(staff, s, Math.max(0, now - 1));
             case "set" -> ui.askNumber(staff, "setta giorni", "SETTA GIORNI " + now, 0, 100000,
                     v -> later(() -> setDays(staff, s, (int) v)), () -> later(() -> show(staff, s)));
             // dal popup comandi: sfondo = ricompense + popup comandi scuriti (confirm li prende dal popup aperto)
-            case "reset" -> ui.confirm(staff, "Azzerare la giornaliera di " + t.getName() + "?",
+            case "reset" -> ui.confirm(staff, "Azzerare la giornaliera di " + nameOf(t) + "?",
                     rewardsBg(t, s), () -> resetDaily(staff, s), () -> later(() -> show(staff, s)));
             default -> later(() -> show(staff, s));
         }
     }
 
     private void setDays(Player staff, Session s, int days) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
-        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "set", "ricompense_daily", null, t.getUniqueId(), days)) {
+        UUID t = s.target;
+        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "set", "ricompense_daily", null, t, days)) {
             show(staff, s);
             return;
         }
-        plugin.getAmmo().setCounter(t, "rw_days", Math.max(0, days));
-        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": giorni di giornaliera ora &f" + Math.max(0, days) + "&a.");
+        rewards().setDays(t, Math.max(0, days));
+        GuiMsg.send(plugin, staff, "&a" + nameOf(t) + ": giorni di giornaliera ora &f" + Math.max(0, days) + "&a." + when(t));
         show(staff, s);
     }
 
     private void resetDaily(Player staff, Session s) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
-        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "reset", "ricompense_daily", null, t.getUniqueId(), 0)) {
+        UUID t = s.target;
+        if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "reset", "ricompense_daily", null, t, 0)) {
             show(staff, s);
             return;
         }
-        AmmoManager a = plugin.getAmmo();
-        for (String k : new String[] {"rw_days", "rw_dayclaim", "rw_daydate", "rw_daymin"}) {
-            a.setCounter(t, k, 0);
-        }
-        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": giornaliera azzerata.");
+        rewards().resetDaily(t);
+        GuiMsg.send(plugin, staff, "&a" + nameOf(t) + ": giornaliera azzerata." + when(t));
         show(staff, s);
     }
 
@@ -488,33 +474,26 @@ public final class UserProfileRewards implements Listener {
     // ------------------------------------------------------------------
 
     private void resetMenu(Player staff, Session s) {
-        Player t = targetOf(staff, s);
-        if (t == null) {
-            return;
-        }
-        if (!authorize(staff, t.getUniqueId(), "reset")) {
+        UUID t = s.target;
+        if (!authorize(staff, t, "reset")) {
             return;
         }
         switch (s.kind) {
             case "levels" -> {
                 final String type = s.type;
-                confirmDim(staff, s, "Azzerare " + Rewards.italianType(type) + " di " + t.getName() + "?",
+                confirmDim(staff, s, "Azzerare " + Rewards.italianType(type) + " di " + nameOf(t) + "?",
                         () -> applyLevel(staff, s, type, 0));
             }
-            case "daily" -> confirmDim(staff, s, "Azzerare la giornaliera di " + t.getName() + "?",
+            case "daily" -> confirmDim(staff, s, "Azzerare la giornaliera di " + nameOf(t) + "?",
                     () -> resetDaily(staff, s));
-            default -> confirmDim(staff, s, "Azzerare tutte le ricompense di " + t.getName() + "?", () -> {
-                Player tt = targetOf(staff, s);
-                if (tt == null) {
-                    return;
-                }
+            default -> confirmDim(staff, s, "Azzerare tutte le ricompense di " + nameOf(t) + "?", () -> {
                 if (plugin.getStaffTasks() != null
-                        && !plugin.getStaffTasks().allows(staff, "reset", "ricompense_all", null, tt.getUniqueId(), 0)) {
+                        && !plugin.getStaffTasks().allows(staff, "reset", "ricompense_all", null, t, 0)) {
                     show(staff, s);
                     return;
                 }
-                rewards().resetAll(tt);
-                GuiMsg.send(plugin, staff, "&a" + tt.getName() + ": tutte le ricompense azzerate.");
+                rewards().resetAll(t);
+                GuiMsg.send(plugin, staff, "&a" + nameOf(t) + ": tutte le ricompense azzerate." + when(t));
                 show(staff, s);
             });
         }
@@ -525,23 +504,14 @@ public final class UserProfileRewards implements Listener {
     // ------------------------------------------------------------------
 
     private void runExp(Player staff, UUID id, String cmd, Runnable onBack, java.util.function.Consumer<GuiTitle> background) {
-        Player t = Bukkit.getPlayer(id);
-        if (t == null) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
-            if (onBack != null) {
-                onBack.run();
-            }
-            return;
-        }
         if (!authorize(staff, id, verbOf(cmd))) {
             if (onBack != null) {
                 onBack.run();
             }
             return;
         }
-        AmmoManager a = plugin.getAmmo();
-        final int now = a.getCounter(t, "rw_exp");
-        final Runnable again = () -> later(() -> openExp(staff, Bukkit.getPlayer(id), onBack, background));
+        final int now = expOf(id);
+        final Runnable again = () -> later(() -> openExp(staff, id, onBack, background));
         switch (cmd) {
             case "give" -> ui.askNumber(staff, "aggiungi exp", "AGGIUNGI EXP " + now, 1, 1_000_000_000L,
                     v -> later(() -> setExp(staff, id, (long) expOf(id) + v, again)), again);
@@ -549,31 +519,26 @@ public final class UserProfileRewards implements Listener {
                     v -> later(() -> setExp(staff, id, (long) expOf(id) - v, again)), again);
             case "set" -> ui.askNumber(staff, "setta exp", "SETTA EXP " + now, 0, 2_000_000_000L,
                     v -> later(() -> setExp(staff, id, v, again)), again);
-            case "reset" -> ui.confirm(staff, "Azzerare gli exp di " + t.getName() + "?",
+            // dal popup comandi: sfondo = GUI di partenza + popup comandi scuriti (confirm li prende dal popup aperto)
+            case "reset" -> ui.confirm(staff, "Azzerare gli exp di " + nameOf(id) + "?", background,
                     () -> setExp(staff, id, 0, again), again);
             default -> again.run();
         }
     }
 
     private int expOf(UUID id) {
-        Player t = Bukkit.getPlayer(id);
-        return t == null ? 0 : plugin.getAmmo().getCounter(t, "rw_exp");
+        return rewards().exp(id);
     }
 
     private void setExp(Player staff, UUID id, long value, Runnable after) {
-        Player t = Bukkit.getPlayer(id);
-        if (t == null) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore non e' piu' online.");
-            return;
-        }
         int v = (int) Math.max(0, Math.min(Integer.MAX_VALUE, value));
         if (plugin.getStaffTasks() != null && !plugin.getStaffTasks().allows(staff, "set", "ricompense_exp", null, id, v)) {
             after.run();
             return;
         }
-        plugin.getAmmo().setCounter(t, "rw_exp", v);
-        GuiMsg.send(plugin, staff, "&a" + t.getName() + ": exp ora &f" + v + "&a (livello pass &f"
-                + rewards().reached(t, "pass") + "&a).");
+        rewards().setExp(id, v);
+        GuiMsg.send(plugin, staff, "&a" + nameOf(id) + ": exp ora &f" + v + "&a (livello pass &f"
+                + rewards().reached(id, "pass") + "&a)." + when(id));
         after.run();
     }
 

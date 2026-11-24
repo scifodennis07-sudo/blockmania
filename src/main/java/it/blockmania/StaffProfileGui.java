@@ -210,7 +210,8 @@ public final class StaffProfileGui implements Listener {
     /** Come sopra, sulla pagina indicata (0 = pagina 1, 1 = pagina 2). */
     public void open(Player staff, UUID target, int page) {
         AdminCommand a = plugin.getAdminCommand();
-        if (a == null ? !staff.isOp() : (a.level(staff) <= 0 && !staff.isOp())) {
+        // sospeso = niente permessi staff, anche se OP (AdminCommand.level e' gia' 0)
+        if (StaffDiscipline.suspendedStaff(plugin, staff) || (a == null ? !staff.isOp() : (a.level(staff) <= 0 && !staff.isOp()))) {
             GuiMsg.send(plugin, staff, "&cSolo lo staff puo' aprire lo staffprofile.");
             return;
         }
@@ -266,6 +267,9 @@ public final class StaffProfileGui implements Listener {
 
     private boolean authorize(Player p, UUID target) {
         AdminCommand a = plugin.getAdminCommand();
+        if (StaffDiscipline.suspendedStaff(plugin, p)) {
+            return false;
+        }
         if (a == null) {
             return p.isOp();
         }
@@ -825,6 +829,14 @@ public final class StaffProfileGui implements Listener {
         }
     }
 
+    /** Popup lista chiuso con ESC: si riapre finche' non si preme X (R-ESC). */
+    @EventHandler
+    public void onPopupClose(org.bukkit.event.inventory.InventoryCloseEvent event) {
+        if (event.getInventory().getHolder() instanceof PopupHolder ph && event.getPlayer() instanceof Player p && !ph.chosen) {
+            UserProfilePowers.reopenOnEscape(plugin, p, ph.inventory, () -> ph.chosen);
+        }
+    }
+
     @EventHandler
     public void onClick(InventoryClickEvent event) {
         if (event.getView().getTopInventory().getHolder() instanceof PopupHolder ph) {
@@ -1149,6 +1161,9 @@ public final class StaffProfileGui implements Listener {
 
     private boolean authorize(Player p, UUID target, String group, String verb) {
         AdminCommand a = plugin.getAdminCommand();
+        if (StaffDiscipline.suspendedStaff(plugin, p)) {
+            return false;
+        }
         if (a == null) {
             return p.isOp();
         }
@@ -1186,6 +1201,9 @@ public final class StaffProfileGui implements Listener {
 
     /** Solo chi ha un grado piu' alto del target (OP sempre); mai su se stessi. */
     private boolean canAct(Player p, UUID target) {
+        if (StaffDiscipline.suspendedStaff(plugin, p)) {
+            return false;
+        }
         if (p.isOp()) {
             return true;
         }
@@ -1251,10 +1269,17 @@ public final class StaffProfileGui implements Listener {
      * Sfondo delle conferme aperte da un popup lista della pagina 2 (elenco warn/depex/sospensioni, tutor): pagina 2 +
      * pannello del popup, a colori pieni (li scurisce confirmOver), come UserProfilePowers.confirm sopra il popup comandi.
      */
-    private Consumer<GuiTitle> bgPopup(UUID target, boolean reset) {
+    private Consumer<GuiTitle> bgPopup(Player p, UUID target, boolean reset) {
+        // il popup lista aperto adesso: sotto la conferma si vede tutto (barra, "N/M", icone delle righe), R-BG
+        final Popup cur = p.getOpenInventory().getTopInventory().getHolder() instanceof PopupHolder ph ? ph.popup : null;
         return g -> {
             drawDimmedBackground(g, target, 1);
             g.at(-15, "&f" + (reset ? P_IMG_RESET : P_IMG_INFO), reset ? P_FONT_RESET : P_FONT_INFO, P_ADV + 7);
+            if (cur != null) {
+                g.atComponent(g.cursor(), Component.empty(), -7);   // testi calibrati col cursore 7 px indietro
+                popupTexts(g, cur, pPageCount(cur.rows.size()));
+                g.atComponent(g.cursor(), Component.empty(), 7);
+            }
         };
     }
 
@@ -1274,8 +1299,7 @@ public final class StaffProfileGui implements Listener {
     private void disciplineLeft(Player p, UUID target, StaffDiscipline.Kind kind) {
         StaffDiscipline disc = plugin.getStaffDiscipline();
         if (disc == null || plugin.getStaffRules() == null) {
-            GuiMsg.send(plugin, p, "&7non ancora disponibile.");
-            return;
+            return;   // funzione non disponibile: niente messaggi in chat (R-CHAT)
         }
         if (!authorize(p, target, "sanctions", kind == StaffDiscipline.Kind.SUSPEND && disc.isSuspended(target) ? "undo" : verbOf(kind))
                 || !canAct(p, target)) {
@@ -1382,8 +1406,7 @@ public final class StaffProfileGui implements Listener {
     private void openDiscipline(Player p, UUID target, StaffDiscipline.Kind kind, int page) {
         StaffDiscipline disc = plugin.getStaffDiscipline();
         if (disc == null) {
-            GuiMsg.send(plugin, p, "&7non ancora disponibile.");
-            return;
+            return;   // funzione non disponibile: niente messaggi in chat (R-CHAT)
         }
         Rules rules = plugin.getStaffRules();
         String icon = kind == StaffDiscipline.Kind.WARN ? "warn" : kind == StaffDiscipline.Kind.DEPEX ? "ban" : "mute";
@@ -1403,9 +1426,14 @@ public final class StaffProfileGui implements Listener {
                     lore.add("&7stato: &cin corso");
                     lore.add("&7fino al: &f" + date(e.until()));
                 } else {
-                    lore.add("&7stato: &afinita");
+                    // R-STATO: da chi e quando (tolta a mano) oppure scaduta da sola
+                    boolean byHand = e.endedByName() != null && !e.endedByName().isBlank();
+                    lore.add("&7stato: &a" + (byHand ? "tolta" : "scaduta"));
+                    if (byHand) {
+                        lore.add("&7tolta da: &f" + clean(e.endedByName()));
+                    }
                     if (e.endedAt() > 0) {
-                        lore.add("&7finita il: &f" + date(e.endedAt()));
+                        lore.add("&7" + (byHand ? "tolta il" : "scaduta il") + ": &f" + date(e.endedAt()));
                     }
                 }
             }
@@ -1436,7 +1464,7 @@ public final class StaffProfileGui implements Listener {
         s.rows = rows;
         s.reset = true;
         s.buttonName = "&breset " + kindPlural(kind);
-        s.buttonLore = List.of("&7azzera: &f" + kindPlural(kind), "", "&eclicca per resettare");
+        s.buttonLore = List.of("&7azzera: &f" + kindPlural(kind), "", "&eQ per resettare");   // reset = eliminazione: solo Q
         s.background = bg2(target);
         s.onBack = () -> {
             back2(p, target);
@@ -1456,7 +1484,7 @@ public final class StaffProfileGui implements Listener {
         if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
             return;
         }
-        plugin.getProfileUi().confirmOver(p, "Resettare tutti i " + kindPlural(kind) + " di " + nameOf(target) + "?", bgPopup(target, true), () -> {
+        plugin.getProfileUi().confirmOver(p, "Resettare tutti i " + kindPlural(kind) + " di " + nameOf(target) + "?", bgPopup(p, target, true), () -> {
             if (!p.isOnline()) {
                 return;
             }
@@ -1477,7 +1505,7 @@ public final class StaffProfileGui implements Listener {
         if (!authorize(p, target, "sanctions", "undo") || !canAct(p, target)) {
             return;
         }
-        plugin.getProfileUi().confirmOver(p, "Eliminare questa voce (" + kindLabel(kind) + ")?", bgPopup(target, true), () -> {
+        plugin.getProfileUi().confirmOver(p, "Eliminare questa voce (" + kindLabel(kind) + ")?", bgPopup(p, target, true), () -> {
             if (!p.isOnline()) {
                 return;
             }
@@ -1502,8 +1530,7 @@ public final class StaffProfileGui implements Listener {
     private void openTutor(Player p, UUID target, int page) {
         StaffDiscipline disc = plugin.getStaffDiscipline();
         if (disc == null) {
-            GuiMsg.send(plugin, p, "&7non ancora disponibile.");
-            return;
+            return;   // funzione non disponibile: niente messaggi in chat (R-CHAT)
         }
         if (!canAct(p, target)) {
             return;
@@ -1529,7 +1556,7 @@ public final class StaffProfileGui implements Listener {
             lore.add("&7allievi: &f" + disc.pupilsOf(id).size());
             lore.add("&7stato: " + (Bukkit.getPlayer(id) != null ? "&aonline" : "&8offline"));
             if (cur) {
-                lore.add("&7stato: &agià tutor");
+                lore.add("&7tutor: &aattuale");
             } else {
                 lore.add("");
                 lore.add("&eclicca per sceglierlo");
@@ -1563,7 +1590,7 @@ public final class StaffProfileGui implements Listener {
         }
         String text = tutor == null ? "Togliere il tutor a " + nameOf(target) + "?"
                 : "Assegnare " + nameOf(tutor) + " come tutor di " + nameOf(target) + "?";
-        plugin.getProfileUi().confirmOver(p, text, bgPopup(target, false), () -> {
+        plugin.getProfileUi().confirmOver(p, text, bgPopup(p, target, false), () -> {
             if (!p.isOnline()) {
                 return;
             }
@@ -1691,6 +1718,8 @@ public final class StaffProfileGui implements Listener {
     private static final class PopupHolder implements InventoryHolder {
         private Inventory inventory;
         private Popup popup;
+        /** Premuto X: la chiusura e' voluta (R-ESC). */
+        private boolean chosen;
 
         @Override
         public Inventory getInventory() {
@@ -1770,6 +1799,16 @@ public final class StaffProfileGui implements Listener {
             UserProfilePowers.drawDimmed(plugin, g, s.background);
         }
         g.at(-15, "&f" + (s.reset ? P_IMG_RESET : P_IMG_INFO), s.reset ? P_FONT_RESET : P_FONT_INFO, P_ADV);
+        popupTexts(g, s, pages);
+        if (s.background == null) {
+            UserProfilePowers.topTitle(plugin, g, s.title);
+        }
+        // popup: nella barra in alto resta "STAFF nome", scurito dentro s.background (drawDimmedBackground)
+        return g.build();
+    }
+
+    /** Icone delle righe, barra e numero pagina del popup lista (cursore 7 px indietro, dopo il pannello dichiarato). */
+    private void popupTexts(GuiTitle g, Popup s, int pages) {
         for (int i = 0; i < P_PER_PAGE; i++) {
             int idx = s.page * P_PER_PAGE + i;
             if (idx >= s.rows.size()) {
@@ -1790,11 +1829,6 @@ public final class StaffProfileGui implements Listener {
         }
         popupBar(g, s.bar);
         popupNav(g, s.page + 1, pages);
-        if (s.background == null) {
-            UserProfilePowers.topTitle(plugin, g, s.title);
-        }
-        // popup: nella barra in alto resta "STAFF nome", scurito dentro s.background (drawDimmedBackground)
-        return g.build();
     }
 
     /** Larghezza di un testo del font tiny3 (come ProfileLists.tinyAdvance). */
@@ -1931,6 +1965,7 @@ public final class StaffProfileGui implements Listener {
         int slot = event.getRawSlot();
         if (in(P_X, slot)) {
             plugin.guiClick(p);
+            ph.chosen = true;
             Runnable back = s.onBack;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (back != null) {
@@ -1942,6 +1977,12 @@ public final class StaffProfileGui implements Listener {
             return;
         }
         if (in(P_BTN, slot)) {
+            ClickType bc = event.getClick();
+            boolean drop = bc == ClickType.DROP || bc == ClickType.CONTROL_DROP;
+            // pulsante reset (azzera = eliminazione): solo Q, poi la conferma; gli altri pulsanti non rispondono a Q
+            if (s.reset != drop) {
+                return;
+            }
             if (s.onButton != null) {
                 plugin.guiClick(p);
                 Runnable btn = s.onButton;

@@ -113,7 +113,7 @@ public final class StaffTasks implements Listener {
 
     private static final List<String> VERBS = List.of("give", "remove", "set", "reset", "ban", "warn", "mute");
     private static final List<String> WHATS = List.of("ball", "ricompense", "coin", "blockcoin", "blockshell", "mine",
-            "upgrade", "power", "stamina");
+            "upgrade", "power", "stamina", "power_uses", "stamina_mode");   // power_uses / stamina_mode: coda offline del profilo
     /** Ricompense con livelli (la giornaliera no: si gestisce a giorni dal profilo). Ordine e nomi come rewards-gui.types. */
     private static final String[][] REWARDS = {
             {"broken", "blocchi spaccati"}, {"hits", "blocchi colpiti"}, {"bc_earned", "blockcoin guadagnati"},
@@ -261,6 +261,8 @@ public final class StaffTasks implements Listener {
             case "mine" -> "miniere";
             case "upgrade" -> "potenziamenti";
             case "power" -> "poteri";
+            case "power_uses" -> "colpi per potenziato";
+            case "stamina_mode" -> "modalita' stamina";
             default -> low(what);
         };
     }
@@ -1531,6 +1533,24 @@ public final class StaffTasks implements Listener {
                     return "ricompensa sconosciuta: " + spec;
                 }
                 rw.setReached(target, spec, next(v, rw.reached(target, spec), n, rw.staffMaxLevel(spec)));
+            }
+            case "power_uses" -> {
+                // colpi sparabili con un colpo potenziato (profilo: "setuses"), anche dalla coda offline
+                PlayerCounters pc = plugin.getCounters();
+                if (pc == null) {
+                    return "contatori non disponibili";
+                }
+                String err = pc.apply(target.getUniqueId(), PlayerCounters.Item.POWER_USES, v, n, by);
+                return err == null ? null : err.toLowerCase(Locale.ROOT);
+            }
+            case "stamina_mode" -> {
+                // modalita' della stamina (profilo: "infinita"), anche dalla coda offline
+                Power power = plugin.getPower();
+                if (power == null) {
+                    return "stamina non disponibile";
+                }
+                power.setMode(target, v.equals("reset") ? "normal" : spec == null ? "infinite" : spec);
+                ammo.refreshMain(target);
             }
             case "stamina" -> {
                 Power power = plugin.getPower();

@@ -23,6 +23,8 @@ import java.util.UUID;
  * Potenziamenti del player visti dallo staff (profilo staff): stessa GUI dei potenziamenti, ma sul
  * target e con il tasto reset al posto dell'info. Click su un potenziamento = popup con aggiungi 1 livello,
  * rimuovi 1 livello, setta, maxa, azzera. La GUI e' live (si aggiorna da sola).
+ * Funziona anche col player OFFLINE (R-OFF): livelli letti dai dati salvati e modifiche in coda fino al login
+ * (UpgradeManager per UUID, OfflinePdc). Il reset (blu) si fa solo con Q, con conferma.
  * Sfondo staff: glifo U+E116 del font minecraft:userprofile (STAFF_GUIS.md di Sara).
  */
 public final class UserProfileUpgrades implements Listener {
@@ -70,20 +72,21 @@ public final class UserProfileUpgrades implements Listener {
     // ------------------------------------------------------------------
 
     public void open(Player staff, Player target, Runnable onBack) {
+        open(staff, target == null ? null : target.getUniqueId(), onBack);
+    }
+
+    /** Potenziamenti di target (anche offline). */
+    public void open(Player staff, UUID target, Runnable onBack) {
         if (staff == null || target == null) {
             return;
         }
-        if (!target.isOnline()) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore deve essere online per gestire i potenziamenti.");
-            return;
-        }
-        if (!authorize(staff, target.getUniqueId(), "see")) {
+        if (!authorize(staff, target, "see")) {
             return;
         }
         open(staff, target, 0, onBack);
     }
 
-    private void open(Player staff, Player target, int page, Runnable onBack) {
+    private void open(Player staff, UUID target, int page, Runnable onBack) {
         UpgradeManager um = plugin.getUpgrades();
         LauncherItem li = anyLauncher();
         if (um == null || li == null) {
@@ -91,8 +94,8 @@ public final class UserProfileUpgrades implements Listener {
             return;
         }
         int pages = um.pageCount();
-        Holder h = new Holder(staff.getUniqueId(), target.getUniqueId(), Math.max(0, Math.min(page, pages - 1)), onBack);
-        Inventory inv = Bukkit.createInventory(h, SIZE, title(h.page, pages, target.getName()));
+        Holder h = new Holder(staff.getUniqueId(), target, Math.max(0, Math.min(page, pages - 1)), onBack);
+        Inventory inv = Bukkit.createInventory(h, SIZE, title(h.page, pages, UserProfilePowers.nameOf(target)));
         h.inventory = inv;
         fill(inv, h, target, li);
         staff.openInventory(inv);
@@ -126,16 +129,10 @@ public final class UserProfileUpgrades implements Listener {
                     cancel();
                     return;
                 }
-                Player t = Bukkit.getPlayer(h.target);
-                if (t == null) {
-                    cancel();
-                    s.closeInventory();
-                    GuiMsg.send(plugin, s, "&cIl giocatore e' uscito dal server.");
-                    return;
-                }
+                // anche se il target esce si continua sui dati salvati (R-OFF)
                 LauncherItem li = anyLauncher();
                 if (li != null) {
-                    fill(h.inventory, h, t, li);
+                    fill(h.inventory, h, h.target, li);
                 }
             }
         }.runTaskTimer(plugin, 20L, 20L);
@@ -192,10 +189,32 @@ public final class UserProfileUpgrades implements Listener {
      * pulsante reset blu, a immagine intera (x = -15, avanzamento reale 186), con numero pagina e nome nella barra in alto
      * uguali alla GUI (li scurisce il popup insieme al resto: i popup non scrivono un loro titolo).
      */
+    /**
+     * Glifo dell'immagine dei potenziamenti per lo sfondo dei popup: chiave dedicata upgrade-gui.title.image se c'e',
+     * altrimenti title.text senza {shift} e colori; se resta un testo (es. il default "&8potenziamenti") o niente,
+     * il glifo di potenziamenti.png (U+3C03).
+     */
+    private String imageGlyph() {
+        var cfg = plugin.getConfig();
+        String image = cfg.getString(UpgradeManager.GUI + "title.image", "");
+        if (image != null && !image.isBlank()) {
+            return image.trim();
+        }
+        String raw = cfg.getString(UpgradeManager.GUI + "title.text", "");
+        String glyphs = raw == null ? "" : raw.replaceAll("\\{shift:-?\\d+\\}", "").replaceAll("&.", "").trim();
+        boolean drawn = !glyphs.isEmpty();
+        for (char ch : glyphs.toCharArray()) {
+            if (ch < 0x2000) {
+                drawn = false;   // lettere normali: e' un testo, non l'immagine
+                break;
+            }
+        }
+        return drawn ? glyphs : "\u3c03";
+    }
+
     private void drawBackdrop(GuiTitle c, Holder h) {
         var cfg = plugin.getConfig();
-        String raw = cfg.getString(UpgradeManager.GUI + "title.text", "");
-        String glyphs = raw == null ? "" : raw.replaceAll("\\{shift:-?\\d+\\}", "").replaceAll("&.", "");
+        String glyphs = imageGlyph();
         String font = cfg.getString(UpgradeManager.GUI + "title.font", "");
         if (!glyphs.isEmpty()) {
             c.at(-15, "&f" + glyphs, font, 186);
@@ -226,7 +245,7 @@ public final class UserProfileUpgrades implements Listener {
         }
     }
 
-    private void fill(Inventory inv, Holder h, Player target, LauncherItem li) {
+    private void fill(Inventory inv, Holder h, UUID target, LauncherItem li) {
         UpgradeManager um = plugin.getUpgrades();
         var c = plugin.getConfig();
         String GUI = UpgradeManager.GUI;
@@ -251,9 +270,14 @@ public final class UserProfileUpgrades implements Listener {
             put(inv, h, slot, um.invisible(c.getString(GUI + "next.name", "&7pagina successiva"),
                     c.getStringList(GUI + "next.lore"), general, false), "next");
         }
-        // al posto del tasto info c'e' il tasto reset (stessi slot)
-        List<String> resetLore = List.of("&7azzera: &ftutti i potenziamenti",
-                "&7di: &f" + target.getName(), "", "&eclicca per resettare");
+        // al posto del tasto info c'e' il tasto reset (stessi slot): azzerare = eliminare, solo con Q e con conferma
+        List<String> resetLore = new java.util.ArrayList<>(List.of("&7azzera: &ftutti i potenziamenti",
+                "&7di: &f" + UserProfilePowers.nameOf(target)));
+        if (Bukkit.getPlayer(target) == null) {
+            resetLore.add("&7modifica: &fal prossimo accesso");
+        }
+        resetLore.add("");
+        resetLore.add("&cQ per azzerare");
         for (int slot : um.slotList(GUI + "slots.info")) {
             put(inv, h, slot, um.invisible("&creset potenziamenti", resetLore, general, false), "reset");
         }
@@ -329,12 +353,11 @@ public final class UserProfileUpgrades implements Listener {
         if (action == null) {
             return;
         }
-        Player target = Bukkit.getPlayer(h.target);
-        if (target == null) {
-            staff.closeInventory();
-            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
-            return;
+        boolean q = event.getClick() == ClickType.DROP || event.getClick() == ClickType.CONTROL_DROP;
+        if (q != action.equals("reset")) {
+            return;   // Q solo sul reset; il reset solo con Q
         }
+        final UUID target = h.target;   // anche offline
         plugin.guiClick(staff);
         UpgradeManager um = plugin.getUpgrades();
         int pages = um.pageCount();
@@ -386,12 +409,12 @@ public final class UserProfileUpgrades implements Listener {
         if (!staff.isOnline()) {
             return;
         }
-        Player target = Bukkit.getPlayer(h.target);
-        if (target == null) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
-            return;
-        }
-        open(staff, target, h.page, h.onBack);
+        open(staff, h.target, h.page, h.onBack);
+    }
+
+    /** Offline la modifica vale al prossimo accesso: lo si dice nel messaggio. */
+    private static String when(UUID id) {
+        return Bukkit.getPlayer(id) != null ? "" : " &7(offline: al prossimo accesso)";
     }
 
     private void askReset(Player staff, Holder h) {
@@ -401,11 +424,6 @@ public final class UserProfileUpgrades implements Listener {
             return;
         }
         ui.confirmOver(staff, "Azzerare tutti i potenziamenti di " + UserProfilePowers.nameOf(h.target) + "?", c -> drawBackdrop(c, h), () -> {
-            Player target = Bukkit.getPlayer(h.target);
-            if (target == null) {
-                GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
-                return;
-            }
             if (!authorize(staff, h.target, "reset")) {
                 back.run();
                 return;
@@ -415,12 +433,13 @@ public final class UserProfileUpgrades implements Listener {
                 back.run();
                 return;
             }
-            plugin.getUpgrades().resetLevels(target);
+            plugin.getUpgrades().resetLevels(h.target);
             if (st != null) {
                 st.done(staff, "reset", "upgrade", "all", h.target, 0);
             }
-            audit(staff, "profile.reset upgrades " + target.getName());
-            done(staff, "&aPotenziamenti di " + target.getName() + " azzerati.");
+            String name = UserProfilePowers.nameOf(h.target);
+            audit(staff, "profile.reset upgrades " + name);
+            done(staff, "&aPotenziamenti di " + name + " azzerati." + when(h.target));
             back.run();
         }, back);
     }
@@ -452,18 +471,13 @@ public final class UserProfileUpgrades implements Listener {
             return;
         }
         Runnable back = () -> reopen(staff, h);
-        Player target = Bukkit.getPlayer(h.target);
-        if (target == null) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
-            return;
-        }
         if (!authorize(staff, h.target, verbOf(cmd))) {
             back.run();
             return;
         }
         UpgradeManager um = plugin.getUpgrades();
         int max = um.maxLevel(id);
-        int cur = um.getLevel(target, id);
+        int cur = um.getLevel(h.target, id);
         switch (cmd) {
             case "give" -> {
                 if (cur >= max) {
@@ -501,24 +515,20 @@ public final class UserProfileUpgrades implements Listener {
     }
 
     private void apply(Player staff, Holder h, String id, int level, String cmd) {
-        Player target = Bukkit.getPlayer(h.target);
-        if (target == null) {
-            GuiMsg.send(plugin, staff, "&cIl giocatore e' uscito dal server.");
-            return;
-        }
         if (!authorize(staff, h.target, verbOf(cmd))) {
             return;
         }
         StaffTasks st = plugin.getStaffTasks();
-        if (st != null && !st.allowsLevel(staff, h.target, "upgrade", id, plugin.getUpgrades().getLevel(target, id), level)) {
+        if (st != null && !st.allowsLevel(staff, h.target, "upgrade", id, plugin.getUpgrades().getLevel(h.target, id), level)) {
             return;
         }
-        plugin.getUpgrades().setLevelAdmin(target, id, level);
+        plugin.getUpgrades().setLevelAdmin(h.target, id, level);
         if (st != null) {
             st.doneLevel(staff, h.target);
         }
-        audit(staff, "profile." + verbOf(cmd) + " upgrade " + id + " " + target.getName() + " livello " + level);
-        done(staff, "&a" + labelOf(id) + " di " + target.getName() + ": livello " + level + ".");
+        String name = UserProfilePowers.nameOf(h.target);
+        audit(staff, "profile." + verbOf(cmd) + " upgrade " + id + " " + name + " livello " + level);
+        done(staff, "&a" + labelOf(id) + " di " + name + ": livello " + level + "." + when(h.target));
     }
 
     // ------------------------------------------------------------------

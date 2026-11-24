@@ -107,6 +107,17 @@ public final class Rewards implements Listener {
     public Rewards(BlockMania plugin) {
         this.plugin = plugin;
         this.chequeKey = new NamespacedKey(plugin, "cheque");
+        OfflinePdc.get(plugin);   // coda delle modifiche ai player offline (profili), applicata al login
+    }
+
+    // ---- dati del player per UUID (anche offline: OfflinePdc) ----
+
+    private int cnt(UUID id, String key) {
+        return OfflinePdc.get(plugin).getInt(id, key);
+    }
+
+    private void setCnt(UUID id, String key, int value) {
+        OfflinePdc.get(plugin).setInt(id, key, value);
     }
 
     // ------------------------------------------------------------------
@@ -149,6 +160,10 @@ public final class Rewards implements Listener {
 
     public boolean isAfk(Player player) {
         return afk.contains(player.getUniqueId());
+    }
+
+    private boolean isAfk(UUID id) {
+        return afk.contains(id);
     }
 
     /** /afk: accende o spegne (per ora non fa altro). */
@@ -221,11 +236,11 @@ public final class Rewards implements Listener {
         return Math.max(1, plugin.getConfig().getInt("mines-gui.max-runs", 10));
     }
 
-    private int platinumMines(Player player) {
+    private int platinumMines(UUID id) {
         int n = 0;
         int max = maxRuns();
         for (int mine = 1; mine <= 100; mine++) {
-            if (plugin.getAmmo().getCounter(player, "mine_runs_" + mine) >= max) {
+            if (cnt(id, "mine_runs_" + mine) >= max) {
                 n++;
             }
         }
@@ -233,18 +248,17 @@ public final class Rewards implements Listener {
     }
 
     /** Quanto ha fatto il giocatore in questa tipologia (per il battlepass sono gli exp). */
-    long stat(Player player, String type) {
-        AmmoManager a = plugin.getAmmo();
+    long stat(UUID id, String type) {
         return switch (type) {
-            case "broken" -> a.getCounter(player, "rw_broken");
-            case "hits" -> a.getCounter(player, "rw_hits");
-            case "bc_earned" -> a.getCounter(player, "rw_bcin");
-            case "bc_spent" -> a.getCounter(player, "rw_bcout");
-            case "coin_earned" -> a.getCounter(player, "rw_coinin");
-            case "coin_spent" -> a.getCounter(player, "rw_spent");
-            case "platinum" -> platinumMines(player);
-            case "play" -> a.getCounter(player, "rw_play");
-            case "pass" -> a.getCounter(player, "rw_exp");
+            case "broken" -> cnt(id, "rw_broken");
+            case "hits" -> cnt(id, "rw_hits");
+            case "bc_earned" -> cnt(id, "rw_bcin");
+            case "bc_spent" -> cnt(id, "rw_bcout");
+            case "coin_earned" -> cnt(id, "rw_coinin");
+            case "coin_spent" -> cnt(id, "rw_spent");
+            case "platinum" -> platinumMines(id);
+            case "play" -> cnt(id, "rw_play");
+            case "pass" -> cnt(id, "rw_exp");
             default -> 0;
         };
     }
@@ -273,8 +287,13 @@ public final class Rewards implements Listener {
 
     /** Livello raggiunto (completato, anche se la ricompensa non e' stata ritirata). */
     int reached(Player player, String type) {
+        return reached(player.getUniqueId(), type);
+    }
+
+    /** Livello raggiunto per UUID (anche offline, dai dati salvati). */
+    int reached(UUID id, String type) {
         int max = levelsOf(type);
-        long have = stat(player, type);
+        long have = stat(id, type);
         int level = 0;
         while (level < max && have >= threshold(type, level + 1)) {
             level++;
@@ -284,13 +303,9 @@ public final class Rewards implements Listener {
 
     // ---- livelli ritirati (ognuno si ritira da solo, in qualsiasi ordine) ----
 
-    private NamespacedKey claimKey(String type) {
-        return new NamespacedKey(plugin, "rwc_" + type);
-    }
-
-    BitSet claims(Player player, String type) {
+    BitSet claims(UUID id, String type) {
         BitSet bits = new BitSet();
-        String raw = player.getPersistentDataContainer().get(claimKey(type), PersistentDataType.STRING);
+        String raw = OfflinePdc.get(plugin).getString(id, "rwc_" + type);
         if (raw != null && !raw.isBlank()) {
             for (String part : raw.split(",")) {
                 try {
@@ -303,7 +318,7 @@ public final class Rewards implements Listener {
         return bits;
     }
 
-    private void saveClaims(Player player, String type, BitSet bits) {
+    private void saveClaims(UUID id, String type, BitSet bits) {
         StringBuilder sb = new StringBuilder();
         for (int i = bits.nextSetBit(0); i >= 0; i = bits.nextSetBit(i + 1)) {
             if (sb.length() > 0) {
@@ -311,7 +326,7 @@ public final class Rewards implements Listener {
             }
             sb.append(i);
         }
-        player.getPersistentDataContainer().set(claimKey(type), PersistentDataType.STRING, sb.toString());
+        OfflinePdc.get(plugin).setString(id, "rwc_" + type, sb.toString());
     }
 
     /** Le ricompense del livello n (anche 3 o 4 insieme): coin, blockcoin e assegni sempre piu' ricchi. */
@@ -413,27 +428,27 @@ public final class Rewards implements Listener {
         return Math.max(0, plugin.getConfig().getInt(GUI + "daily.coin", 1000));
     }
 
-    private boolean dailyClaimedToday(Player player) {
-        return plugin.getAmmo().getCounter(player, "rw_dayclaim") == (int) today();
+    private boolean dailyClaimedToday(UUID id) {
+        return cnt(id, "rw_dayclaim") == (int) today();
     }
 
-    private int minutesToday(Player player) {
-        AmmoManager a = plugin.getAmmo();
-        return a.getCounter(player, "rw_daydate") == (int) today() ? a.getCounter(player, "rw_daymin") : 0;
+    private int minutesToday(UUID id) {
+        return cnt(id, "rw_daydate") == (int) today() ? cnt(id, "rw_daymin") : 0;
     }
 
-    private boolean dailyReady(Player player) {
-        return !dailyClaimedToday(player) && minutesToday(player) >= dailyMinutes() && !isAfk(player);
+    private boolean dailyReady(UUID id) {
+        return !dailyClaimedToday(id) && minutesToday(id) >= dailyMinutes() && !isAfk(id);
     }
 
     /** Giorni davvero riscattati (non quelli giocati). */
-    private int daysClaimed(Player player) {
-        return plugin.getAmmo().getCounter(player, "rw_days");
+    private int daysClaimed(UUID id) {
+        return cnt(id, "rw_days");
     }
 
     private void claimDaily(Player player, Holder holder) {
         AmmoManager a = plugin.getAmmo();
-        if (dailyClaimedToday(player)) {
+        UUID pid = player.getUniqueId();
+        if (dailyClaimedToday(pid)) {
             plugin.send(player, "daily-already");
             return;
         }
@@ -441,18 +456,18 @@ public final class Rewards implements Listener {
             plugin.send(player, "daily-afk");
             return;
         }
-        int left = dailyMinutes() - minutesToday(player);
+        int left = dailyMinutes() - minutesToday(pid);
         if (left > 0) {
             plugin.send(player, "daily-wait", "%minutes%", String.valueOf(left));
             return;
         }
         a.setCounter(player, "rw_dayclaim", (int) today());
-        a.setCounter(player, "rw_days", daysClaimed(player) + 1);
+        a.setCounter(player, "rw_days", daysClaimed(pid) + 1);
         give(player, new Reward("coin", dailyCoins()));
         plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.REWARD,
                 "Ha ritirato la ricompensa giornaliera (" + dailyCoins() + " coin)");
         plugin.send(player, "daily-claimed", "%coin%", String.valueOf(dailyCoins()),
-                "%day%", String.valueOf(daysClaimed(player)));
+                "%day%", String.valueOf(daysClaimed(pid)));
         openDaily(player, holder.mainPage, false);
     }
 
@@ -461,13 +476,13 @@ public final class Rewards implements Listener {
     // ------------------------------------------------------------------
 
     private void claimLevel(Player player, Holder holder, String type, int level) {
-        BitSet bits = claims(player, type);
+        BitSet bits = claims(player.getUniqueId(), type);
         if (level < 1 || level > reached(player, type) || bits.get(level)) {
             plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.error");
             return;
         }
         bits.set(level);
-        saveClaims(player, type, bits);
+        saveClaims(player.getUniqueId(), type, bits);
         List<Reward> rw = rewardsOf(type, level);
         give(player, rw);
         plugin.getMovements().record(player.getUniqueId(), MovementLog.Type.REWARD,
@@ -509,12 +524,12 @@ public final class Rewards implements Listener {
         return plugin.getConfig().getString(GUI + "types." + type + ".name", type);
     }
 
-    private String[] repl(Player player, String type) {
+    private String[] repl(UUID player, String type) {
         List<String> r = new ArrayList<>();
         r.add("%coin%");
-        r.add(String.valueOf(plugin.getAmmo().getCoin(player)));
+        r.add(String.valueOf(cnt(player, "coin")));
         r.add("%blockcoin%");
-        r.add(String.valueOf(plugin.getAmmo().getBlockCoin(player)));
+        r.add(String.valueOf(cnt(player, "blockcoin")));
         r.add("%type%");
         r.add(BlockMania.stripCodes(typeName(type)));
         if (type.equals("daily")) {
@@ -539,7 +554,7 @@ public final class Rewards implements Listener {
                     "%next_text%", reach >= levels ? "-" : fmtValue(type, threshold(type, reach + 1)),
                     "%left%", reach >= levels ? "0" : String.valueOf(Math.max(0, threshold(type, reach + 1) - have)),
                     "%left_text%", reach >= levels ? "0" : fmtValue(type, Math.max(0, threshold(type, reach + 1) - have)),
-                    "%exp%", String.valueOf(plugin.getAmmo().getCounter(player, "rw_exp")),
+                    "%exp%", String.valueOf(cnt(player, "rw_exp")),
                     "%exp_level%", String.valueOf(expPerLevel())));
         }
         return r.toArray(new String[0]);
@@ -667,7 +682,7 @@ public final class Rewards implements Listener {
         return i / 5;
     }
 
-    private void fillMain(Inventory inv, Holder holder, Player player) {
+    private void fillMain(Inventory inv, Holder holder, UUID player) {
         var c = plugin.getConfig();
         String[] r = repl(player, "broken");
         fillBase(inv, holder, r, false);
@@ -712,11 +727,11 @@ public final class Rewards implements Listener {
         }
     }
 
-    private String dailyKey(Player player) {
+    private String dailyKey(UUID player) {
         return dailyClaimedToday(player) ? "claimed" : dailyReady(player) ? "ready" : "wait";
     }
 
-    private String dailyName(Player player) {
+    private String dailyName(UUID player) {
         return plugin.getConfig().getString(GUI + "daily.states." + dailyKey(player) + ".name", "&fricompensa giornaliera");
     }
 
@@ -739,7 +754,7 @@ public final class Rewards implements Listener {
         return PATH[index][0] * 9 + PATH[index][1];
     }
 
-    private String[] levelRepl(Player player, String type, int level, String[] general) {
+    private String[] levelRepl(UUID player, String type, int level, String[] general) {
         BitSet bits = claims(player, type);
         int reach = reached(player, type);
         long have = stat(player, type);
@@ -758,7 +773,7 @@ public final class Rewards implements Listener {
         return out;
     }
 
-    private void fillLevels(Inventory inv, Holder holder, Player player) {
+    private void fillLevels(Inventory inv, Holder holder, UUID player) {
         var c = plugin.getConfig();
         String type = holder.type;
         String[] general = repl(player, type);
@@ -824,7 +839,7 @@ public final class Rewards implements Listener {
     //  Giornaliera
     // ------------------------------------------------------------------
 
-    private void fillDaily(Inventory inv, Holder holder, Player player) {
+    private void fillDaily(Inventory inv, Holder holder, UUID player) {
         var c = plugin.getConfig();
         String[] r = repl(player, "daily");
         fillBase(inv, holder, r, true);
@@ -997,7 +1012,7 @@ public final class Rewards implements Listener {
         t.at(xImage + IMG, sb.toString(), font(), 4 * Math.min(7, n));
     }
 
-    private int tickCount(Player player, String type) {
+    private int tickCount(UUID player, String type) {
         if (type.equals("daily")) {
             if (dailyClaimedToday(player)) {
                 return 7;
@@ -1025,22 +1040,27 @@ public final class Rewards implements Listener {
         return imageOverride.containsKey("staff");
     }
 
-    /** Titolo della barra: nella vista staff diventa "<COSA> DI <NOME>" e il nome si accorcia per entrare nella barra. */
-    private String barTitleText(Player target, String what) {
+    /**
+     * Titolo della barra: nella vista staff "<COSA> DI <NOME>"; se non entra si prova la parola accorciata
+     * ("RICOMP DI NOME", "RICOMP NOME") e alla fine solo "<COSA>": il nome non si taglia mai a meta' (come UpgradeManager.barTitle).
+     */
+    private String barTitleText(UUID target, String what) {
         String base = what.toUpperCase(Locale.ROOT);
         if (!staffTitle() || target == null) {
             return base;
         }
-        String name = target.getName().toUpperCase(Locale.ROOT).replace('_', ' ');
-        String prefix = base + " DI ";
-        while (name.length() > 1 && tinyAdvance(prefix + name) > BAR_TITLE_MAX) {
-            name = name.substring(0, name.length() - 1);
+        String name = UserProfilePowers.nameOf(target).toUpperCase(Locale.ROOT).replace('_', ' ');
+        String shortBase = base.length() > 6 ? base.substring(0, 6) : base;
+        for (String cand : new String[] {base + " DI " + name, shortBase + " DI " + name, shortBase + " " + name}) {
+            if (tinyAdvance(cand) <= BAR_TITLE_MAX) {
+                return cand;
+            }
         }
-        return prefix + name;
+        return base;
     }
 
     /** Scrive il titolo centrato nella barra in alto. Il font tiny2 non ha lo spazio: ogni parola e' scritta a parte. */
-    private GuiTitle barTitle(GuiTitle t, Player target, String what) {
+    private GuiTitle barTitle(GuiTitle t, UUID target, String what) {
         String text = barTitleText(target, what).trim();
         StringBuilder safe = new StringBuilder();
         for (char ch : text.toCharArray()) {
@@ -1072,7 +1092,7 @@ public final class Rewards implements Listener {
         return t;
     }
 
-    private Component titleMain(Player player, int page) {
+    private Component titleMain(UUID player, int page) {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(pageImage(page));
         List<String> types = pageTypes(page);
@@ -1102,17 +1122,31 @@ public final class Rewards implements Listener {
         return t.build();
     }
 
-    private Component titleLevels(Player player, String type, int page) {
+    /**
+     * Percorso dei livelli: ricompense-2/3 sono un POPUP sopra la pagina principale (scurita e "cotta" nell'immagine).
+     * Nella barra in alto resta quindi il titolo della pagina principale ("RICOMPENSE", stesso testo e posizione) con il
+     * suo numero pagina, scuriti come lo sfondo; il popup non scrive un suo titolo (il tipo si vede nella barra verde
+     * "livello N" e nella lore). Il resto della pagina principale sta sotto il pannello del popup (x 23..173, y 43..148).
+     */
+    private Component titleLevels(UUID player, String type, int page, int mainPage) {
         var c = plugin.getConfig();
         GuiTitle t = newTitle(img(type.equals("pass") ? "pass" : "levels",
                 c.getString(GUI + (type.equals("pass") ? "image-pass" : "image-levels"), type.equals("pass") ? "㴂" : "㴁")));
+        // sotto: numero pagina e titolo della pagina principale, scuriti (stessa convenzione del titolo normale)
+        GuiTitle under = new GuiTitle(plugin);
+        String plain = (Math.max(0, Math.min(mainPage, pageCount() - 1)) + 1) + "/" + pageCount();
+        int center = c.getInt(GUI + "page-center", 73);
+        int start = center - GuiTitle.widthOf(plugin, "main", plain) / 2;
+        under.number(start, "main", "main-shadow", c.getBoolean(GUI + "text-shadow", true), plain, font());
+        barTitle(under, player, "ricompense");
+        t.atComponent(0, MinesGui.tint(under.build(), null), under.cursor());
         barText(t, c.getString(GUI + "bar-text.level", "livello %n%"), reached(player, type), c.getInt(GUI + "bar-center", 73));
         navNumber(t, page, pagesOf(type));
-        barTitle(t, player, type.equals("pass") ? "battlepass" : italianType(type));
+        lastCursor = t.cursor();
         return t.build();
     }
 
-    private Component titleDaily(Player player) {
+    private Component titleDaily(UUID player) {
         var c = plugin.getConfig();
         boolean waiting = dailyClaimedToday(player) || !dailyReady(player);
         GuiTitle t = newTitle(img(waiting ? "daily-wait" : "daily-ready",
@@ -1134,9 +1168,9 @@ public final class Rewards implements Listener {
         Holder holder = new Holder("main");
         holder.page = Math.max(0, Math.min(page, pageCount() - 1));
         holder.mainPage = holder.page;
-        Inventory inv = Bukkit.createInventory(holder, SIZE, titleMain(player, holder.page));
+        Inventory inv = Bukkit.createInventory(holder, SIZE, titleMain(player.getUniqueId(), holder.page));
         holder.inventory = inv;
-        fillMain(inv, holder, player);
+        fillMain(inv, holder, player.getUniqueId());
         player.openInventory(inv);
         if (sound) {
             plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.open");
@@ -1155,9 +1189,9 @@ public final class Rewards implements Listener {
         int reach = reached(player, type);
         holder.page = page >= 0 ? page : Math.max(0, (Math.max(1, reach) - 1) / perPage(type));
         holder.page = Math.min(holder.page, pagesOf(type) - 1);
-        Inventory inv = Bukkit.createInventory(holder, SIZE, titleLevels(player, type, holder.page));
+        Inventory inv = Bukkit.createInventory(holder, SIZE, titleLevels(player.getUniqueId(), type, holder.page, mainPage));
         holder.inventory = inv;
-        fillLevels(inv, holder, player);
+        fillLevels(inv, holder, player.getUniqueId());
         player.openInventory(inv);
         if (sound) {
             plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.open");
@@ -1168,9 +1202,9 @@ public final class Rewards implements Listener {
         Holder holder = new Holder("daily");
         holder.type = "daily";
         holder.mainPage = mainPage;
-        Inventory inv = Bukkit.createInventory(holder, SIZE, titleDaily(player));
+        Inventory inv = Bukkit.createInventory(holder, SIZE, titleDaily(player.getUniqueId()));
         holder.inventory = inv;
-        fillDaily(inv, holder, player);
+        fillDaily(inv, holder, player.getUniqueId());
         player.openInventory(inv);
         if (sound) {
             plugin.playConfiguredSound(player.getLocation(), GUI + "sounds.open");
@@ -1257,7 +1291,7 @@ public final class Rewards implements Listener {
      * daily-wait); null o vuota = immagini normali. confirmImage: se non e' vuoto il titolo e' solo quell'immagine
      * (popup di conferma disegnato nell'immagine) e i numeri non si disegnano.
      */
-    public StaffView staffView(Player target, String kind, String type, int mainPage, int page,
+    public StaffView staffView(UUID target, String kind, String type, int mainPage, int page,
                                Map<String, String> images, String confirmImage) {
         Map<String, String> old = imageOverride;
         imageOverride = images == null ? Map.of() : images;
@@ -1277,7 +1311,7 @@ public final class Rewards implements Listener {
                     }
                     pages = pagesOf(holder.type);
                     holder.page = Math.max(0, Math.min(page, pages - 1));
-                    title = confirm ? barTitle(newTitle(confirmImage), target, italianType(holder.type)).build() : titleLevels(target, holder.type, holder.page);
+                    title = confirm ? barTitle(newTitle(confirmImage), target, "ricompense").build() : titleLevels(target, holder.type, holder.page, mainPage);
                 }
                 case "daily" -> {
                     holder.type = "daily";
@@ -1302,12 +1336,13 @@ public final class Rewards implements Listener {
             }
             // il tasto "informazioni" diventa RESET
             String[] r = repl(target, holder.kind.equals("levels") ? holder.type : "broken");
+            // azzerare = eliminare: solo con Q e con conferma (lo gestisce UserProfileRewards)
             String resetName = "&creset";
             List<String> resetLore = holder.kind.equals("levels")
-                    ? List.of("&7azzera: &fi livelli di questo tipo", "", "&eclicca per resettare")
+                    ? List.of("&7azzera: &fi livelli di questo tipo", "", "&cQ per azzerare")
                     : holder.kind.equals("daily")
-                    ? List.of("&7azzera: &fgiorni e ritiro di oggi", "", "&eclicca per resettare")
-                    : List.of("&7azzera: &ftutte le ricompense", "", "&eclicca per resettare");
+                    ? List.of("&7azzera: &fgiorni e ritiro di oggi", "", "&cQ per azzerare")
+                    : List.of("&7azzera: &ftutte le ricompense", "", "&cQ per azzerare");
             List<Integer> resetSlots = holder.kind.equals("levels") ? slots("info-sub", 15, 16) : slots("info", 7, 8);
             for (int slot : resetSlots) {
                 put(inv, holder, slot, pane(invisibleCmd(), resetName, resetLore, r, false), "reset");
@@ -1344,7 +1379,7 @@ public final class Rewards implements Listener {
      * Sfondo da scurire sotto un popup (conferma, popup comandi): la stessa vista di staffView, CON il nome nella barra in
      * alto, che cosi' resta identico (solo scurito) sotto il popup; i popup non scrivono un loro titolo.
      */
-    public StaffView staffViewBackground(Player target, String kind, String type, int mainPage, int page,
+    public StaffView staffViewBackground(UUID target, String kind, String type, int mainPage, int page,
                                          Map<String, String> images) {
         return staffView(target, kind, type, mainPage, page, images, null);
     }
@@ -1353,17 +1388,14 @@ public final class Rewards implements Listener {
      * Solo il nome nella barra in alto della vista staff (stesso testo e posizione di staffView, convenzione del titolo
      * normale): serve a riscriverlo, scurito, sopra i popup comandi a pagina intera che coprono la barra.
      */
-    public void staffBarTitle(GuiTitle t, Player target, String kind, String type, Map<String, String> images) {
+    public void staffBarTitle(GuiTitle t, UUID target, String kind, String type, Map<String, String> images) {
         Map<String, String> old = imageOverride;
         imageOverride = images == null ? Map.of() : images;
         try {
             String k = kind == null ? "main" : kind;
             String ty = type == null ? "" : type;
-            String what = switch (k) {
-                case "levels" -> known(ty) && !ty.equals("daily") ? (ty.equals("pass") ? "battlepass" : italianType(ty)) : "ricompense";
-                case "daily" -> "giornaliera";
-                default -> "ricompense";
-            };
+            // il percorso dei livelli e' un popup sopra la pagina principale: il titolo resta "ricompense"
+            String what = k.equals("daily") && known(ty) ? "giornaliera" : "ricompense";
             barTitle(t, target, what);
         } finally {
             imageOverride = old;
@@ -1376,9 +1408,8 @@ public final class Rewards implements Listener {
     }
 
     /** Righe di lore per l'icona exp del profilo staff: exp totale, livello del pass, quanto manca, ritiri. */
-    public List<String> staffExpLines(Player target) {
-        AmmoManager a = plugin.getAmmo();
-        int exp = a.getCounter(target, "rw_exp");
+    public List<String> staffExpLines(UUID target) {
+        int exp = cnt(target, "rw_exp");
         int levels = levelsOf("pass");
         int reach = reached(target, "pass");
         long per = expPerLevel();
@@ -1446,23 +1477,27 @@ public final class Rewards implements Listener {
 
     /** Imposta il livello raggiunto portando il contatore al valore giusto. */
     void setReached(Player target, String type, int level) {
-        AmmoManager a = plugin.getAmmo();
+        setReached(target.getUniqueId(), type, level);
+    }
+
+    /** Come sopra per UUID: se il player e' offline la modifica resta in coda fino al login (OfflinePdc). */
+    void setReached(UUID target, String type, int level) {
         int max = levelsOf(type);
         int n = Math.max(0, Math.min(max, level));
         long value = threshold(type, n);
         int v = (int) Math.min(Integer.MAX_VALUE, value);
         switch (type) {
-            case "broken" -> a.setCounter(target, "rw_broken", v);
-            case "hits" -> a.setCounter(target, "rw_hits", v);
-            case "bc_earned" -> a.setCounter(target, "rw_bcin", v);
-            case "bc_spent" -> a.setCounter(target, "rw_bcout", v);
-            case "coin_earned" -> a.setCounter(target, "rw_coinin", v);
-            case "coin_spent" -> a.setCounter(target, "rw_spent", v);
-            case "play" -> a.setCounter(target, "rw_play", v);
-            case "pass" -> a.setCounter(target, "rw_exp", v);
+            case "broken" -> setCnt(target, "rw_broken", v);
+            case "hits" -> setCnt(target, "rw_hits", v);
+            case "bc_earned" -> setCnt(target, "rw_bcin", v);
+            case "bc_spent" -> setCnt(target, "rw_bcout", v);
+            case "coin_earned" -> setCnt(target, "rw_coinin", v);
+            case "coin_spent" -> setCnt(target, "rw_spent", v);
+            case "play" -> setCnt(target, "rw_play", v);
+            case "pass" -> setCnt(target, "rw_exp", v);
             case "platinum" -> {
                 for (int mine = 1; mine <= 100; mine++) {
-                    a.setCounter(target, "mine_runs_" + mine, mine <= n ? maxRuns() : 0);
+                    setCnt(target, "mine_runs_" + mine, mine <= n ? maxRuns() : 0);
                 }
             }
             default -> {
@@ -1477,16 +1512,47 @@ public final class Rewards implements Listener {
 
     /** Azzera tutto: contatori, livelli ritirati, giornaliera, pass e miniere completate. */
     public void resetAll(Player target) {
-        AmmoManager a = plugin.getAmmo();
+        resetAll(target.getUniqueId());
+    }
+
+    /** Come sopra per UUID: se il player e' offline le modifiche restano in coda fino al login (OfflinePdc). */
+    public void resetAll(UUID target) {
         for (String k : new String[] {"rw_broken", "rw_hits", "rw_bcin", "rw_bcout", "rw_coinin", "rw_spent", "rw_play",
                 "rw_exp", "rw_daydate", "rw_daymin", "rw_dayclaim", "rw_days"}) {
-            a.setCounter(target, k, 0);
+            setCnt(target, k, 0);
         }
         for (int mine = 1; mine <= 100; mine++) {
-            a.setCounter(target, "mine_runs_" + mine, 0);
+            setCnt(target, "mine_runs_" + mine, 0);
         }
         for (String t : TYPES) {
-            target.getPersistentDataContainer().remove(claimKey(t));
+            OfflinePdc.get(plugin).setString(target, "rwc_" + t, null);
+        }
+    }
+
+    /** Exp del pass per UUID (anche offline). */
+    public int exp(UUID target) {
+        return cnt(target, "rw_exp");
+    }
+
+    /** Imposta gli exp del pass (offline: in coda fino al login). */
+    public void setExp(UUID target, int value) {
+        setCnt(target, "rw_exp", value);
+    }
+
+    /** Giorni di giornaliera riscattati (anche offline). */
+    public int days(UUID target) {
+        return daysClaimed(target);
+    }
+
+    /** Imposta i giorni di giornaliera riscattati (offline: in coda fino al login). */
+    public void setDays(UUID target, int days) {
+        setCnt(target, "rw_days", days);
+    }
+
+    /** Azzera la giornaliera: giorni, ritiro di oggi e minuti di oggi (offline: in coda fino al login). */
+    public void resetDaily(UUID target) {
+        for (String k : new String[] {"rw_days", "rw_dayclaim", "rw_daydate", "rw_daymin"}) {
+            setCnt(target, k, 0);
         }
     }
 

@@ -12,6 +12,7 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -173,6 +174,8 @@ public final class TaskGui implements Listener {
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         boolean dead;   // gia' cliccata: il secondo click nello stesso tick non ripete l'azione
+        boolean popup;  // popup (cartella, lista, scelta, incarico): ESC lo riapre (R-ESC)
+        int reopens;    // quante volte e' stato riaperto dopo ESC (limite di sicurezza)
         final Map<Integer, Runnable> actions = new HashMap<>();
         final Map<Integer, Runnable> rightActions = new HashMap<>();   // click destro (se manca vale actions)
         final Map<Integer, Runnable> dropActions = new HashMap<>();    // tasto Q: solo dove previsto
@@ -1423,6 +1426,7 @@ public final class TaskGui implements Listener {
             return;
         }
         Holder h = new Holder();
+        h.popup = true;   // popup: si chiude solo con i suoi pulsanti (onClose)
         GuiTitle g = new GuiTitle(plugin);
         UserProfilePowers.drawDimmed(plugin, g, under);
         g.at(-15, "&f" + P3_IMAGE, P3_FONT, P3_REAL);
@@ -1727,6 +1731,7 @@ public final class TaskGui implements Listener {
                           Runnable onBack, String backName, List<String> backLore, ItemStack button, Runnable btnLeft,
                           Map<Integer, Row> extra, boolean btns, boolean saveReady) {
         Holder h = new Holder();
+        h.popup = true;   // popup: si chiude solo con i suoi pulsanti (onClose)
         GuiTitle g = new GuiTitle(plugin);
         UserProfilePowers.drawDimmed(plugin, g, bg());
         g.at(-15, "&f" + F_IMAGE, F_FONT, F_ADV);
@@ -1828,6 +1833,7 @@ public final class TaskGui implements Listener {
         int idx = Math.floorMod(index, n);
         Opt cur = opts.get(idx);
         Holder h = new Holder();
+        h.popup = true;   // popup: si chiude solo con i suoi pulsanti (onClose)
         GuiTitle g = new GuiTitle(plugin);
         UserProfilePowers.drawDimmed(plugin, g, under);
         g.at(-15, "&f" + CH_IMAGE, CH_FONT, CH_ADV);
@@ -1894,6 +1900,7 @@ public final class TaskGui implements Listener {
         int pages = Math.max(1, (rows.size() + L_PER_PAGE - 1) / L_PER_PAGE);
         int pg = Math.max(0, Math.min(page, pages - 1));
         Holder h = new Holder();
+        h.popup = true;   // popup: si chiude solo con i suoi pulsanti (onClose)
         GuiTitle g = new GuiTitle(plugin);
         UserProfilePowers.drawDimmed(plugin, g, bg());
         g.at(-15, "&f" + L_IMAGE, L_FONT, L_ADV);
@@ -2353,8 +2360,22 @@ public final class TaskGui implements Listener {
      */
     @EventHandler
     public void onClose(InventoryCloseEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Holder
-                && event.getReason() != InventoryCloseEvent.Reason.OPEN_NEW) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof Holder h)) {
+            return;
+        }
+        // popup chiuso dal player (ESC, tasto inventario): si riapre al tick dopo, si chiude solo con i suoi pulsanti (R-ESC)
+        if (h.popup && h.reopens < 40 && event.getReason() == InventoryCloseEvent.Reason.PLAYER
+                && event.getPlayer() instanceof Player p) {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (p.isOnline() && p.getOpenInventory().getTopInventory().getType() == InventoryType.CRAFTING) {
+                    h.reopens++;
+                    h.dead = false;
+                    p.openInventory(h.inventory);
+                }
+            });
+            return;
+        }
+        if (event.getReason() != InventoryCloseEvent.Reason.OPEN_NEW) {
             advFilters.remove(event.getPlayer().getUniqueId());
         }
     }

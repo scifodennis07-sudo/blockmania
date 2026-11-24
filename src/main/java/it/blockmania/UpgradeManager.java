@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -108,6 +109,95 @@ public final class UpgradeManager implements Listener {
             setLevel(player, id, 0);
         }
         refreshLaunchers(player);
+    }
+
+    // ---------- per UUID (profilo staff: anche col player offline, dati salvati e modifiche in coda, OfflinePdc) ----------
+
+    public int getLevel(UUID target, String id) {
+        Player p = Bukkit.getPlayer(target);
+        return p != null ? getLevel(p, id) : OfflinePdc.get(plugin).getInt(target, "upgrade_" + id);
+    }
+
+    /** Come setLevelAdmin(Player...); offline il livello resta in coda fino al login. */
+    public void setLevelAdmin(UUID target, String id, int level) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            setLevelAdmin(p, id, level);
+            return;
+        }
+        OfflinePdc.get(plugin).setInt(target, "upgrade_" + id, Math.max(0, Math.min(level, maxLevel(id))));
+    }
+
+    /** Come resetLevels(Player); offline in coda fino al login. */
+    public void resetLevels(UUID target) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            resetLevels(p);
+            return;
+        }
+        for (String id : ids()) {
+            OfflinePdc.get(plugin).setInt(target, "upgrade_" + id, 0);
+        }
+    }
+
+    State stateOf(UUID target, String id) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            return stateOf(p, id);
+        }
+        OfflinePdc d = OfflinePdc.get(plugin);
+        int level = getLevel(target, id);
+        if (level >= maxLevel(id)) {
+            return State.MAX;
+        }
+        // limiti tolti (/bm limits off) = chiave limits_off presente (Power.isLimited)
+        boolean limited = !d.has(target, "limits_off");
+        if (level >= levelCap(Math.max(1, d.getInt(target, "mine")), limited)) {
+            return State.LOCKED;
+        }
+        return State.AVAILABLE;
+    }
+
+    String[] general(UUID target, int page, int pages) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            return general(p, page, pages);
+        }
+        PlayerCounters pc = plugin.getCounters();
+        String ammoType = plugin.getConfig().getString("bossbar.ammo-type", "standardball");
+        PlayerCounters.Item ammoItem;
+        try {
+            ammoItem = PlayerCounters.Item.valueOf(ammoType.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            ammoItem = PlayerCounters.Item.STANDARDBALL;
+        }
+        return new String[]{
+                "%coin%", String.valueOf(pc == null ? 0 : pc.value(target, PlayerCounters.Item.COIN)),
+                "%blockcoin%", String.valueOf(pc == null ? 0 : pc.value(target, PlayerCounters.Item.BLOCKCOIN)),
+                "%shell%", String.valueOf(pc == null ? 0 : pc.value(target, PlayerCounters.Item.BLOCKSHELL)),
+                "%shell_max%", String.valueOf(pc == null ? 0 : pc.max(target, PlayerCounters.Item.BLOCKSHELL)),
+                "%ammo%", String.valueOf(pc == null ? 0 : pc.value(target, ammoItem)),
+                "%mine%", String.valueOf(Math.max(1, OfflinePdc.get(plugin).getInt(target, "mine"))),
+                "%page%", String.valueOf(page + 1),
+                "%pages%", String.valueOf(pages)
+        };
+    }
+
+    String[] upgradeValues(UUID target, String id, LauncherItem li, String[] general) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            return upgradeValues(p, id, li, general);
+        }
+        PlayerCounters pc = plugin.getCounters();
+        int balance = 0;
+        if (pc != null) {
+            balance = switch (currency().toLowerCase(Locale.ROOT)) {
+                case "blockcoin" -> pc.value(target, PlayerCounters.Item.BLOCKCOIN);
+                case "blockshell" -> pc.value(target, PlayerCounters.Item.BLOCKSHELL);
+                default -> pc.value(target, PlayerCounters.Item.COIN);
+            };
+        }
+        return upgradeValues(getLevel(target, id), balance, id, li, general);
     }
 
     public int maxLevel(String id) {
@@ -202,14 +292,17 @@ public final class UpgradeManager implements Listener {
 
     /** Livello massimo raggiungibile con la miniera attuale del giocatore (upgrades.mines). */
     private int levelCap(Player player) {
-        if (plugin.getPower() != null && !plugin.getPower().isLimited(player)) {
+        return levelCap(plugin.getAmmo().getMine(player), plugin.getPower() == null || plugin.getPower().isLimited(player));
+    }
+
+    private int levelCap(int mine, boolean limited) {
+        if (!limited) {
             return Integer.MAX_VALUE; // limitazioni tolte (/bm limits off): si puo' arrivare al massimo
         }
         ConfigurationSection mines = plugin.getConfig().getConfigurationSection("upgrades.mines");
         if (mines == null || mines.getKeys(false).isEmpty()) {
             return Integer.MAX_VALUE;
         }
-        int mine = plugin.getAmmo().getMine(player);
         int bestMine = -1;
         int cap = Integer.MAX_VALUE;
         for (String key : mines.getKeys(false)) {
@@ -400,7 +493,10 @@ public final class UpgradeManager implements Listener {
     }
 
     String[] upgradeValues(Player player, String id, LauncherItem li, String[] general) {
-        int level = getLevel(player, id);
+        return upgradeValues(getLevel(player, id), plugin.getAmmo().getBalance(player, currency()), id, li, general);
+    }
+
+    private String[] upgradeValues(int level, int balance, String id, LauncherItem li, String[] general) {
         int max = maxLevel(id);
         boolean maxed = level >= max;
         String path = GUI + "icons." + id;
@@ -417,7 +513,7 @@ public final class UpgradeManager implements Listener {
                 "%next_level%", String.valueOf(maxed ? level : level + 1),
                 "%cost%", maxed ? "-" : String.valueOf(cost(id, level)),
                 "%currency%", plugin.tiny(currency()),
-                "%balance%", String.valueOf(plugin.getAmmo().getBalance(player, currency()))));
+                "%balance%", String.valueOf(balance)));
         return r.toArray(new String[0]);
     }
 

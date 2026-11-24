@@ -71,6 +71,7 @@ public final class BlockMania extends JavaPlugin {
     private PlayerIds playerIds;
     private RoleGui roleGui;
     private TaskGui taskGui;
+    private TicketStaffGui ticketStaffGui;
     private Tutorial tutorial;
     private final BarStack bars = new BarStack();
     private BlockEdit blockEdit;
@@ -257,6 +258,9 @@ public final class BlockMania extends JavaPlugin {
         // GUI task staff (/adminmania task): dopo profileUi, staffRoles e staffTasks
         taskGui = new TaskGui(this);
         getServer().getPluginManager().registerEvents(taskGui, this);
+        // sezione TICKET dello staff (/adminmania ticket): dopo profileUi e taskGui
+        ticketStaffGui = new TicketStaffGui(this);
+        getServer().getPluginManager().registerEvents(ticketStaffGui, this);
         shops.start();
         getServer().getScheduler().runTaskTimer(this, () -> blocks.saveIfDirtyAsync(), 1200L, 1200L);
 
@@ -711,6 +715,10 @@ public final class BlockMania extends JavaPlugin {
 
     public RoleGui getRoleGui() {
         return roleGui;
+    }
+
+    public TicketStaffGui getTicketStaffGui() {
+        return ticketStaffGui;
     }
 
     public TaskGui getTaskGui() {

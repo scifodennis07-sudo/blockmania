@@ -431,12 +431,14 @@ public final class UserProfileGui implements Listener {
     private static final String FONT_PAGNUM = "minecraft:pagnum";
     private static final char PAGNUM_BASE = '\uE130';
     private static final int PAGNUM_REAL = 105;
-    private static final int PAGNUM_DECL = 98;
-    /** Titolo normale: il cursore dichiarato e' 7 px indietro rispetto al reale (immagine a 179 invece di 186), come IMG = -22. */
-    private static final int PAGNUM_SHIFT = -7;
 
+    /**
+     * Titolo normale: il cursore e' 7 px indietro rispetto al reale (immagine dichiarata 179), quindi x = -22 per cadere a -15;
+     * l'avanzamento resta quello REALE (come StaffProfileGui.overlay), altrimenti i 7 px si tolgono due volte e il titolo
+     * scritto dopo finisce 7 px a destra. Sfondo dei popup (cursore reale): x = -15.
+     */
     private void drawPageNumber(GuiTitle g, int page, boolean real) {
-        g.at(-15 + (real ? 0 : PAGNUM_SHIFT), "&f" + (char) (PAGNUM_BASE + page - 1), FONT_PAGNUM, real ? PAGNUM_REAL : PAGNUM_DECL);
+        g.at(real ? -15 : -22, "&f" + (char) (PAGNUM_BASE + page - 1), FONT_PAGNUM, PAGNUM_REAL);
     }
 
     private Component title(UUID target, Snap s, int page) {
@@ -503,8 +505,8 @@ public final class UserProfileGui implements Listener {
         setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
         setAll(h, S_INFO, pane("&6informazioni", List.of(
                 "&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES,
-                "&7sanzioni: &fsinistro comandi",
-                "&7sanzioni: &fdestro cronologia")), null);
+                "",
+                "&esinistro comandi &8| &edestro cronologia")), null);
 
         // testa
         setHead(h, target, online);
@@ -525,24 +527,25 @@ public final class UserProfileGui implements Listener {
         setAll(h, S_STAMINA, staminaItem(target), "stamina");
         fillArrows(h);
 
-        // miniere, potenziamenti, ricompense, exp: aprono le GUI originali sul player (devono essere online)
-        String off = online ? "" : "&7stato: &coffline";
-        List<String> openLore = online ? List.of("&eclicca per aprire") : List.of(off, "", "&eclicca per aprire");
+        // miniere, potenziamenti, ricompense, exp: funzionano anche offline (dati salvati, modifiche al prossimo accesso)
+        List<String> openLore = online ? List.of("&eclicca per aprire") : List.of(OFF_EDIT, "", "&eclicca per aprire");
         setAll(h, S_UPG_A, pane("&6miniere", openLore), "mines");
         setAll(h, S_UPG_B, pane("&6potenziamenti", openLore), "upg");
         setAll(h, S_RW_A, pane("&dricompense", openLore), "rw");
         List<String> expLore = new ArrayList<>();
-        Player tp = Bukkit.getPlayer(target);
-        if (tp != null && plugin.getProfileRewards() != null) {
-            expLore.addAll(plugin.getProfileRewards().expLore(tp));
+        if (plugin.getProfileRewards() != null) {
+            expLore.addAll(plugin.getProfileRewards().expLore(target));
         }
         if (!online) {
-            expLore.add(off);
+            expLore.add(OFF_EDIT);
         }
         expLore.add("");
         expLore.add("&eclicca per i comandi");
         setAll(h, S_RW_B, pane("&5exp", expLore), "exp");
     }
+
+    /** Riga per il player offline: l'azione funziona lo stesso, si applica al suo prossimo accesso (R-OFF). */
+    private static final String OFF_EDIT = "&7modifica: &fal prossimo accesso";
 
     /** Frecce della testata: non cicliche (a sinistra della prima e a destra dell'ultima pagina non fanno nulla). */
     private void fillArrows(Holder h) {
@@ -560,8 +563,8 @@ public final class UserProfileGui implements Listener {
         setAll(h, S_CLOSE, pane("&cchiudi", List.of()), "close");
         setAll(h, S_INFO, pane("&6informazioni", List.of(
                 "&7pagina: &f" + (h.page + 1) + "&8/&f" + PAGES,
-                "&7sanzioni: &fsinistro comandi",
-                "&7sanzioni: &fdestro cronologia")), null);
+                "",
+                "&esinistro comandi &8| &edestro cronologia")), null);
         setHead(h, target, online);
         long now = System.currentTimeMillis();
         setAll(h, S_MUTE, timedItem("mute", s.mute(), now, false, ""), "sanc:MUTE");
@@ -570,15 +573,16 @@ public final class UserProfileGui implements Listener {
         setAll(h, S_STAMINA, staminaItem(target), "stamina");
         fillArrows(h);
         if (h.page == 1) {
-            setAll(h, S_BTN_LT, pane("&bresetta player", List.of("&7azzera: &ftutto tranne sanzioni", "", "&eclicca per resettare")), "reset_player");
-            setAll(h, S_BTN_LB, pane("&eresetta sanzioni", List.of("&7azzera: &fmute, ban, warn", "&7e anche: &fla cronologia", "", "&eclicca per resettare")), "reset_sanc");
+            // resettare = eliminare: solo Q, poi la conferma
+            setAll(h, S_BTN_LT, pane("&bresetta player", List.of("&7azzera: &ftutto tranne sanzioni", "", "&eQ per resettare")), "reset_player");
+            setAll(h, S_BTN_LB, pane("&eresetta sanzioni", List.of("&7azzera: &fmute, ban, warn", "&7e anche: &fla cronologia", "", "&eQ per resettare")), "reset_sanc");
             setAll(h, S_BTN_RT, pane("&9cronologia movimenti", List.of("&7contiene: &fminiere, negozi, ticket...", "", "&eclicca per aprire")), "hist_moves");
             setAll(h, S_BTN_RB, pane("&6cronologia sanzioni", List.of("&7contiene: &fwarn, mute e ban", "", "&eclicca per aprire")), "hist_sanc");
         } else {
             setAll(h, S_BTN_LT, pane("&6cronologia acquisti", List.of("&eclicca per aprire")), "hist_buys");
-            setAll(h, S_BTN_LB, pane("&bcambia ruolo", List.of("&7stato: &8in arrivo")), "chg_role");
+            setAll(h, S_BTN_LB, pane("&bcambia ruolo", List.of("&7stato: &8in arrivo")), null);   // niente azione, niente chat
             setAll(h, S_BTN_RT, pane("&dpexa staff", List.of("&eclicca per scegliere il grado")), "pexa");
-            setAll(h, S_BTN_RB, pane("&6aggiungi vip", List.of("&7stato: &8in arrivo")), "vip");
+            setAll(h, S_BTN_RB, pane("&6aggiungi vip", List.of("&7stato: &8in arrivo")), null);
         }
     }
 
@@ -732,12 +736,11 @@ public final class UserProfileGui implements Listener {
         if (ic.fired()) {
             lore.add("&7sparate: &f" + pc.totalFired(target, ic.item()));
         }
-        if (online) {
-            lore.add("");
-            lore.add("&eclicca per i comandi");
-        } else {
-            lore.add("&7stato: &coffline");
+        if (!online) {
+            lore.add(OFF_EDIT);   // i comandi funzionano anche offline (coda al login)
         }
+        lore.add("");
+        lore.add("&eclicca per i comandi");
         return pane(ic.color() + ic.name(), lore);
     }
 
@@ -746,14 +749,14 @@ public final class UserProfileGui implements Listener {
         Player tp = Bukkit.getPlayer(target);
         Power pw = plugin.getPower();
         List<String> lore = new ArrayList<>();
-        if (pct < 0 || tp == null || pw == null) {
-            lore.add("&7stato: &coffline");
-        } else {
+        if (pct >= 0 && tp != null && pw != null) {
             lore.add("&7livello: &f" + pct + "%");
             lore.add("&7modalità: &f" + pw.mode(tp));
-            lore.add("");
-            lore.add("&eclicca per i comandi");
+        } else {
+            lore.add(OFF_EDIT);   // la stamina sta nel player: offline si modifica al suo prossimo accesso
         }
+        lore.add("");
+        lore.add("&eclicca per i comandi");
         return pane("&estamina", lore);
     }
 
@@ -763,12 +766,11 @@ public final class UserProfileGui implements Listener {
         lore.add("&7attivo: " + (charges > 0 ? "&asì" : "&cno") + " &8(&f" + amount(pc, target, PlayerCounters.Item.POWER_CHARGES) + "&8)");
         lore.add("&7utilizzi: &f" + amount(pc, target, PlayerCounters.Item.POWER_USES));
         lore.add("&7sparati: &f" + pc.totalFired(target, PlayerCounters.Item.POWER_CHARGES));
-        if (online) {
-            lore.add("");
-            lore.add("&esinistro sblocchi &8| &edestro usi");
-        } else {
-            lore.add("&7stato: &coffline");
+        if (!online) {
+            lore.add(OFF_EDIT);
         }
+        lore.add("");
+        lore.add("&eclicca per i comandi");
         return pane("&6colpo potenziato", lore);
     }
 
@@ -856,6 +858,12 @@ public final class UserProfileGui implements Listener {
         if (action == null) {
             return;
         }
+        org.bukkit.event.inventory.ClickType ct = event.getClick();
+        boolean drop = ct == org.bukkit.event.inventory.ClickType.DROP || ct == org.bukkit.event.inventory.ClickType.CONTROL_DROP;
+        // i reset (= eliminazioni) solo con Q; tutto il resto non risponde a Q
+        if (action.startsWith("reset_") != drop) {
+            return;
+        }
         plugin.guiClick(p);
         final boolean right = event.isRightClick();
         final UUID target = h.target;
@@ -902,17 +910,13 @@ public final class UserProfileGui implements Listener {
             if (right) {
                 return;
             }
-            Player tp = Bukkit.getPlayer(target);
-            if (tp == null) {
-                GuiMsg.send(plugin, p, "&cIl giocatore deve essere online.");
-                return;
-            }
+            // anche offline (R-OFF): le GUI lavorano per UUID sui dati salvati (metodi di Giovanni)
             Runnable back = () -> back(p, target);
             switch (action) {
-                case "mines" -> plugin.getProfileMines().open(p, tp, back);
-                case "upg" -> plugin.getProfileUpgrades().open(p, tp, back);
-                case "rw" -> plugin.getProfileRewards().open(p, tp, back);
-                default -> plugin.getProfileRewards().openExp(p, tp, back, popupBg(target, page));
+                case "mines" -> plugin.getProfileMines().open(p, target, back);
+                case "upg" -> plugin.getProfileUpgrades().open(p, target, back);
+                case "rw" -> plugin.getProfileRewards().open(p, target, back);
+                default -> plugin.getProfileRewards().openExp(p, target, back, popupBg(target, page));
             }
         }
     }
@@ -999,7 +1003,7 @@ public final class UserProfileGui implements Listener {
                 }
             }
             case "pexa" -> plugin.getRoleGui().open(p, target, bg, again);
-            default -> GuiMsg.send(plugin, p, "&7non ancora disponibile.");   // chg_role, vip
+            default -> { }   // cambia ruolo / aggiungi vip: in arrivo, niente messaggi in chat
         }
     }
 
@@ -1019,9 +1023,9 @@ public final class UserProfileGui implements Listener {
         if (!authorize(p, target, "profile", "edit", 0)) {
             return;
         }
-        // offline: niente "infinite" (si applica al login: set / full / reset)
-        List<String> cmds = Bukkit.getPlayer(target) == null ? List.of("set", "full", "reset") : List.of("set", "full", "infinite", "reset");
-        plugin.getProfileUi().openCommands(p, "stamina di " + nameOf(target), cmds,
+        // anche offline tutti i comandi (in coda, applicati al login); etichetta senza nick: il nick e' gia' nel titolo
+        List<String> cmds = List.of("set", "full", "infinite", "reset");
+        plugin.getProfileUi().openCommands(p, "stamina", cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> staminaPick(p, target, cmd)),
                 () -> back(p, target), false, null, popupBg(target, page));
     }
@@ -1051,21 +1055,24 @@ public final class UserProfileGui implements Listener {
         Player tp = Bukkit.getPlayer(target);
         Power pw = plugin.getPower();
         StaffTasks sto = plugin.getStaffTasks();
-        if (tp == null && sto != null && !cmd.equals("infinite")) {
-            // offline: in coda, applicata al login
+        if (tp == null && sto != null) {
+            // offline: in coda, applicata al login (infinita = modalita' della stamina)
             if (!authorize(p, target, "profile", "edit", percent)) {
                 back(p, target);
                 return;
             }
+            boolean inf = cmd.equals("infinite");
             String qv = cmd.equals("reset") ? "reset" : "set";
+            String qw = inf ? "stamina_mode" : "stamina";
+            String qs = inf ? "infinite" : null;
             long qa = cmd.equals("set") ? percent : cmd.equals("full") ? 100 : 0;
-            if (!sto.allows(p, qv, "stamina", null, target, qa)) {
+            if (!sto.allows(p, qv, qw, null, target, qa)) {
                 back(p, target);
                 return;
             }
-            String err = sto.applyOrQueue(p, target, qv, "stamina", null, qa);
+            String err = sto.applyOrQueue(p, target, qv, qw, qs, qa);
             if (err == null) {
-                sto.done(p, qv, "stamina", null, target, qa);
+                sto.done(p, qv, qw, null, target, qa);
                 audit(p, "profile.edit stamina " + cmd + " " + nameOf(target) + " (offline)");
                 GuiMsg.send(plugin, p, "&astamina " + cmd + " in attesa del login di " + nameOf(target));
             } else {
@@ -1075,7 +1082,7 @@ public final class UserProfileGui implements Listener {
             return;
         }
         if (tp == null || pw == null) {
-            GuiMsg.send(plugin, p, "&cIl giocatore e' offline: stamina non disponibile.");
+            GuiMsg.send(plugin, p, "&cStamina non disponibile (errore interno).");
             back(p, target);
             return;
         }
@@ -1124,7 +1131,7 @@ public final class UserProfileGui implements Listener {
         }
         // mute e ban: solo add/remove/reduce (il reset si fa dalla cronologia); warn: add/remove/reset (reset sempre ultimo)
         List<String> cmds = kind == SanctionManager.Kind.WARN ? List.of("add", "remove", "reset") : List.of("add", "remove", "reduce");
-        String label = kind.name().toLowerCase(java.util.Locale.ROOT) + " di " + nameOf(target);
+        String label = kind.name().toLowerCase(java.util.Locale.ROOT);   // senza nick (e' gia' nel titolo): mai tagliato
         plugin.getProfileUi().openCommands(p, label, cmds,
                 cmd -> Bukkit.getScheduler().runTask(plugin, () -> sanctionPick(p, target, kind, cmd, page)),
                 () -> back(p, target), true, () -> Bukkit.getScheduler().runTask(plugin, () -> openHistory(p, target, kind)),
@@ -1370,8 +1377,9 @@ public final class UserProfileGui implements Listener {
             // player offline: modifica in coda, applicata al login
             String[] w = StaffTasks.itemWhatOf(it);
             String qv = cmd.equals("give") || cmd.equals("remove") || cmd.equals("reset") ? cmd : "set";
-            err = st == null ? "il giocatore e' offline" : cmd.equals("setuses") || "power_uses".equals(w[0])
-                    ? "da offline non si puo' cambiare questo contatore" : st.applyOrQueue(p, target, qv, w[0], w[1], tAmount);
+            // anche colpi per potenziato (setuses / power_uses): in coda come gli altri contatori
+            String qw = cmd.equals("setuses") ? "power_uses" : w[0];
+            err = st == null ? "coda offline non disponibile (errore interno)" : st.applyOrQueue(p, target, qv, qw, w[1], tAmount);
         } else {
             err = plugin.getCounters().apply(target, it, cmd, n, p);
         }

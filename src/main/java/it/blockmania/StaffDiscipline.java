@@ -5,6 +5,9 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
@@ -22,13 +25,16 @@ import java.util.UUID;
  * Uno staffer sospeso non riceve i permessi di ruolo (StaffRoles.apply controlla isSuspended); un task ogni 30 s
  * chiude le sospensioni scadute e gli rimette i permessi. Da usare dal thread principale.
  */
-public final class StaffDiscipline {
+public final class StaffDiscipline implements Listener {
 
     public enum Kind { WARN, DEPEX, SUSPEND }
 
-    /** Voce della disciplina. durationMs > 0 solo per SUSPEND; active/endedAt hanno senso solo per SUSPEND. */
+    /**
+     * Voce della disciplina. durationMs > 0 solo per SUSPEND; active/endedAt/endedBy hanno senso solo per SUSPEND.
+     * endedBy/endedByName = chi l'ha tolta (null/"" = scaduta da sola o voce vecchia senza il dato).
+     */
     public record Entry(String id, Kind kind, String ruleCode, String message, UUID by, String byName, long ts, long durationMs,
-                        boolean active, long endedAt) {
+                        boolean active, long endedAt, UUID endedBy, String endedByName) {
         /** Fine prevista della sospensione (ts + durata). */
         public long until() {
             return ts + durationMs;
@@ -41,6 +47,8 @@ public final class StaffDiscipline {
     private final File file;
     private final Map<UUID, List<Entry>> data = new HashMap<>();
     private final Map<UUID, UUID> tutors = new HashMap<>();
+    /** Messaggi per gli staffer offline (warn, depex, sospensioni...): si mandano al loro prossimo accesso. */
+    private final Map<UUID, List<String>> pending = new HashMap<>();
     private BukkitTask task;
 
     public StaffDiscipline(BlockMania plugin) {
@@ -75,13 +83,24 @@ public final class StaffDiscipline {
                         }
                         list.add(new Entry(String.valueOf(eid), Kind.valueOf(String.valueOf(kind)), str(m.get("rule")),
                                 str(m.get("message")), uuid(str(m.get("by"))), str(m.get("byName")), num(m.get("ts")),
-                                num(m.get("durationMs")), Boolean.TRUE.equals(m.get("active")), num(m.get("endedAt"))));
+                                num(m.get("durationMs")), Boolean.TRUE.equals(m.get("active")), num(m.get("endedAt")),
+                                uuid(str(m.get("endedBy"))), str(m.get("endedByName"))));
                     } catch (IllegalArgumentException ignored) {
                         // voce non valida: saltata
                     }
                 }
                 if (!list.isEmpty()) {
                     data.put(id, list);
+                }
+            }
+        }
+        ConfigurationSection pm = y.getConfigurationSection("pending");
+        if (pm != null) {
+            for (String key : pm.getKeys(false)) {
+                UUID id = uuid(key);
+                List<String> msgs = pm.getStringList(key);
+                if (id != null && !msgs.isEmpty()) {
+                    pending.put(id, new ArrayList<>(msgs));
                 }
             }
         }
@@ -116,12 +135,19 @@ public final class StaffDiscipline {
                 m.put("durationMs", en.durationMs());
                 m.put("active", en.active());
                 m.put("endedAt", en.endedAt());
+                m.put("endedBy", en.endedBy() == null ? "" : en.endedBy().toString());
+                m.put("endedByName", en.endedByName() == null ? "" : en.endedByName());
                 out.add(m);
             }
             y.set("players." + e.getKey(), out);
         }
         for (Map.Entry<UUID, UUID> e : tutors.entrySet()) {
             y.set("tutors." + e.getKey(), e.getValue().toString());
+        }
+        for (Map.Entry<UUID, List<String>> e : pending.entrySet()) {
+            if (!e.getValue().isEmpty()) {
+                y.set("pending." + e.getKey(), e.getValue());
+            }
         }
         try {
             plugin.getDataFolder().mkdirs();
@@ -134,6 +160,7 @@ public final class StaffDiscipline {
     /** Avvia il controllo delle sospensioni scadute (ogni 30 s). */
     public void start() {
         if (task == null) {
+            Bukkit.getPluginManager().registerEvents(this, plugin);   // messaggi in coda al login
             task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
                 checkExpired();
             }, CHECK_TICKS, CHECK_TICKS);
@@ -226,8 +253,8 @@ public final class StaffDiscipline {
         }
         long ms = rule.durationMs();
         synchronized (this) {
-            // una sola sospensione attiva: quella vecchia si chiude
-            closeActive(target, System.currentTimeMillis());
+            // una sola sospensione attiva: quella vecchia si chiude (tolta da chi da' la nuova)
+            closeActive(target, System.currentTimeMillis(), by);
         }
         Entry e = add(by, target, Kind.SUSPEND, rule, msg, ms, true);
         reapply(target);
@@ -246,7 +273,7 @@ public final class StaffDiscipline {
         }
         boolean closed;
         synchronized (this) {
-            closed = closeActive(target, System.currentTimeMillis());
+            closed = closeActive(target, System.currentTimeMillis(), by);
             if (closed) {
                 save();
             }
@@ -399,7 +426,7 @@ public final class StaffDiscipline {
                 for (int i = 0; i < list.size(); i++) {
                     Entry e = list.get(i);
                     if (e.kind() == Kind.SUSPEND && e.active() && e.until() <= now) {
-                        list.set(i, close(e, e.until()));
+                        list.set(i, close(e, e.until(), null));   // scaduta da sola: nessuno l'ha tolta
                         if (!ended.contains(en.getKey())) {
                             ended.add(en.getKey());
                         }
@@ -418,7 +445,7 @@ public final class StaffDiscipline {
     }
 
     /** Chiude la sospensione attiva (anche se gia' scaduta). Chiamare dentro synchronized. Non salva. */
-    private boolean closeActive(UUID target, long now) {
+    private boolean closeActive(UUID target, long now, CommandSender by) {
         List<Entry> list = data.get(target);
         if (list == null) {
             return false;
@@ -427,22 +454,29 @@ public final class StaffDiscipline {
         for (int i = 0; i < list.size(); i++) {
             Entry e = list.get(i);
             if (e.kind() == Kind.SUSPEND && e.active()) {
-                list.set(i, close(e, Math.min(now, e.until())));
+                list.set(i, close(e, Math.min(now, e.until()), by == null ? "console" : by.getName(),
+                        by instanceof Player bp ? bp.getUniqueId() : null));
                 closed = true;
             }
         }
         return closed;
     }
 
-    private static Entry close(Entry e, long endedAt) {
-        return new Entry(e.id(), e.kind(), e.ruleCode(), e.message(), e.by(), e.byName(), e.ts(), e.durationMs(), false, endedAt);
+    /** Sospensione scaduta da sola (endedByName null = nessuno). */
+    private static Entry close(Entry e, long endedAt, String endedByName) {
+        return close(e, endedAt, endedByName, null);
+    }
+
+    private static Entry close(Entry e, long endedAt, String endedByName, UUID endedBy) {
+        return new Entry(e.id(), e.kind(), e.ruleCode(), e.message(), e.by(), e.byName(), e.ts(), e.durationMs(), false, endedAt,
+                endedBy, endedByName == null ? "" : endedByName);
     }
 
     private Entry add(Player by, UUID target, Kind kind, Rules.Rule rule, String msg, long durationMs, boolean active) {
         Entry e;
         synchronized (this) {
             e = new Entry(newId(), kind, rule.code(), msg == null ? "" : msg.trim(), by == null ? null : by.getUniqueId(),
-                    name(by), System.currentTimeMillis(), durationMs, active, 0L);
+                    name(by), System.currentTimeMillis(), durationMs, active, 0L, null, "");
             data.computeIfAbsent(target, k -> new ArrayList<>()).add(e);
             save();
         }
@@ -488,11 +522,53 @@ public final class StaffDiscipline {
         }
     }
 
+    /** Messaggio allo staffer: subito se online, altrimenti in coda fino al suo prossimo accesso (R-OFF). */
     private void notify(UUID target, String msg) {
-        Player p = target == null ? null : Bukkit.getPlayer(target);
+        if (target == null) {
+            return;
+        }
+        Player p = Bukkit.getPlayer(target);
         if (p != null) {
             GuiMsg.send(plugin, p, msg);
+            return;
         }
+        synchronized (this) {
+            pending.computeIfAbsent(target, k -> new ArrayList<>()).add(msg);
+            save();
+        }
+    }
+
+    /** Al login: i messaggi arrivati da offline (warn, depex, sospensioni) e i permessi giusti (sospeso o no). */
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player p = event.getPlayer();
+        UUID id = p.getUniqueId();
+        List<String> msgs;
+        synchronized (this) {
+            msgs = pending.remove(id);
+            if (msgs != null) {
+                save();
+            }
+        }
+        if (msgs == null || msgs.isEmpty()) {
+            return;
+        }
+        final List<String> out = msgs;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (p.isOnline()) {
+                for (String m : out) {
+                    GuiMsg.send(plugin, p, m);
+                }
+            }
+        }, 40L);
+    }
+
+    /**
+     * Staffer sospeso (giocatore, non console): durante la sospensione non ha nessun permesso staff, nemmeno se e' OP o ha
+     * i permessi da un altro plugin. Lo usano AdminCommand.level e le GUI staff.
+     */
+    public static boolean suspendedStaff(BlockMania plugin, CommandSender who) {
+        return who instanceof Player p && plugin.getStaffDiscipline() != null && plugin.getStaffDiscipline().isSuspended(p.getUniqueId());
     }
 
     private void movement(UUID target, String text) {

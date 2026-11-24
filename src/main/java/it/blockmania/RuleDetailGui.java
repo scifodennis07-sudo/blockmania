@@ -655,7 +655,8 @@ public final class RuleDetailGui implements Listener {
             put(h, slot, pane("&7scendi", List.of("&eclicca per scendere")), s.scroll < max ? () -> scroll(s, 1) : null);
         }
 
-        put(h, SLOT_DELETE, pane("&celimina regola", List.of("&7regola: &f" + code, "", "&cclicca per eliminare")),
+        // eliminare: solo Q, sempre con conferma (R-DEL)
+        put(h, SLOT_DELETE, pane("&celimina regola", List.of("&7regola: &f" + code, "", "&eQ per eliminare")),
                 () -> askDelete(s));
         put(h, SLOT_EDIT, pane("&emodifica regola", List.of("&eclicca per modificare")),
                 () -> edit(s));
@@ -863,8 +864,15 @@ public final class RuleDetailGui implements Listener {
         if (event.getClickedInventory() != event.getView().getTopInventory()) {
             return;
         }
-        Runnable a = h.actions.get(event.getRawSlot());
+        int slot = event.getRawSlot();
+        Runnable a = h.actions.get(slot);
         if (a == null) {
+            return;
+        }
+        // il cestino risponde solo a Q; gli altri pulsanti non rispondono a Q
+        org.bukkit.event.inventory.ClickType ct = event.getClick();
+        boolean drop = ct == org.bukkit.event.inventory.ClickType.DROP || ct == org.bukkit.event.inventory.ClickType.CONTROL_DROP;
+        if ((slot == SLOT_DELETE) != drop) {
             return;
         }
         plugin.guiClick(p);

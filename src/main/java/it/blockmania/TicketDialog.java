@@ -38,7 +38,7 @@ import java.util.List;
  *  - il click event openUrl nel testo del body e' supportato dal client (mostra la sua
  *    conferma "apri link"); annulla usa ClickEvent.callback (custom click, gestito da Paper);
  *  - pulsante vanilla OBBLIGATORIO (tipo notice = 1 pulsante nel footer): larghezza 1, label
- *    vuota, senza tooltip; e' anche l'exit action quindi ESC = annulla (stessa callback);
+ *    vuota, senza tooltip; e' l'exit action, ma ESC e' disattivato: si esce solo dal pulsante annulla disegnato;
  *  - pause(false) + afterAction NONE (obbligatorio insieme): il dialog resta aperto dopo un click.
  *
  * Allineamento: ascent 73 in font/clicklink.json (le righe da 9 px cadono sui pulsanti: rosso =
@@ -211,7 +211,7 @@ public final class TicketDialog {
             body.append(lines.get(i));
         }
 
-        // pulsante vanilla minimo (footer): invisibile quasi, ed e' l'exit action: ESC = annulla
+        // pulsante vanilla minimo (footer): quasi invisibile, exit action (ESC disattivato, si usa l'annulla disegnato)
         ActionButton exit = ActionButton.create(
                 Component.empty(),
                 null,
@@ -225,7 +225,7 @@ public final class TicketDialog {
 
         Dialog dialog = Dialog.create(b -> b.empty()
                 .base(DialogBase.builder(Component.empty())
-                        .canCloseWithEscape(true)
+                        .canCloseWithEscape(false)   // REGOLE_GUI: si esce solo dai pulsanti (annulla disegnato)
                         .pause(false)
                         .afterAction(DialogBase.DialogAfterAction.NONE)
                         .body(List.of(DialogBody.plainMessage(body.build(), BODY_WIDTH)))

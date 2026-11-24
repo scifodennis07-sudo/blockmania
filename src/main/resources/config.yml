@@ -1018,7 +1018,12 @@ messages:
     type: warning
     channel: actionbar
     icon: "{icon:giallo_lampadina}"
-    text: "per togliere il negozio: shift + tasto destro a mano vuota"
+    text: "per togliere il negozio: shift + tasto destro a mano vuota, due volte"
+  shop-remove-confirm:
+    type: warning
+    channel: actionbar
+    icon: "{icon:giallo_lampadina}"
+    text: "togliere il negozio %shop%? shift + tasto destro di nuovo entro 5 secondi per confermare"
   shop-spawned:
     type: success
     channel: actionbar

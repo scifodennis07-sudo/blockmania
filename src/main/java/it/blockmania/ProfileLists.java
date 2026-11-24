@@ -93,6 +93,8 @@ public final class ProfileLists implements Listener {
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         Session session;
+        /** Premuto un pulsante che porta via (X, cerca): la chiusura e' voluta (R-ESC). */
+        boolean chosen;
 
         @Override
         public Inventory getInventory() {
@@ -111,6 +113,8 @@ public final class ProfileLists implements Listener {
         int page;
         List<Row> rows = new ArrayList<>();
         Holder holder;
+        /** Filtro avanzato (Q sul filtro): testo cercato in nome e lore delle voci; vale finche' la lista resta aperta. */
+        String search;
     }
 
     private final BlockMania plugin;
@@ -267,7 +271,45 @@ public final class ProfileLists implements Listener {
             plugin.getLogger().warning("ProfileLists: errore nel caricare le righe: " + ex);
         }
         s.rows = rows == null ? new ArrayList<>() : rows;
+        if (s.search != null && !s.search.isBlank()) {
+            String q = s.search.toLowerCase(java.util.Locale.ROOT);
+            List<Row> kept = new ArrayList<>();
+            for (Row r : s.rows) {
+                if (r != null && plainOf(r.item()).contains(q)) {
+                    kept.add(r);
+                }
+            }
+            s.rows = kept;
+        }
         redraw(s, page);
+    }
+
+    /** Nome e lore della voce in testo semplice minuscolo (per il filtro avanzato). */
+    private static String plainOf(ItemStack it) {
+        if (it == null || !it.hasItemMeta()) {
+            return "";
+        }
+        var ser = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText();
+        StringBuilder sb = new StringBuilder();
+        ItemMeta m = it.getItemMeta();
+        if (m.displayName() != null) {
+            sb.append(ser.serialize(m.displayName())).append(' ');
+        }
+        if (m.lore() != null) {
+            for (net.kyori.adventure.text.Component c : m.lore()) {
+                sb.append(ser.serialize(c)).append(' ');
+            }
+        }
+        return untinyAll(sb.toString()).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Il testo delle lore puo' essere in tiny text: lo si riporta a lettere normali per la ricerca. */
+    private static String untinyAll(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            sb.append(Tiny.untiny(s.charAt(i)));
+        }
+        return sb.toString();
     }
 
     private void redraw(Session s, int page) {
@@ -422,8 +464,12 @@ public final class ProfileLists implements Listener {
             for (int i = 0; i < s.filters.size(); i++) {
                 fl.add(i == s.filterIdx ? "&a» " + s.filters.get(i).label() : "&8" + s.filters.get(i).label());
             }
+            if (s.search != null && !s.search.isBlank()) {
+                fl.add("&7cerca: &f" + s.search);
+            }
             fl.add("");
-            fl.add("&esinistro su &8| &edestro giù");
+            // sinistro/destro solo se c'e' piu' di un filtro (R-FIL); Q = cerca (R-Q)
+            fl.add(s.filters.size() > 1 ? "&esinistro su &8| &edestro giù &8| &eQ cerca" : "&eQ cerca");
             inv.setItem(SLOT_FILTER, pane("&bfiltra per", fl));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
@@ -558,6 +604,7 @@ public final class ProfileLists implements Listener {
         int slot = event.getRawSlot();
         if (slot == SLOT_X) {
             plugin.guiClick(p);
+            h.chosen = true;
             sessions.remove(p.getUniqueId());
             Runnable back = s.onBack;
             if (back != null) {
@@ -569,6 +616,22 @@ public final class ProfileLists implements Listener {
         }
         if (slot == SLOT_FILTER) {
             org.bukkit.event.inventory.ClickType fc = event.getClick();
+            if (fc == org.bukkit.event.inventory.ClickType.DROP || fc == org.bukkit.event.inventory.ClickType.CONTROL_DROP) {
+                // Q = filtro avanzato: testo da cercare (vuoto = toglie la ricerca); resta finche' la lista e' aperta
+                plugin.guiClick(p);
+                h.chosen = true;
+                final int fi = s.filterIdx;
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    plugin.getProfileUi().askText(p, "cerca nella lista (testo o nick, vuoto = tutto)", "CERCA",
+                            s.search == null ? "" : s.search, txt -> {
+                                s.search = txt == null || txt.isBlank() ? null : txt.trim();
+                                Bukkit.getScheduler().runTask(plugin, () -> show(s, fi, 0));
+                            }, () -> {
+                                Bukkit.getScheduler().runTask(plugin, () -> show(s, fi, s.page));
+                            });
+                });
+                return;
+            }
             if (s.filters.size() > 1 && (fc.isLeftClick() || fc.isRightClick())) {
                 plugin.guiClick(p);
                 // sinistro = filtro precedente (su), destro = filtro successivo (giu')
@@ -605,7 +668,15 @@ public final class ProfileLists implements Listener {
         if (switching.contains(id)) {
             return;
         }
-        if (event.getInventory().getHolder() instanceof Holder h && sessions.get(id) == h.session) {
+        if (!(event.getInventory().getHolder() instanceof Holder h)) {
+            return;
+        }
+        if (!h.chosen) {
+            // chiusa con ESC: si riapre (R-ESC), la lista resta quella
+            UserProfilePowers.reopenOnEscape(plugin, p, h.inventory, () -> h.chosen);
+            return;
+        }
+        if (sessions.get(id) == h.session) {
             sessions.remove(id);
         }
     }

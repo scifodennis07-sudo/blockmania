@@ -69,6 +69,13 @@ public final class ShopManager implements Listener {
 
     /** Ologramma attuale di ogni giocatore. */
     private final Map<UUID, Holo> holos = new HashMap<>();
+    /** Rimozione del negozio da confermare: player -> (stand, scadenza). Eliminare chiede sempre conferma (R-DEL). */
+    private final Map<UUID, PendingRemove> pendingRemove = new HashMap<>();
+
+    private record PendingRemove(UUID stand, long until) {
+    }
+
+    private static final long REMOVE_CONFIRM_MS = 5000L;
     /** Vendite in corso. */
     private final Map<UUID, Sale> sales = new HashMap<>();
     private BukkitTask holoTask;
@@ -322,10 +329,19 @@ public final class ShopManager implements Listener {
             return;
         }
         Player player = event.getPlayer();
-        // shift + destro a mano vuota (solo con blockmania.shop.edit): toglie il negozio
+        // shift + destro a mano vuota (solo con blockmania.shop.edit): toglie il negozio, ma solo se ripetuto sullo
+        // stesso stand entro 5 secondi (conferma: eliminare non avviene mai con un solo click)
         if (player.isSneaking() && player.hasPermission("blockmania.shop.edit")
                 && player.getInventory().getItemInMainHand().getType().isAir()) {
-            removeShop(player, event.getRightClicked(), type);
+            long now = System.currentTimeMillis();
+            PendingRemove pr = pendingRemove.get(player.getUniqueId());
+            if (pr != null && pr.stand().equals(event.getRightClicked().getUniqueId()) && now <= pr.until()) {
+                pendingRemove.remove(player.getUniqueId());
+                removeShop(player, event.getRightClicked(), type);
+            } else {
+                pendingRemove.put(player.getUniqueId(), new PendingRemove(event.getRightClicked().getUniqueId(), now + REMOVE_CONFIRM_MS));
+                plugin.send(player, "shop-remove-confirm", "%shop%", type);
+            }
             return;
         }
         if (!player.hasPermission("blockmania.use")) {
@@ -662,6 +678,7 @@ public final class ShopManager implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
+        pendingRemove.remove(id);
         Holo h = holos.remove(id);
         if (h != null) {
             h.display().remove();

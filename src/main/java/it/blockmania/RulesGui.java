@@ -60,6 +60,8 @@ public final class RulesGui implements Listener {
     /** Frecce: sinistra immagine (50..69) -> slot 2; destra (120..139) -> slot 6. */
     private static final int SLOT_PREV = 2;
     private static final int SLOT_NEXT = 6;
+    /** Barra tra le frecce (numero pagina): fa anche da pulsante "crea regola" (Q sul filtro e' la ricerca, R-Q). */
+    private static final int[] SLOTS_BAR = {3, 4, 5};
     private static final int WRAP = 35;
 
     // ---------- targhette delle regole disegnate a font (contratto col pack di Sara) ----------
@@ -113,6 +115,8 @@ public final class RulesGui implements Listener {
     private final Map<UUID, Session> sessions = new HashMap<>();
     /** Filtro ricordato per ogni staffer (null = tutte). */
     private final Map<UUID, Rules.Type> filters = new HashMap<>();
+    /** Filtro avanzato (Q sul filtro): testo cercato in codice e titolo; si azzera a ogni nuova apertura della GUI. */
+    private final Map<UUID, String> searches = new HashMap<>();
     private final Set<UUID> switching = new HashSet<>();
     /** Dettaglio usato da questa lista (null = plugin.getRuleDetailGui()). */
     private RuleDetailGui detail;
@@ -160,6 +164,7 @@ public final class RulesGui implements Listener {
         if (!authorize(staff, "see")) {
             return;
         }
+        searches.remove(staff.getUniqueId());   // la ricerca vale solo finche' la GUI resta aperta
         open(staff, filters.get(staff.getUniqueId()), 0);
     }
 
@@ -215,7 +220,22 @@ public final class RulesGui implements Listener {
 
     private List<Rules.Rule> list(Session s) {
         List<Rules.Rule> l = rules.byType(s.filter);
-        return l == null ? new ArrayList<>() : l;
+        if (l == null) {
+            return new ArrayList<>();
+        }
+        String q = s.staff == null ? null : searches.get(s.staff.getUniqueId());
+        if (q == null || q.isBlank()) {
+            return l;
+        }
+        String lq = q.toLowerCase(Locale.ROOT);
+        List<Rules.Rule> out = new ArrayList<>();
+        for (Rules.Rule r : l) {
+            if (r.code().toLowerCase(Locale.ROOT).contains(lq)
+                    || (r.title() != null && r.title().toLowerCase(Locale.ROOT).contains(lq))) {
+                out.add(r);
+            }
+        }
+        return out;
     }
 
     private static int pageCount(int n) {
@@ -257,7 +277,7 @@ public final class RulesGui implements Listener {
         g.at(-15, "&f" + IMG_BASE, FONT_RULES, IMG_ADV);
         navText(g, s.page + 1, pages, IMG);
         drawRuleTags(g, s, all, IMG);
-        UserProfilePowers.topTitle(plugin, g, titleWord() + " " + filterName(s.filter));
+        UserProfilePowers.topTitle(plugin, g, titleWord());   // fisso: il filtro non cambia il titolo (R-TIT)
         return g.build();
     }
 
@@ -418,10 +438,17 @@ public final class RulesGui implements Listener {
         for (Rules.Type o : opts) {
             blue.add(o == s.filter ? "&a» " + filterName(o) : "&8" + filterName(o));
         }
+        String q = searches.get(s.staff.getUniqueId());
+        if (q != null && !q.isBlank()) {
+            blue.add("&7cerca: &f" + q);
+        }
         blue.add("");
-        blue.add("&esinistro su &8| &edestro giù &8| &eQ crea");
+        blue.add("&esinistro su &8| &edestro giù &8| &eQ cerca");
         for (int slot : SLOTS_BLUE) {
             inv.setItem(slot, pane("&bfiltra per", blue));
+        }
+        for (int slot : SLOTS_BAR) {
+            inv.setItem(slot, pane("&acrea regola", List.of("&7pagina: &f" + (s.page + 1) + "/" + pages, "", "&eclicca per creare")));
         }
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
@@ -481,6 +508,21 @@ public final class RulesGui implements Listener {
     /** Riapre la lista sul filtro e sulla pagina indicati (quella da cui e' partita la creazione). */
     private void reopen(Player p, Rules.Type filter, int page) {
         Bukkit.getScheduler().runTask(plugin, () -> open(p, filter, page));
+    }
+
+    /** Incudine del filtro avanzato: testo da cercare in codice e titolo (vuoto = toglie la ricerca). */
+    private void askSearch(Player p, Rules.Type filter) {
+        String cur = searches.getOrDefault(p.getUniqueId(), "");
+        ui.askText(p, "cerca regola (codice o titolo, vuoto = tutte)", "CERCA", cur, txt -> {
+            if (txt == null || txt.isBlank()) {
+                searches.remove(p.getUniqueId());
+            } else {
+                searches.put(p.getUniqueId(), txt.trim());
+            }
+            reopen(p, filter, 0);
+        }, () -> {
+            reopen(p, filter, 0);
+        });
     }
 
     private void startCreate(Player p, Rules.Type currentFilter, int page) {
@@ -566,7 +608,7 @@ public final class RulesGui implements Listener {
         s.page = Math.max(0, Math.min(page, pages - 1));
         navText(g, s.page + 1, pages, IMG + 7);
         drawRuleTags(g, s, all, IMG + 7);
-        UserProfilePowers.topTitleDim(plugin, g, titleWord() + " " + filterName(s.filter));
+        UserProfilePowers.topTitleDim(plugin, g, titleWord());
     }
 
     private void askTime(Player p, Rules.Type currentFilter, int page, String code, String title, String text, Rules.Type t) {
@@ -628,11 +670,10 @@ public final class RulesGui implements Listener {
             if (slot == b) {
                 ClickType bc = event.getClick();
                 if (bc == ClickType.DROP || bc == ClickType.CONTROL_DROP) {
-                    // Q: crea una regola (prima era il click destro)
+                    // Q: filtro avanzato, cerca per codice o titolo (vuoto = tutte)
                     plugin.guiClick(p);
                     final Rules.Type cur = s.filter;
-                    final int curPage = s.page;
-                    Bukkit.getScheduler().runTask(plugin, () -> startCreate(p, cur, curPage));
+                    Bukkit.getScheduler().runTask(plugin, () -> askSearch(p, cur));
                 } else if (bc.isLeftClick() || bc.isRightClick()) {
                     // sinistro = filtro precedente (su), destro = filtro successivo (giu')
                     plugin.guiClick(p);
@@ -641,6 +682,16 @@ public final class RulesGui implements Listener {
                     filters.put(p.getUniqueId(), s.filter);
                     redraw(s);
                 }
+                return;
+            }
+        }
+        for (int b : SLOTS_BAR) {
+            if (slot == b) {
+                // crea regola (prima era Q sul filtro)
+                plugin.guiClick(p);
+                final Rules.Type cur = s.filter;
+                final int curPage = s.page;
+                Bukkit.getScheduler().runTask(plugin, () -> startCreate(p, cur, curPage));
                 return;
             }
         }

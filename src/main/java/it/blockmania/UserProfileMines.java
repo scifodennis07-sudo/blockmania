@@ -10,6 +10,7 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -25,7 +26,8 @@ import java.util.UUID;
  * Miniere nel profilo staff: stessa GUI di /mines (MinesGui) ma sul giocatore TARGET e con lo sfondo
  * "staff" (tasto reset blu al posto dell'info). Click su miniera posseduta = lo staffer ci va,
  * click su grigia = la da' (solo la prossima), Q = la toglie (solo l'ultima, con conferma),
- * reset = toglie tutte (con conferma).
+ * Q sul reset = toglie tutte (con conferma). Funziona anche col player OFFLINE (R-OFF): dati salvati e modifiche in
+ * coda fino al login (OfflinePdc). La conferma si chiude solo con i suoi pulsanti (ESC la riapre).
  *
  * Sfondi staff / conferma: lista per numero di collegamenti verdi (0..5) configurabile
  * (userprofile.mines.backgrounds, userprofile.mines.confirm.backgrounds); se vuota si usano gli sfondi
@@ -50,6 +52,8 @@ public final class UserProfileMines implements Listener {
         private boolean confirm;
         private Runnable onYes;
         private Runnable onNo;
+        /** Conferma: quante volte e' stata riaperta dopo ESC (limite di sicurezza). */
+        private int reopens;
         private final Map<Integer, String> actions = new HashMap<>();
 
         @Override
@@ -168,8 +172,47 @@ public final class UserProfileMines implements Listener {
         }
     }
 
-    private int owned(Player target) {
-        return plugin.getAmmo().getMine(target);
+    // ---- dati del target per UUID (anche offline: OfflinePdc) ----
+
+    private OfflinePdc pdc() {
+        return OfflinePdc.get(plugin);
+    }
+
+    private int owned(UUID target) {
+        return Math.max(1, pdc().getInt(target, "mine"));
+    }
+
+    private int counter(UUID target, String key) {
+        return pdc().getInt(target, key);
+    }
+
+    /** Come AmmoManager.setMine (con mine_max) + bossbar: subito se online, altrimenti in coda fino al login. */
+    private void setMine(UUID target, int value) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            plugin.getAmmo().setMine(p, value);
+            return;
+        }
+        pdc().setInt(target, "mine", value);
+        if (value > counter(target, "mine_max")) {
+            pdc().setInt(target, "mine_max", value);
+        }
+    }
+
+    private void refresh(UUID target) {
+        Player p = Bukkit.getPlayer(target);
+        if (p != null) {
+            plugin.getAmmo().refreshMain(p);
+        }
+    }
+
+    /** Offline la modifica vale al prossimo accesso: lo si dice nel messaggio. */
+    private static String when(UUID id) {
+        return Bukkit.getPlayer(id) != null ? "" : " &7(offline: al prossimo accesso)";
+    }
+
+    private static String nameOf(UUID id) {
+        return UserProfilePowers.nameOf(id);
     }
 
     private void msg(Player staff, String text) {
@@ -192,28 +235,17 @@ public final class UserProfileMines implements Listener {
         }
     }
 
-    private Player targetOf(Player staff, Holder holder) {
-        Player t = Bukkit.getPlayer(holder.target);
-        if (t == null || !t.isOnline()) {
-            msg(staff, "&cIl giocatore deve essere online per gestire le sue miniere.");
-            staff.closeInventory();
-            return null;
-        }
-        return t;
-    }
-
     // ---------- disegno ----------
 
-    private void fill(Inventory inv, Holder holder, Player target) {
+    private void fill(Inventory inv, Holder holder, UUID target) {
         var c = plugin.getConfig();
         List<Position> positions = positions();
         int pages = pageCount();
         holder.page = Math.max(0, Math.min(holder.page, pages - 1));
-        AmmoManager ammo = plugin.getAmmo();
         String[] general = {
-                "%coin%", String.valueOf(ammo.getCoin(target)),
-                "%blockcoin%", String.valueOf(ammo.getBlockCoin(target)),
-                "%mine%", String.valueOf(ammo.getMine(target)),
+                "%coin%", String.valueOf(counter(target, "coin")),
+                "%blockcoin%", String.valueOf(counter(target, "blockcoin")),
+                "%mine%", String.valueOf(owned(target)),
                 "%page%", String.valueOf(holder.page + 1),
                 "%pages%", String.valueOf(pages)
         };
@@ -232,10 +264,15 @@ public final class UserProfileMines implements Listener {
             put(inv, holder, slot, invisible(c.getString(GUI + "next.name", "&7pagina successiva"),
                     c.getStringList(GUI + "next.lore"), general), "next");
         }
-        // il tasto "info" dell'originale qui e' il RESET (azzera tutte le miniere)
+        // il tasto "info" dell'originale qui e' il RESET (azzera tutte le miniere): azzerare = eliminare, solo con Q
+        List<String> resetLore = new ArrayList<>(List.of("&7azzera: &ftutte le miniere", "&7di: &f" + nameOf(target)));
+        if (Bukkit.getPlayer(target) == null) {
+            resetLore.add("&7modifica: &fal prossimo accesso");
+        }
+        resetLore.add("");
+        resetLore.add("&cQ per azzerare");
         for (int slot : slotList(GUI + "slots.info")) {
-            put(inv, holder, slot, invisible("&creset miniere",
-                    List.of("&7azzera: &ftutte le miniere", "&7di: &f" + target.getName(), "", "&eclicca per resettare"), general), "reset");
+            put(inv, holder, slot, invisible("&creset miniere", resetLore, general), "reset");
         }
 
         int owned = owned(target);
@@ -253,9 +290,9 @@ public final class UserProfileMines implements Listener {
                 }
                 continue;
             }
-            int runs = Math.min(max, ammo.getCounter(target, "mine_runs_" + mine));
+            int runs = Math.min(max, counter(target, "mine_runs_" + mine));
             int blocks = blocksOf(mine);
-            int progress = Math.min(blocks, ammo.getCounter(target, "mine_progress_" + mine));
+            int progress = Math.min(blocks, counter(target, "mine_progress_" + mine));
             String key = runs >= max ? "platinum" : mine > owned ? "locked" : "owned";
             String bp = GUI + "states." + key;
             String[] r = new String[general.length + 18];
@@ -265,7 +302,7 @@ public final class UserProfileMines implements Listener {
                     "%blocks%", String.valueOf(blocks),
                     "%broken%", String.valueOf(progress),
                     "%left%", String.valueOf(Math.max(0, blocks - progress)),
-                    "%total%", String.valueOf(ammo.getCounter(target, "mine_total_" + mine)),
+                    "%total%", String.valueOf(counter(target, "mine_total_" + mine)),
                     "%runs%", String.valueOf(runs),
                     "%max_runs%", String.valueOf(max),
                     "%price%", String.valueOf(c.getInt(GUI + "prices." + mine, blocks)),
@@ -302,14 +339,14 @@ public final class UserProfileMines implements Listener {
         }
     }
 
-    private int greens(Player target, int page) {
+    private int greens(UUID target, int page) {
         int perPage = Math.max(1, positions().size());
         int onPage = Math.max(0, Math.min(perPage, owned(target) - page * perPage));
         return Math.max(0, onPage - 1);
     }
 
     /** Un cubo (glifo del pack v3) per ogni posizione della pagina, calcolato sul giocatore target. */
-    private int[] cubes(Player target, int page) {
+    private int[] cubes(UUID target, int page) {
         int perPage = Math.max(1, positions().size());
         int owned = owned(target);
         int max = maxRuns();
@@ -319,7 +356,7 @@ public final class UserProfileMines implements Listener {
             if (mine > mineCount()) {
                 out[i] = 231;
             } else {
-                int runs = Math.min(max, plugin.getAmmo().getCounter(target, "mine_runs_" + mine));
+                int runs = Math.min(max, counter(target, "mine_runs_" + mine));
                 out[i] = MinesGui.cubeIndex(mine, runs, mine > owned);
             }
         }
@@ -330,29 +367,33 @@ public final class UserProfileMines implements Listener {
      * Titolo a font (pack v3): base + barre verdi + pulsante reset + cubi, tutto scurito sotto il popup di conferma
      * (il pannello conferma sta sopra, non scurito), nome nella barra in alto e numero pagina come nelle GUI originali.
      */
-    private Component title(Player target, int page, int pages, boolean confirm) {
+    private Component title(UUID target, int page, int pages, boolean confirm) {
         return title(target, page, pages, confirm, null);
     }
 
     /** confirmText = descrizione scritta nel pannello di conferma (solo con confirm). */
-    private Component title(Player target, int page, int pages, boolean confirm, String confirmText) {
+    private Component title(UUID target, int page, int pages, boolean confirm, String confirmText) {
         return MinesGui.fontTitle(plugin, greens(target, page), cubes(target, page), true, confirm,
-                "miniere " + UserProfilePowers.nameOf(target.getUniqueId()), page, pages, true, confirmText);
+                "miniere " + nameOf(target), page, pages, true, confirmText);
     }
 
     // ---------- aprire ----------
 
     public void open(Player staff, Player target, Runnable onBack) {
-        if (target == null || !target.isOnline()) {
-            msg(staff, "&cIl giocatore deve essere online per gestire le sue miniere.");
+        open(staff, target == null ? null : target.getUniqueId(), onBack);
+    }
+
+    /** Miniere di target (anche offline). */
+    public void open(Player staff, UUID target, Runnable onBack) {
+        if (staff == null || target == null) {
             return;
         }
         render(staff, target, 0, onBack, true);
     }
 
-    private void render(Player staff, Player target, int page, Runnable onBack, boolean sound) {
+    private void render(Player staff, UUID target, int page, Runnable onBack, boolean sound) {
         Holder holder = new Holder();
-        holder.target = target.getUniqueId();
+        holder.target = target;
         holder.onBack = onBack;
         int pages = pageCount();
         holder.page = Math.max(0, Math.min(page, pages - 1));
@@ -373,14 +414,13 @@ public final class UserProfileMines implements Listener {
 
     // ---------- conferma ----------
 
-    private void ask(Player staff, Player target, Holder from, String text, Runnable onYes) {
+    private void ask(Player staff, UUID target, Holder from, String text, Runnable onYes) {
         int page = from.page;
         Runnable back = from.onBack;
-        UUID tid = target.getUniqueId();
+        UUID tid = target;
         Runnable reopen = () -> {
-            Player t = Bukkit.getPlayer(tid);
-            if (t != null && staff.isOnline()) {
-                render(staff, t, page, back, false);
+            if (staff.isOnline()) {
+                render(staff, tid, page, back, false);
             }
         };
         List<Integer> yes = slotList(CFG + "confirm.yes-slots");
@@ -408,25 +448,23 @@ public final class UserProfileMines implements Listener {
 
     // ---------- azioni sulle miniere ----------
 
-    private void resetAll(Player target) {
-        AmmoManager a = plugin.getAmmo();
-        a.setMine(target, 1);
-        a.setCounter(target, "mine_max", 1);
+    private void resetAll(UUID target) {
+        setMine(target, 1);
+        pdc().setInt(target, "mine_max", 1);
         for (int m = 1; m <= mineCount(); m++) {
-            a.setCounter(target, "mine_runs_" + m, 0);
-            a.setCounter(target, "mine_progress_" + m, 0);
-            a.setCounter(target, "mine_total_" + m, 0);
+            pdc().setInt(target, "mine_runs_" + m, 0);
+            pdc().setInt(target, "mine_progress_" + m, 0);
+            pdc().setInt(target, "mine_total_" + m, 0);
         }
-        a.refreshMain(target);
+        refresh(target);
     }
 
-    private void removeLast(Player target, int mine) {
-        AmmoManager a = plugin.getAmmo();
-        a.setMine(target, Math.max(1, mine - 1));
-        a.setCounter(target, "mine_runs_" + mine, 0);
-        a.setCounter(target, "mine_progress_" + mine, 0);
-        a.setCounter(target, "mine_total_" + mine, 0);
-        a.refreshMain(target);
+    private void removeLast(UUID target, int mine) {
+        setMine(target, Math.max(1, mine - 1));
+        pdc().setInt(target, "mine_runs_" + mine, 0);
+        pdc().setInt(target, "mine_progress_" + mine, 0);
+        pdc().setInt(target, "mine_total_" + mine, 0);
+        refresh(target);
     }
 
     // ---------- eventi ----------
@@ -455,12 +493,12 @@ public final class UserProfileMines implements Listener {
             later(r);
             return;
         }
-        Player target = targetOf(staff, holder);
-        if (target == null) {
-            return;
-        }
+        final UUID target = holder.target;   // anche offline
         int pages = pageCount();
         boolean drop = event.getClick() == ClickType.DROP || event.getClick() == ClickType.CONTROL_DROP;
+        if (action.equals("reset") && !drop) {
+            return;   // azzerare = eliminare: solo con Q
+        }
         switch (action) {
             case "close" -> {
                 staff.closeInventory();
@@ -478,32 +516,27 @@ public final class UserProfileMines implements Listener {
                     render(staff, target, holder.page + 1, holder.onBack, false);
                 }
             }
-            case "reset" -> ask(staff, target, holder, "Togliere tutte le miniere a " + target.getName() + "?", () -> {
-                Player t = Bukkit.getPlayer(holder.target);
-                if (t == null) {
-                    msg(staff, "&cIl giocatore non e' piu' online.");
-                    return;
-                }
-                if (!authorize(staff, t.getUniqueId(), "reset")) {
+            case "reset" -> ask(staff, target, holder, "Togliere tutte le miniere a " + nameOf(target) + "?", () -> {
+                if (!authorize(staff, target, "reset")) {
                     return;
                 }
                 StaffTasks st = plugin.getStaffTasks();
-                if (st != null && !st.allowsMine(staff, t.getUniqueId(), owned(t), 1)) {
+                if (st != null && !st.allowsMine(staff, target, owned(target), 1)) {
                     return;
                 }
-                resetAll(t);
+                resetAll(target);
                 if (st != null) {
-                    st.doneMine(staff, t.getUniqueId());
+                    st.doneMine(staff, target);
                 }
-                audit(staff, "profile.reset mines " + t.getName());
-                msg(staff, "&aMiniere di " + t.getName() + " azzerate.");
-                render(staff, t, 0, holder.onBack, false);
+                audit(staff, "profile.reset mines " + nameOf(target));
+                msg(staff, "&aMiniere di " + nameOf(target) + " azzerate." + when(target));
+                render(staff, target, 0, holder.onBack, false);
             });
             default -> mineAction(staff, target, holder, action, drop);
         }
     }
 
-    private void mineAction(Player staff, Player target, Holder holder, String action, boolean drop) {
+    private void mineAction(Player staff, UUID target, Holder holder, String action, boolean drop) {
         int idx = action.indexOf(':');
         if (idx < 0) {
             return;
@@ -527,42 +560,37 @@ public final class UserProfileMines implements Listener {
                 return;
             }
             if (mine <= 1) {
-                msg(staff, "&cLa miniera 1 non si elimina: usa il tasto reset.");
+                msg(staff, "&cLa miniera 1 non si elimina: usa Q sul tasto reset.");
                 plugin.playConfiguredSound(staff.getLocation(), "mines-gui.sounds.error");
                 return;
             }
-            ask(staff, target, holder, "Eliminare la miniera " + mine + " a " + target.getName() + "?", () -> {
-                Player t = Bukkit.getPlayer(holder.target);
-                if (t == null) {
-                    msg(staff, "&cIl giocatore non e' piu' online.");
-                    return;
-                }
-                if (owned(t) != mine) {
+            ask(staff, target, holder, "Eliminare la miniera " + mine + " a " + nameOf(target) + "?", () -> {
+                if (owned(target) != mine) {
                     msg(staff, "&cLe miniere sono cambiate: riprova.");
-                    render(staff, t, holder.page, holder.onBack, false);
+                    render(staff, target, holder.page, holder.onBack, false);
                     return;
                 }
-                if (!authorize(staff, t.getUniqueId(), "remove")) {
+                if (!authorize(staff, target, "remove")) {
                     return;
                 }
                 StaffTasks st = plugin.getStaffTasks();
-                if (st != null && !st.allowsMine(staff, t.getUniqueId(), mine, Math.max(1, mine - 1))) {
+                if (st != null && !st.allowsMine(staff, target, mine, Math.max(1, mine - 1))) {
                     return;
                 }
-                removeLast(t, mine);
+                removeLast(target, mine);
                 if (st != null) {
-                    st.doneMine(staff, t.getUniqueId());
+                    st.doneMine(staff, target);
                 }
-                audit(staff, "profile.remove mine " + mine + " " + t.getName());
-                msg(staff, "&aMiniera " + mine + " tolta a " + t.getName() + ".");
-                render(staff, t, holder.page, holder.onBack, false);
+                audit(staff, "profile.remove mine " + mine + " " + nameOf(target));
+                msg(staff, "&aMiniera " + mine + " tolta a " + nameOf(target) + "." + when(target));
+                render(staff, target, holder.page, holder.onBack, false);
             });
             return;
         }
         switch (kind) {
             case "enter" -> {
                 staff.closeInventory();
-                plugin.getMineTemplates().visit(staff, target.getUniqueId(), mine);
+                plugin.getMineTemplates().visit(staff, target, mine);
             }
             case "give" -> {
                 if (mine != owned + 1) {
@@ -570,21 +598,21 @@ public final class UserProfileMines implements Listener {
                     plugin.playConfiguredSound(staff.getLocation(), "mines-gui.sounds.error");
                     return;
                 }
-                if (!authorize(staff, target.getUniqueId(), "get")) {
+                if (!authorize(staff, target, "get")) {
                     return;
                 }
                 StaffTasks st = plugin.getStaffTasks();
-                if (st != null && !st.allowsMine(staff, target.getUniqueId(), owned, mine)) {
+                if (st != null && !st.allowsMine(staff, target, owned, mine)) {
                     return;
                 }
-                plugin.getAmmo().setMine(target, mine);
+                setMine(target, mine);
                 if (st != null) {
-                    st.doneMine(staff, target.getUniqueId());
+                    st.doneMine(staff, target);
                 }
-                plugin.getAmmo().refreshMain(target);
-                audit(staff, "profile.get mine " + mine + " " + target.getName());
+                refresh(target);
+                audit(staff, "profile.get mine " + mine + " " + nameOf(target));
                 plugin.playConfiguredSound(staff.getLocation(), "mines-gui.sounds.buy");
-                msg(staff, "&aMiniera " + mine + " data a " + target.getName() + ".");
+                msg(staff, "&aMiniera " + mine + " data a " + nameOf(target) + "." + when(target));
                 render(staff, target, holder.page, holder.onBack, false);
             }
             case "far" -> {
@@ -603,8 +631,21 @@ public final class UserProfileMines implements Listener {
         }
     }
 
+    /**
+     * La conferma si chiude solo con CONFERMA / ANNULLA (R-ESC): chiusa dal player (ESC, tasto inventario) si riapre al tick
+     * dopo, se nel frattempo non si e' aperta un'altra GUI. Le chiusure del plugin (closeInventory, cambio GUI) non contano.
+     */
     @EventHandler
     public void onClose(InventoryCloseEvent event) {
-        // niente stato da pulire: ogni Holder vive con il suo inventario
+        if (!(event.getInventory().getHolder() instanceof Holder h) || !h.confirm || h.reopens >= 40
+                || event.getReason() != InventoryCloseEvent.Reason.PLAYER || !(event.getPlayer() instanceof Player p)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (p.isOnline() && h.confirm && p.getOpenInventory().getTopInventory().getType() == InventoryType.CRAFTING) {
+                h.reopens++;
+                p.openInventory(h.inventory);
+            }
+        });
     }
 }

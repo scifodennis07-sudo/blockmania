@@ -38,10 +38,11 @@ public final class RoleGui implements Listener {
     /**
      * Avanzamenti DICHIARATI (stesso schema di ProfileLists: immagine a -15, advance = reale - 7).
      * Reale di E11A (userprofile-27.png): ultima colonna opaca 167 -> 169, dichiarato 162.
-     * Reale delle barre ruolo-1..11: ultima colonna opaca 126 -> 128, dichiarato 121 (tutte uguali).
+     * Reale delle barre ruolo-1..11: ultima colonna opaca 126 -> 128 (tutte uguali). La barra si scrive a x gia' spostata
+     * di -7 (IMG + ROLE_SHIFT): l'avanzamento dev'essere quello REALE, altrimenti i 7 px si tolgono due volte (AUDIT 0.1).
      */
     private static final int ADV = 162;
-    private static final int ADV_ROLE = 121;
+    private static final int ADV_ROLE = 128;
     /** Correzione misurata in gioco: la barra usciva 5 px immagine a destra del centro tra le frecce. */
     private static final int ROLE_SHIFT = -7;
     private static final int SIZE = 54;
@@ -137,6 +138,7 @@ public final class RoleGui implements Listener {
         if (special) {
             barLore.add(has ? "&7ce l'ha: &asì" : "&7ce l'ha: &cno");
         }
+        barLore.add("&7grado: &f" + (s.index - s.from + 1) + "/" + (s.to - s.from));
         barLore.add("");
         barLore.add("&eusa le frecce per cambiare");
         for (int i : SLOTS_PREV) {
@@ -246,8 +248,14 @@ public final class RoleGui implements Listener {
 
     @EventHandler
     public void onClose(InventoryCloseEvent event) {
-        if (event.getInventory().getHolder() instanceof Holder h && event.getPlayer() instanceof Player p
-                && !switching.contains(p.getUniqueId()) && sessions.get(p.getUniqueId()) == h.session) {
+        if (!(event.getInventory().getHolder() instanceof Holder h) || !(event.getPlayer() instanceof Player p)
+                || switching.contains(p.getUniqueId())) {
+            return;
+        }
+        if (!h.session.done) {
+            // chiuso senza conferma/annulla (ESC): si riapre (R-ESC)
+            UserProfilePowers.reopenOnEscape(plugin, p, h.inventory, () -> h.session.done);
+        } else if (sessions.get(p.getUniqueId()) == h.session) {
             sessions.remove(p.getUniqueId());
         }
     }

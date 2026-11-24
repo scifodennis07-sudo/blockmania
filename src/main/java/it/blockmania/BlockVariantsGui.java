@@ -7,7 +7,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -31,6 +33,8 @@ public final class BlockVariantsGui implements Listener {
     public static final class Holder implements InventoryHolder {
         private Inventory inventory;
         private int number;
+        /** Quante volte e' stato riaperto dopo ESC (limite di sicurezza). */
+        private int reopens;
         private final Map<Integer, String> actions = new HashMap<>();
 
         @Override
@@ -198,5 +202,23 @@ public final class BlockVariantsGui implements Listener {
         if (event.getView().getTopInventory().getHolder() instanceof Holder) {
             event.setCancelled(true);
         }
+    }
+
+    /**
+     * Il popup delle varianti si chiude solo con la sua X (che torna alla lista): chiuso dal player (ESC, tasto inventario)
+     * si riapre al tick dopo, se nel frattempo non si e' aperta un'altra GUI (R-ESC).
+     */
+    @EventHandler
+    public void onClose(InventoryCloseEvent event) {
+        if (!(event.getInventory().getHolder() instanceof Holder h) || h.reopens >= 40
+                || event.getReason() != InventoryCloseEvent.Reason.PLAYER || !(event.getPlayer() instanceof Player p)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (p.isOnline() && p.getOpenInventory().getTopInventory().getType() == InventoryType.CRAFTING) {
+                h.reopens++;
+                p.openInventory(h.inventory);
+            }
+        });
     }
 }

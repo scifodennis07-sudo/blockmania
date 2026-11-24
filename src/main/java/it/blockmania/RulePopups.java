@@ -54,9 +54,18 @@ public final class RulePopups implements Listener {
 
     private static final SimpleDateFormat DATE = new SimpleDateFormat("dd/MM/yyyy HH:mm");
 
+    /** Barra descrittiva del pannello userprofile-23 (barra allargata, BAR_WIDTH.md): set F500/F600 del font tiny3. */
+    private static final char BAR_BASE = '\uf500';
+    private static final char BAR_SHADOW = '\uf600';
+    private static final String BAR_FONT = "minecraft:tiny3";
+    private static final int BAR_CX = 95;
+    private static final int BAR_MAX = 64;
+
     private static final class Holder implements InventoryHolder {
         Inventory inventory;
         Session session;
+        /** Premuto X (la chiusura e' voluta, R-ESC). */
+        boolean chosen;
         /** Istanza che ha creato l'inventario: le altre lo ignorano. */
         RulePopups owner;
 
@@ -443,12 +452,62 @@ public final class RulePopups implements Listener {
         }
         // base lista solo-pannello userprofile-23 (U+E116, font userprofile2): lo sfondo custom resta visibile
         g.at(-15, "&f", "minecraft:userprofile2", DEF_ADV);
+        barText(g, barWord(s.title));   // la barra descrittiva ha sempre un testo (R-BAR)
         navText(g, s.page + 1, pages);
         if (s.background == null) {
             UserProfilePowers.topTitle(plugin, g, s.title);
         }
         // popup: nella barra in alto resta il titolo della GUI di sotto, scurito dentro s.background
         return g.build();
+    }
+
+    /** Testo della barra: la prima parola del titolo ("cronologia 1.2" -> "cronologia", "sanzionati 1.2" -> "sanzionati"). */
+    private static String barWord(String title) {
+        String t = title == null ? "" : title.trim();
+        int sp = t.indexOf(' ');
+        return sp > 0 ? t.substring(0, sp) : t.isEmpty() ? "lista" : t;
+    }
+
+    /** Testo piccolo centrato nella barra del pannello (come ProfileLists.barText): parole intere, mai fuori dalla barra. */
+    private void barText(GuiTitle g, String raw) {
+        StringBuilder safe = new StringBuilder();
+        for (char ch : (raw == null ? "" : raw).toCharArray()) {
+            safe.append(ch < 128 && Character.isLetterOrDigit(ch) ? ch : ' ');
+        }
+        String text = safe.toString().replaceAll(" +", " ").trim();
+        while (barAdvance(text) > BAR_MAX && text.contains(" ")) {
+            text = text.substring(0, text.lastIndexOf(' ')).trim();
+        }
+        if (text.isEmpty() || barAdvance(text) > BAR_MAX) {
+            return;
+        }
+        int st = BAR_CX - Math.max(0, barAdvance(text) - 1) / 2;
+        int off = 0;
+        for (String w : text.split(" ")) {
+            if (w.isEmpty()) {
+                continue;
+            }
+            int wa = barAdvance(w);
+            g.at(st + off + 1 + DEF_IMG, GuiTitle.shadowCode(plugin) + barLetters(w, BAR_SHADOW), BAR_FONT, wa);
+            g.at(st + off + DEF_IMG, "&f" + barLetters(w, BAR_BASE), BAR_FONT, wa);
+            off += wa + 4;
+        }
+    }
+
+    private static int barAdvance(String text) {
+        int total = 0;
+        for (char ch : text.toCharArray()) {
+            total += ch == ' ' ? 4 : (ch == 'i' || ch == 'I' || ch == '1') ? 4 : 6;
+        }
+        return total;
+    }
+
+    private static String barLetters(String text, char base) {
+        StringBuilder sb = new StringBuilder();
+        for (char ch : text.toCharArray()) {
+            sb.append(ch < 128 && Character.isLetterOrDigit(ch) ? (char) (base + ch) : ' ');
+        }
+        return sb.toString();
     }
 
     private void navText(GuiTitle g, int page, int pages) {
@@ -473,8 +532,10 @@ public final class RulePopups implements Listener {
         inv.setItem(SLOT_X2, pane(back, List.of()));
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
         inv.setItem(SLOT_NEXT, pane("&7pagina successiva", List.of()));
+        int pgs = pageCount(s.entries.size());
         for (int b : INFO_SLOTS) {
-            inv.setItem(b, pane("&einformazioni", List.of()));
+            // dati nella lore, niente messaggi in chat (R-CHAT)
+            inv.setItem(b, pane("&einformazioni", List.of("&7voci: &f" + s.entries.size(), "&7pagina: &f" + (s.page + 1) + "/" + pgs)));
         }
         if (s.entries.isEmpty()) {
             inv.setItem(gridSlot(10), pane("&7nessuna voce", List.of()));
@@ -564,6 +625,7 @@ public final class RulePopups implements Listener {
         int slot = event.getRawSlot();
         if (slot == SLOT_X || slot == SLOT_X2) {
             plugin.guiClick(p);
+            h.chosen = true;
             sessions.remove(p.getUniqueId());
             Runnable back = s.onBack;
             if (back != null) {
@@ -571,13 +633,6 @@ public final class RulePopups implements Listener {
             } else {
                 p.closeInventory();
             }
-            return;
-        }
-        if (slot == INFO_SLOTS[0] || slot == INFO_SLOTS[1]) {
-            plugin.guiClick(p);
-            int pg = pageCount(s.entries.size());
-            GuiMsg.send(plugin, p, "&e" + s.title + ": " + s.entries.size() + " voci, pagina " + (s.page + 1) + "/" + pg
-                    + ", frecce per scorrere, X per tornare");
             return;
         }
         if (slot == SLOT_PREV || slot == SLOT_NEXT) {
@@ -607,7 +662,14 @@ public final class RulePopups implements Listener {
         if (switching.contains(id)) {
             return;
         }
-        if (event.getInventory().getHolder() instanceof Holder h && h.owner == this && sessions.get(id) == h.session) {
+        if (!(event.getInventory().getHolder() instanceof Holder h) || h.owner != this) {
+            return;
+        }
+        if (!h.chosen) {
+            UserProfilePowers.reopenOnEscape(plugin, p, h.inventory, () -> h.chosen);   // ESC: si riapre (R-ESC)
+            return;
+        }
+        if (sessions.get(id) == h.session) {
             sessions.remove(id);
         }
     }

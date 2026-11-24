@@ -189,7 +189,7 @@ public final class UserProfileHistory implements Listener {
         barText(g, bar, plugin.getConfig().getInt("userprofile.history.bar-x", DEF_BAR_CX), img);
         // numero pagina sempre, anche 1/1
         navText(g, page + 1, Math.max(1, pages), plugin.getConfig().getInt("userprofile.history.nav-x", DEF_NAV_CX), img);
-        UserProfilePowers.topTitle(plugin, g, "cronologia " + kindName(kind) + " " + UserProfilePowers.nameOf(target));
+        UserProfilePowers.topTitle(plugin, g, topText(kind, target));
         return adv;
     }
 
@@ -197,6 +197,23 @@ public final class UserProfileHistory implements Listener {
         GuiTitle g = new GuiTitle(plugin);
         drawPage(g, s.target, s.kind, s.page, pages);
         return g.build();
+    }
+
+    /** Larghezza massima del titolo nella barra in alto (UserProfilePowers.TOP_MAX). */
+    private static final int TOP_MAX = 112;
+
+    /**
+     * Titolo nella barra in alto: "cronologia mute NICK" se entra, altrimenti "mute di NICK", altrimenti "cronologia mute"
+     * (mai parole tagliate a meta': la barra descrittiva dice gia' "cronologia").
+     */
+    private static String topText(SanctionManager.Kind kind, UUID target) {
+        String name = UserProfilePowers.nameOf(target);
+        for (String cand : new String[] {"cronologia " + kindName(kind) + " " + name, kindName(kind) + " di " + name}) {
+            if (tinyAdvance(cand.replaceAll("[^A-Za-z0-9 ]", " ").replaceAll(" +", " ").trim()) <= TOP_MAX) {
+                return cand;
+            }
+        }
+        return "cronologia " + kindName(kind);
     }
 
     private static String kindName(SanctionManager.Kind k) {
@@ -292,7 +309,8 @@ public final class UserProfileHistory implements Listener {
         s.bySlot.clear();
         inv.setItem(SLOT_X, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()));
         inv.setItem(SLOT_X2, pane(s.onBack != null ? "&cindietro" : "&cchiudi", List.of()));
-        List<String> resetLore = List.of("&7azzera: &f" + kindName(s.kind), "", "&eclicca per resettare");
+        // azzerare = eliminare: solo con Q e con conferma
+        List<String> resetLore = List.of("&7azzera: &f" + kindName(s.kind), "", "&cQ per azzerare");
         inv.setItem(SLOT_RESET, pane("&breset " + kindName(s.kind), resetLore));
         inv.setItem(SLOT_RESET2, pane("&breset " + kindName(s.kind), resetLore));
         inv.setItem(SLOT_PREV, pane("&7pagina precedente", List.of()));
@@ -427,6 +445,10 @@ public final class UserProfileHistory implements Listener {
             return;
         }
         if (slot == SLOT_RESET || slot == SLOT_RESET2) {
+            ClickType rc = event.getClick();
+            if (rc != ClickType.DROP && rc != ClickType.CONTROL_DROP) {
+                return;   // azzerare = eliminare: solo con Q
+            }
             plugin.guiClick(p);
             final UUID target = s.target;
             final SanctionManager.Kind kind = s.kind;
